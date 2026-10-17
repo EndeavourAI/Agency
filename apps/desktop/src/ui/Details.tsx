@@ -152,7 +152,11 @@ export function Details() {
       <section>
         <div class="sec-row">
           <h3 class="sec-h">Context</h3>
-          <span style={{ color: "var(--muted)" }}>{`${tokens(used())} of ${tokens(window())} tokens`}</span>
+          <span style={{ color: "var(--muted)" }}>
+            {used() > 0
+              ? `${tokens(used())} of ${tokens(window())} tokens`
+              : `${tokens(window())} tokens; the size shows after the next turn`}
+          </span>
         </div>
         <div class="meter">
           <span style={{ width: `${pct()}%`, background: "var(--ctx1)" }} />

@@ -458,6 +458,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Fixed
 
+- **The desktop showed a context larger than the window** ("812K of 262K tokens"): for a turn saved before each
+  turn kept its context size, the panel showed the input of all the requests of that turn added up. It now says
+  that the size shows after the next turn.
 - **MCP servers over stdio did not start with `sandbox.backend: "os"`**: the backend was taken for a container, so
   each local server failed with "needs container stdio". They start on this machine again, outside the sandbox,
   as the docs say.

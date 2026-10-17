@@ -1083,9 +1083,9 @@ export function usageOf(view: SessionView | null): {
   for (const e of chain(view.entries, view.tipId)) {
     if (e.type !== "usage" || !e.usage) continue;
     // A cancelled or failed turn reports nothing: the context is still that of the turn before.
-    // Entries older than contextTokens hold only the sum of the turn's requests.
-    const size = e.contextTokens ?? e.usage.inputTokens;
-    if (size > 0) out.tokens = size;
+    // Entries older than contextTokens hold only the sum of the turn's requests, which can be many windows: unknown.
+    if (e.contextTokens !== undefined && e.contextTokens > 0) out.tokens = e.contextTokens;
+    else if (e.contextTokens === undefined && e.usage.inputTokens > 0) out.tokens = 0;
     out.input += e.usage.inputTokens;
     out.cached += e.usage.cachedInputTokens ?? 0;
     out.costUsd += typeof e.costUsd === "number" ? e.costUsd : (e.usage.costUsd ?? 0);

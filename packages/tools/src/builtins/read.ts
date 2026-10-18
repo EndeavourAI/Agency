@@ -37,9 +37,11 @@ type ReadInput = { path: string; offset?: number; limit?: number } & Record<stri
 
 /** Live: models sent `{start, end}` and the names of other harnesses, which a read ignored and so gave the whole file. */
 function rangeOf(input: ReadInput): { offset: number; limit: number | undefined } {
-  const offset = positiveInt(input.offset) ?? positiveInt(input.start ?? input.start_line ?? input.startLine) ?? 1;
+  const offset =
+    positiveInt(input.offset) ?? positiveInt(input.start ?? input.start_line ?? input.startLine) ?? 1;
   const end = positiveInt(input.end ?? input.end_line ?? input.endLine);
-  const limit = positiveInt(input.limit) ?? (end !== undefined && end >= offset ? end - offset + 1 : undefined);
+  const limit =
+    positiveInt(input.limit) ?? (end !== undefined && end >= offset ? end - offset + 1 : undefined);
   return { offset, limit };
 }
 

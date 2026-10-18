@@ -15,6 +15,8 @@ test("a read-only command of the workspace, after the read-only set of Claude Co
     "rg -n foo src",
     "sed -n 1p a.txt",
     "sed 's|src/||' list.txt | sort",
+    // In double quotes `\|` is text: grep's alternation of basic regex.
+    'grep -n "prune\\|truncate" src/a.ts',
   ]) {
     expect([command, isReadOnlyCommand(command)]).toEqual([command, true]);
   }
@@ -54,6 +56,10 @@ test("a read-only command of the workspace, after the read-only set of Claude Co
     "sudo cat a.txt",
     "cat (Remove-Item x)",
     "cat src\\a.ts",
+    // `\` before `"`, `$`, a backquote or `\` is an escape in double quotes; one at the end has nothing after it.
+    'grep "a\\" src/a.ts; rm x; echo "" src/a.ts',
+    'grep "\\$HOME" src/a.ts',
+    'grep "x\\',
   ]) {
     expect([command, isReadOnlyCommand(command)]).toEqual([command, false]);
   }

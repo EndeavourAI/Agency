@@ -603,7 +603,7 @@ function inWorkspace(word: string, workspaceRoot: string | undefined): boolean {
 
 /**
  * The first character the shell would not read as plain text, outside single quotes. Single quotes hold text only;
- * double quotes still expand `$`, a backquote and `\`. Unquoted, `~` expands only at the start of a word.
+ * double quotes expand `$`, a backquote, and `\` before one of `$`, a backquote, `"`, `\`, a newline: `"a\|b"` is text.
  */
 function shellSyntax(command: string): string | undefined {
   let quote: '"' | "'" | undefined;
@@ -613,6 +613,8 @@ function shellSyntax(command: string): string | undefined {
       if (ch === "'") quote = undefined;
     } else if (quote === '"') {
       if (ch === '"') quote = undefined;
+      else if (ch === "\\" && i + 1 < command.length && !'$`"\\\n'.includes(command[i + 1] as string))
+        continue;
       else if ("$`\\".includes(ch)) return ch;
     } else if (ch === "'" || ch === '"') quote = ch;
     else if ("$`\\(){}!#@".includes(ch)) return ch;

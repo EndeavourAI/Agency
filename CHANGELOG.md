@@ -479,6 +479,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Fixed
 
+- **A Windows path written as `/C:/...` resolved to `C:\C:\...`**: models write the path of a file URL, and each
+  such read, grep or glob failed (eight calls in one live session). It now reads as `C:/...`, as `/c/...` of Git
+  Bash already did.
+- **`grep -n "a\|b" file` asked for approval**: a backslash in double quotes counted as shell syntax, but there
+  it is text unless a `$`, a backquote, `"`, `\` or a newline follows. Such a grep is read-only again, so it runs
+  in every mode with no prompt (nine refused calls in one live headless session).
 - **`grep` without ripgrep**: on Windows neither `rg` nor `grep` is on the PATH of the app (Git's grep is only on
   the PATH of Git Bash), so every search failed with "neither ripgrep (rg) nor grep is installed". It now searches
   in process, with rg's output and rules (`.gitignore`, no hidden or binary files). Where grep is the fallback, it

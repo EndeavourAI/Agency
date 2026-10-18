@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The environment block names the workspace `project root`**, not `cwd`, with the note that the shell starts
+  each command there and tools take paths relative to it: the words of the path rule of the prompt. With
+  `cwd: <path>`, a model wrote that path out in each call of a debug session (4 of 4).
 - **A rate limit is retried for up to 5 minutes**, not 7 attempts (about 60 seconds): in 4 of 13 live sessions
   on a free model, an upstream limit outlasted the attempts and the whole session was lost, in one after the fix
   was made. Each wait is still at most 30 seconds, and a retry event says when the next try runs.

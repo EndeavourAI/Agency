@@ -1587,7 +1587,7 @@ describe("system prompt composition", () => {
     const system = capture.systems[0] ?? "";
     expect(system.startsWith("sys\n\n")).toBe(true);
     expect(system).toContain("<environment>");
-    expect(system).toContain(`cwd: ${workspaceRoot}`);
+    expect(system).toContain(`project root: ${workspaceRoot} (`);
     expect(system).toContain("date: ");
     expect(system).not.toContain("git: branch");
   });

@@ -118,7 +118,7 @@ describe("gatherEnvironmentInfo", () => {
 });
 
 describe("buildEnvironmentBlock", () => {
-  test("renders the tagged block with os, cwd, and date lines", () => {
+  test("renders the tagged block with os, project root, and date lines", () => {
     const block = buildEnvironmentBlock({
       platform: "win32 10.0.26100 x64",
       cwd: "C:\\repo",
@@ -129,7 +129,8 @@ describe("buildEnvironmentBlock", () => {
       [
         "<environment>",
         "os: win32 10.0.26100 x64",
-        "cwd: C:\\repo",
+        // Live: the line said `cwd`, the prompt asked for paths from the project root, and models wrote the root out.
+        "project root: C:\\repo (the shell starts each command here; give tools paths relative to it)",
         "date: 2026-09-02",
         "git at session start: branch main (dirty, 2 changed files)",
         "</environment>",

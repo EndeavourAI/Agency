@@ -102,7 +102,9 @@ export function gatherEnvironmentInfo(options: GatherEnvironmentOptions): Enviro
 }
 
 export function buildEnvironmentBlock(info: EnvironmentInfo): string {
-  const lines = [`<environment>`, `os: ${info.platform}`, `cwd: ${info.cwd}`, `date: ${info.date}`];
+  // The words of the path rule of the prompt: with `cwd: <path>`, models wrote that path out in most calls.
+  const root = `project root: ${info.cwd} (the shell starts each command here; give tools paths relative to it)`;
+  const lines = [`<environment>`, `os: ${info.platform}`, root, `date: ${info.date}`];
   if (info.shell !== undefined) lines.push(`shell: ${info.shell}`);
   if (info.git) {
     const state = info.git.detached ? ["detached"] : [];

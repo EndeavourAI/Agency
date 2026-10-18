@@ -9,7 +9,7 @@ const TIMEOUT_MS = 120_000;
 // ponytail: a fixed limit against a script that loops on tool calls. Make it a config value if a real task needs more.
 const MAX_CALLS = 100;
 
-type Reply = { id: number; content: string; isError: boolean };
+type Reply = { id: number; content: string; isError: boolean; value?: unknown };
 type FromChild =
   | { call: number; name: string; input?: unknown }
   | { done: true; output: string; result?: string; error?: string };
@@ -48,8 +48,9 @@ export function codeTool(env: () => Record<string, string>, runner: string[] = c
     name: CODE_TOOL,
     description:
       "Runs JavaScript: the body of an async function. Your other tools are functions: " +
-      "`await tools.<name>(input)` takes the same input object as a direct call and returns its output as one string, " +
-      "as the direct call shows it: a list (glob, grep) has an item on each line, so split it on newlines. " +
+      "`await tools.<name>(input)` takes the same input object as a direct call. " +
+      "glob returns an array of paths; grep returns an array of {path, line, text}, or of paths with filesOnly " +
+      "(with context, its text). Any other tool returns its output as one string, as the direct call shows it. " +
       "A failed call throws. Use Promise.all for calls that do not depend on each other. " +
       "You get back only what you print with console.log and the return value, so print only what you need. " +
       "Use it for three or more calls in a row, for a call on each item of a result, or to filter a large output. " +
@@ -123,7 +124,13 @@ export function codeTool(env: () => Record<string, string>, runner: string[] = c
           }
           ctx.onProgress?.(`tools.${message.name}`);
           void callTool(message.name, message.input as Record<string, unknown>).then(
-            (result) => send({ id, content: result.content, isError: result.isError }),
+            (result) =>
+              send({
+                id,
+                content: result.content,
+                isError: result.isError,
+                ...(result.value === undefined ? {} : { value: result.value }),
+              }),
             (error) => send({ id, content: String(error), isError: true }),
           );
         }
@@ -165,7 +172,7 @@ export async function runCodeChild(): Promise<never> {
   const write = (message: FromChild): void => {
     process.stdout.write(`${JSON.stringify(message)}\n`);
   };
-  const pending = new Map<number, { resolve: (text: string) => void; reject: (error: Error) => void }>();
+  const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   let nextId = 0;
   const tools = new Proxy(
     {},
@@ -175,7 +182,7 @@ export async function runCodeChild(): Promise<never> {
       get: (_target, name) =>
         name === "then" || typeof name === "symbol"
           ? undefined
-          : (input: unknown): Promise<string> =>
+          : (input: unknown): Promise<unknown> =>
               new Promise((resolve, reject) => {
                 nextId += 1;
                 pending.set(nextId, { resolve, reject });
@@ -212,7 +219,7 @@ export async function runCodeChild(): Promise<never> {
     const waiter = pending.get(reply.id);
     pending.delete(reply.id);
     if (reply.isError) waiter?.reject(new Error(reply.content));
-    else waiter?.resolve(reply.content);
+    else waiter?.resolve(reply.value ?? reply.content);
   }
   process.exit(0);
 }

@@ -36,6 +36,19 @@ describe("createGlobTool", () => {
     expect(result.content).not.toContain("c.md");
   });
 
+  test("a code-mode script gets the paths as an array", async () => {
+    const { deps, root } = setup();
+    writeFileSync(join(root, "a.ts"), "");
+    writeFileSync(join(root, "b.ts"), "");
+
+    const tool = createGlobTool(deps);
+    expect(((await tool.handler({ pattern: "*.ts" }, { signal })).value as string[]).sort()).toEqual([
+      "a.ts",
+      "b.ts",
+    ]);
+    expect((await tool.handler({ pattern: "*.md" }, { signal })).value).toEqual([]);
+  });
+
   test("matches recursively with **", async () => {
     const { deps, root } = setup();
     mkdirSync(join(root, "src", "nested"), { recursive: true });

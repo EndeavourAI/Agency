@@ -50,6 +50,8 @@ export interface ToolResult {
    * see what the tool read. Absent for text-only results.
    */
   images?: ImageBlock[];
+  /** What a script of the code tool gets in place of the text, as the paths of glob. Absent: the text. */
+  value?: unknown;
 }
 
 /**

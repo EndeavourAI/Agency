@@ -355,11 +355,25 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
         );
       // Context lines keep the path on each line: `path-12-text` has no unambiguous end of the path.
       const trimmed = (filesOnly || context !== undefined ? lines : grouped(lines)).join("\n");
-      if (trimmed === "") return { content: t("tool.grep.no_matches") };
+      // A line of context has no clear end of its path, so a search with context gives a script the text.
+      const value =
+        context !== undefined
+          ? undefined
+          : trimmed === ""
+            ? []
+            : filesOnly
+              ? lines
+              : lines.flatMap((line) => {
+                  const match = /^(.+?):(\d+):/.exec(line);
+                  return match
+                    ? [{ path: match[1], line: Number(match[2]), text: line.slice(match[0].length) }]
+                    : [];
+                });
+      if (trimmed === "") return { content: t("tool.grep.no_matches"), ...(value ? { value } : {}) };
       const notice = found.capped
         ? `\n${filesOnly ? t("tool.grep.truncated_files", { count: MAX_MATCHES }) : t("tool.grep.truncated", { count: MAX_MATCHES })}`
         : "";
-      return { content: trimmed + notice };
+      return { content: trimmed + notice, ...(value ? { value } : {}) };
     },
   };
   return spec;

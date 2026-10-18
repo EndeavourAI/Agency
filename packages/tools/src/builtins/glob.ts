@@ -63,10 +63,10 @@ export function createGlobTool(deps: ToolDeps): ToolSpec {
       scanned.sort((a, b) => b.mtimeMs - a.mtimeMs);
       const results = scanned.slice(0, MAX_RESULTS).map((entry) => entry.path);
 
-      if (results.length === 0) return { content: t("tool.glob.no_matches") };
+      if (results.length === 0) return { content: t("tool.glob.no_matches"), value: [] };
       const suffix =
         scanned.length > MAX_RESULTS ? `\n${t("tool.glob.truncated", { count: MAX_RESULTS })}` : "";
-      return { content: results.join("\n") + suffix };
+      return { content: results.join("\n") + suffix, value: results };
     },
   };
   return spec;

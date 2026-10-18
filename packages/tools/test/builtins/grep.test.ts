@@ -57,6 +57,23 @@ describe("createGrepTool", () => {
     ).toStartWith("grep hit: 3 matches");
   });
 
+  test("a code-mode script gets the matches as objects, or the paths with filesOnly", async () => {
+    const { deps, root } = setup();
+    mkdirSync(join(root, "src"));
+    writeFileSync(join(root, "src", "a.ts"), "hit:7: one\nmiss\nhit two\n");
+
+    const tool = createGrepTool(deps);
+    const result = await tool.handler({ pattern: "hit" }, { signal });
+    if (isMissingBinary(result.content)) return;
+    expect(result.value).toEqual([
+      { path: "src/a.ts", line: 1, text: "hit:7: one" },
+      { path: "src/a.ts", line: 3, text: "hit two" },
+    ]);
+    expect((await tool.handler({ pattern: "hit", filesOnly: true }, { signal })).value).toEqual(["src/a.ts"]);
+    expect((await tool.handler({ pattern: "nothing" }, { signal })).value).toEqual([]);
+    expect((await tool.handler({ pattern: "hit", context: 1 }, { signal })).value).toBeUndefined();
+  });
+
   test("reports no matches without treating it as an error", async () => {
     const { deps, root } = setup();
     writeFileSync(join(root, "a.ts"), "nothing interesting here\n");

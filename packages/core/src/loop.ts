@@ -71,9 +71,9 @@ export interface ToolSpec<Input = Record<string, unknown>> extends ToolDefinitio
       callTool?: (
         name: string,
         input: Record<string, unknown>,
-      ) => Promise<{ content: string; isError: boolean; images?: ImageBlock[] }>;
+      ) => Promise<{ content: string; isError: boolean; images?: ImageBlock[]; value?: unknown }>;
     },
-  ): Promise<{ content: string; isError?: boolean; images?: ImageBlock[] }>;
+  ): Promise<{ content: string; isError?: boolean; images?: ImageBlock[]; value?: unknown }>;
   renderCall?(input: Input & Record<string, unknown>): string;
   renderResult?(result: {
     content: string;
@@ -965,7 +965,7 @@ function emitErrorEvent(error: unknown, onEvent?: (event: LoopEvent) => void): v
   onEvent?.({ type: "error", ...describeError(error) });
 }
 
-type ToolResultLike = { content: string; isError: boolean; images?: ImageBlock[] };
+type ToolResultLike = { content: string; isError: boolean; images?: ImageBlock[]; value?: unknown };
 
 interface ToolCallItem {
   call: Extract<ContentBlock, { type: "tool_call" }>;
@@ -1147,7 +1147,7 @@ async function executeOne(
   modelCall: Extract<ContentBlock, { type: "tool_call" }>,
   options: RunTurnOptions,
   signal: AbortSignal | undefined,
-): Promise<{ content: string; isError: boolean; images?: ImageBlock[] }> {
+): Promise<ToolResultLike> {
   let call = modelCall;
   const resolved = spec ?? resolveToolSpec(options.tools, call.name);
   if (!resolved) {
@@ -1387,12 +1387,13 @@ async function executeOne(
         }
       : undefined,
   };
-  let result: { content: string; isError?: boolean; images?: ImageBlock[] };
+  let result: { content: string; isError?: boolean; images?: ImageBlock[]; value?: unknown };
   try {
     result = await resolved.handler(call.input, toolCtx);
   } catch (error) {
     result = { content: error instanceof Error ? error.message : String(error), isError: true };
   }
+  const built = result.content;
   if (options.redactToolResult)
     result = { ...result, content: options.redactToolResult(result.content, resolved.name) };
 
@@ -1450,7 +1451,13 @@ async function executeOne(
     }
   }
 
-  return { content: result.content, isError: result.isError ?? false, images: result.images };
+  return {
+    content: result.content,
+    isError: result.isError ?? false,
+    images: result.images,
+    // A redaction or a hook that changed the text would not reach a script through the built value.
+    ...(result.value !== undefined && result.content === built ? { value: result.value } : {}),
+  };
 }
 
 const SIMPLE_TYPES: Record<string, (value: unknown) => boolean> = {

@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **In a `code` script, `glob` and `grep` return what they built, not their text**: `glob` an array of paths,
+  `grep` an array of `{ path, line, text }`, or of paths with `filesOnly`; a search with `context`, and any other
+  tool, still returns one string. In live runs on Linux, 37 of 52 scripts failed, most because they iterated the
+  text of `glob` as an array (a description that said so did not help: 11 of 18 still failed). A result whose text
+  a redaction or a hook changed reaches the script as that text. The tool stays opt-in (`codeMode`).
 - **`fetch`, `websearch`, `memory`, `question` and `spawn` wait for `tool_search`** instead of sending their
   schemas with every request: 0 of 5,583 tool calls in the stored sessions went to them, while the deferred
   `process_output` was found and called when it was needed. An agent whose role is `researcher` keeps `fetch` and

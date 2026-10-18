@@ -118,7 +118,7 @@ export const en = {
   "tool.grep.truncated": "[truncated at {count} matches]",
   "tool.grep.truncated_files": "[truncated at {count} files]",
   "tool.glob.no_matches": "no files matched",
-  "tool.glob.truncated": "[truncated at {count} results]",
+  "tool.glob.truncated": "[the newest {count} matches only: give a more specific path or pattern for the rest]",
   "tool.fetch.truncated": "[truncated at {chars} characters]",
   "tool.network_ask": "Let {tool} reach {host}, past the network limit of the sandbox",
   "tool.network_refused":

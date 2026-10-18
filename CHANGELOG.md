@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`glob` lists 100 files at most, not 500**, and says to give a more specific path or pattern, as the Glob
+  tools of Claude Code and OpenCode do: in 3 of 4 live research sessions the first call was a glob of the whole
+  repository, 19K characters that every later request of the session sent again.
 - **A call to `shell` runs `bash`**: models trained on Codex, whose shell tool has that name, sent it 3 times in
   the benchmark sessions, and each call failed as no such tool. A tool of that name, if one is offered, still wins.
 - **A `read` of a missing file names the project files of that name** (up to five, from the git index and the

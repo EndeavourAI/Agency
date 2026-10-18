@@ -6,7 +6,7 @@ import type { ToolDeps, ToolSpec } from "../contract.ts";
 import { loadGitignore } from "../gitignore.ts";
 import { clip, lineCount, str, summarize } from "../render.ts";
 
-const MAX_RESULTS = 500;
+const MAX_RESULTS = 100;
 /** Scan bound before the mtime sort picks the newest MAX_RESULTS. */
 const MAX_SCANNED = 5_000;
 

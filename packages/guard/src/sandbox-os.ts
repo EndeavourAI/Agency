@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { AgencyError, ErrorCode } from "@agency/schema";
 import type { RequestApproval } from "./approval.ts";
 import { startDomainProxy } from "./domain-proxy.ts";
@@ -67,6 +67,7 @@ export function buildBwrapArgs(
   proxySocket?: string,
   masked: string[] = [],
   worktreeReadOnly: string[] = [],
+  placeholders: Placeholder[] = [],
 ): string[] {
   const bind = (flag: string, paths: readonly string[]): string[] =>
     paths.flatMap((path) => [flag, `${root}/${path}`, `${root}/${path}`]);
@@ -91,6 +92,7 @@ export function buildBwrapArgs(
     ...bind("--bind-try", PROTECTED_PATHS.writable),
     // After the worktrees are made writable: in each, the files that its own workspace runs stay read-only.
     ...bind("--ro-bind-try", worktreeReadOnly),
+    ...placeholders.flatMap(({ path, source }) => ["--ro-bind", source, `${root}/${path}`]),
     ...(proxySocket === undefined
       ? []
       : [
@@ -247,6 +249,37 @@ function runtimeDirs(): string[] {
   ].filter((path): path is string => path !== undefined && path !== "");
 }
 
+/** An empty read-only folder mounted where a protected path is missing, so that a command cannot make it. */
+export interface Placeholder {
+  path: string;
+  source: string;
+}
+
+let placeholderSource: string | undefined;
+
+/**
+ * bubblewrap holds only paths that exist: each missing protected path gets an empty read-only folder for the length
+ * of the command, as Claude Code's sandbox does, so a write there fails. A folder, not a file, even for `.mcp.json`:
+ * git does not list it. Only where the folder above exists, so `git init` in a new folder works; a hook that the
+ * same command writes into that new `.git` is not held.
+ */
+function placeholdersFor(root: string): Placeholder[] {
+  placeholderSource ??= mkdtempSync(join(tmpdir(), "agency-placeholder-"));
+  const source = placeholderSource;
+  return [...PROTECTED_PATHS.readOnly, ...worktreeProtectedPaths(root)]
+    .filter((path) => !existsSync(join(root, path)) && existsSync(dirname(join(root, path))))
+    .map((path) => ({ path, source }));
+}
+
+/** bubblewrap made the mount point of each placeholder here: one still empty goes, one filled from outside stays. */
+function removePlaceholders(root: string, placed: Placeholder[]): void {
+  for (const { path } of placed) {
+    try {
+      rmdirSync(join(root, path));
+    } catch {}
+  }
+}
+
 /** The real paths of those that exist, once each: `/var/run` is most often a link to `/run`. */
 const existing = (paths: string[]): string[] => [
   ...new Set(paths.filter((path) => existsSync(path)).map((path) => realpathSync(path))),
@@ -315,13 +348,18 @@ export class OsSandboxBackend implements SandboxBackend {
     }
   }
 
+  /** The placeholders of a command: on Linux only. Seatbelt rules name paths, so they hold for a missing one. */
+  private placeholders(): Placeholder[] {
+    return this.platform === "linux" ? placeholdersFor(this.root) : [];
+  }
+
   /** True when a command has no network, or only the hosts of `allowedDomains`. */
   get offline(): boolean {
     return !this.allowNetwork;
   }
 
   /** The argv that runs `argv` in the sandbox. `network` gives this one command the network, which the user allowed. */
-  wrap(argv: string[], cwd: string = this.root, network = false): string[] {
+  wrap(argv: string[], cwd: string = this.root, network = false, placeholders: Placeholder[] = []): string[] {
     const allowNetwork = this.allowNetwork || network;
     if (this.platform === "linux") {
       return [
@@ -334,6 +372,7 @@ export class OsSandboxBackend implements SandboxBackend {
           allowNetwork ? undefined : this.proxy?.socket,
           existing(HOST_SOCKETS),
           worktreeProtectedPaths(this.root),
+          placeholders,
         ),
         ...argv,
       ];
@@ -375,7 +414,12 @@ export class OsSandboxBackend implements SandboxBackend {
    */
   private violations(output: string, network: boolean): string[] {
     const notes: string[] = [];
-    if (/Read-only file system|EROFS|Operation not permitted|Access to the path .* is denied/i.test(output)) {
+    // "Is a directory": a placeholder of a missing protected file.
+    if (
+      /Read-only file system|EROFS|Operation not permitted|Is a directory|Access to the path .* is denied/i.test(
+        output,
+      )
+    ) {
       notes.push(
         "agency sandbox: this command runs in the sandbox of the operating system. It can write only in the workspace and the temporary folder, and not in .git/hooks, .git/config, .agency or the hook and MCP files of agents. A write error above can come from that: do not try the same write in another way.",
       );
@@ -459,21 +503,8 @@ export class OsSandboxBackend implements SandboxBackend {
     } = {},
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     this.checkCommand(argv.join(" "));
-    // bubblewrap and the rules of Windows hold only the protected paths that exist: one that a command makes is
-    // removed after it, or its hooks or MCP servers would run outside the sandbox at the next start. Seatbelt
-    // refuses it already. ponytail: a background command is not swept; sweep at its end if one is seen to do this.
-    const absent =
-      this.platform === "darwin"
-        ? []
-        : [...PROTECTED_PATHS.readOnly, ...worktreeProtectedPaths(this.root)].filter(
-            (path) => !existsSync(join(this.root, path)),
-          );
-    const sweep = (): string[] => {
-      const made = absent.filter((path) => existsSync(join(this.root, path)));
-      for (const path of made) rmSync(join(this.root, path), { recursive: true, force: true });
-      return made;
-    };
-    const child = Bun.spawn(this.wrap(argv, opts.cwd, opts.network), {
+    const placed = this.placeholders();
+    const child = Bun.spawn(this.wrap(argv, opts.cwd, opts.network, placed), {
       windowsHide: true,
       cwd: opts.cwd ?? this.root,
       stdout: "pipe",
@@ -500,15 +531,7 @@ export class OsSandboxBackend implements SandboxBackend {
         : undefined;
     try {
       const [stdout, output, exitCode] = await Promise.all([stdoutText, stderrText, child.exited]);
-      const made = sweep();
-      const notes = [
-        ...(made.length === 0
-          ? []
-          : [
-              `agency sandbox: removed ${made.join(", ")}, which this command made: a command may not make files whose hooks or servers run outside the sandbox. Edit such a file with the edit or write tool, which asks the user.`,
-            ]),
-        ...this.violations(`${stdout}\n${output}`, opts.network === true),
-      ];
+      const notes = this.violations(`${stdout}\n${output}`, opts.network === true);
       const stderr =
         notes.length === 0
           ? output
@@ -521,7 +544,7 @@ export class OsSandboxBackend implements SandboxBackend {
       }
       return { stdout, stderr, exitCode };
     } finally {
-      sweep();
+      removePlaceholders(this.root, placed);
       opts.signal?.removeEventListener("abort", kill);
       if (timer !== undefined) clearTimeout(timer);
     }

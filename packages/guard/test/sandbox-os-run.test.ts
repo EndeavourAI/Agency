@@ -46,11 +46,27 @@ describe.skipIf(!runs)("OS sandbox: real commands", () => {
     const edit = await sandbox.exec(["sh", "-c", "echo x > .claude/settings.json"], { cwd: ws });
     expect(edit.exitCode).not.toBe(0);
     expect(await Bun.file(join(ws, ".claude", "settings.json")).text()).toBe("{}");
-    const made = await sandbox.exec(["sh", "-c", "echo '{}' > .mcp.json; echo ok"], { cwd: ws });
-    expect(made.stdout).toContain("ok");
+    // A missing one cannot be made: the write fails, the result says why, and nothing is left behind.
+    const made = await sandbox.exec(["sh", "-c", "echo '{}' > .mcp.json"], { cwd: ws });
+    expect(made.exitCode).not.toBe(0);
+    expect(made.stderr).toContain("agency sandbox: this command runs in the sandbox");
     expect(existsSync(join(ws, ".mcp.json"))).toBe(false);
-    if (process.platform === "linux") expect(made.stderr).toContain("agency sandbox: removed .mcp.json");
+    expect(existsSync(join(ws, ".vscode"))).toBe(false);
   });
+
+  test.skipIf(Bun.which("git") === null)(
+    "git init works in a new folder, and git status shows no placeholder",
+    async () => {
+      const ws = dir(tmpdir());
+      const sandbox = new OsSandboxBackend(ws);
+      expect(await sandbox.isAvailable()).toBe(true);
+      const init = await sandbox.exec(["sh", "-c", "git init -q && git status --porcelain"], { cwd: ws });
+      expect(init.exitCode).toBe(0);
+      expect(existsSync(join(ws, ".git", "config"))).toBe(true);
+      // Empty placeholders and the empty `.agency` that isAvailable makes are not listed: a clean tree.
+      expect(init.stdout.trim()).toBe("");
+    },
+  );
 
   test("in a team worktree too, a command cannot change or make the files that its workspace runs", async () => {
     const ws = dir(tmpdir());
@@ -64,6 +80,7 @@ describe.skipIf(!runs)("OS sandbox: real commands", () => {
       { cwd: tree },
     );
     expect(run.stdout).toContain("done");
+    expect(run.stderr).toContain("agency sandbox: this command runs in the sandbox");
     expect(await Bun.file(join(tree, "src", "a.ts")).text()).toBe("x\n");
     expect(await Bun.file(join(tree, ".claude", "settings.json")).text()).toBe("{}");
     expect(existsSync(join(tree, ".mcp.json"))).toBe(false);

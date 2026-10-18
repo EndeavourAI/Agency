@@ -47,6 +47,7 @@ import type { MessageOrigin } from "./sessions/entry.ts";
 import { modelSummarizer, type SentRequest, summarizeAtEnd } from "./sessions/summarize.ts";
 import type { TraceRecorder } from "./trace/recorder.ts";
 import { truncateToolResults } from "./truncate.ts";
+import { untestedEdits } from "./verify.ts";
 
 export interface ToolSpec<Input = Record<string, unknown>> extends ToolDefinition {
   handler(
@@ -225,6 +226,8 @@ export interface RunTurnOptions {
   forcePrimary?: boolean;
   /** The files that the user's message names are read before the first request, as Claude Code reads an @-mention. */
   prefetchNamedFiles?: boolean;
+  /** Before the turn ends, the model is told once of tests that import a file it changed and that it did not run. */
+  verifyEdits?: boolean;
 }
 
 const NEVER_ABORTED = new AbortController().signal;
@@ -315,6 +318,8 @@ export async function runTurn(
   let spoke = false;
   let outputContinuations = 0;
   let stopBlocked = false;
+  let verifyNoted = false;
+  const turnStart = messages.length;
   const tracer = options.traceRecorder;
   const turnSpanId = tracer
     ? tracer.startTurnSpan({
@@ -658,6 +663,16 @@ export async function runTurn(
         // A stop hook can refuse the end of the turn: its reason goes to the model. The step limit bounds this.
         const canGoOn =
           stopReason === "end_turn" && !options.signal?.aborted && iteration + 1 < maxToolIterations;
+        // Live: a model changed a file, ran only its own new test, and ended with the test of that file broken.
+        if (canGoOn && options.verifyEdits && !verifyNoted && options.cwd !== undefined) {
+          const unrun = untestedEdits(messages.slice(turnStart), options.cwd);
+          if (unrun.length > 0) {
+            verifyNoted = true;
+            const text = `[harness: these tests import a file that you changed in this turn, and no command of this turn ran them: ${unrun.join(", ")}. Run them before you finish, or say why they need not run.]`;
+            await append({ role: "user", content: [{ type: "text", text }] }, "harness");
+            continue;
+          }
+        }
         if (canGoOn && options.eventBus?.emitCollect) {
           const { errors } = await options.eventBus.emitCollect("turn.stop", {
             sessionId: options.sessionId,

@@ -753,6 +753,7 @@ export async function executeTurn(
               turnId: params.turnId,
               sessionId: params.sessionId,
               cwd: options.workspaceRoot,
+              prefetchNamedFiles: true,
               maxToolIterations: params.maxToolIterations ?? config.maxSteps,
               ...(config.compactionInstructions
                 ? { compactionInstructions: config.compactionInstructions }

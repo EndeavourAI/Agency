@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The files that a prompt names are read before the first request**, as Claude Code reads a file that a
+  message @-mentions: up to four files of the workspace, each as a `read` call and its result in the transcript.
+  In each live debug and edit session the first reply only read the files that the prompt named: a full round
+  trip to the model for the text the harness could give.
 - **`bash` runs a command in the folder that a `cwd` or `workdir` argument names**, in the workspace only: in
   two of three live edit sessions a model sent `cwd` unasked, as Codex has models name the folder of each command,
   and the command ran in the project root instead.

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   ApprovalRequest,
   CallerIdentity,
@@ -33,6 +34,7 @@ import type { AutoReviewer } from "./auto-review.ts";
 import { CODE_TOOL } from "./codemode.ts";
 import { permissionsFromRules } from "./config/claude-permissions.ts";
 import { type AgencyEvents, HookBlock, HookStop } from "./events.ts";
+import { namedFiles } from "./prefetch.ts";
 import { dedupeReads, pruneStaleResults } from "./prune.ts";
 import {
   compactMessages,
@@ -221,6 +223,8 @@ export interface RunTurnOptions {
   cheapModel?: string;
   /** Explicit override; when true the primary model always wins. */
   forcePrimary?: boolean;
+  /** The files that the user's message names are read before the first request, as Claude Code reads an @-mention. */
+  prefetchNamedFiles?: boolean;
 }
 
 const NEVER_ABORTED = new AbortController().signal;
@@ -486,6 +490,28 @@ export async function runTurn(
       summarize,
     );
   };
+  // Live: the first reply of each debug and edit session only read the files that the prompt named.
+  const prompt = messages.at(-1);
+  if (options.prefetchNamedFiles && options.cwd !== undefined && prompt?.role === "user") {
+    const text = prompt.content.every((block) => block.type === "text")
+      ? prompt.content.map((block) => block.text).join("\n")
+      : "";
+    const paths = resolveToolSpec(options.tools, "read") === undefined ? [] : namedFiles(text, options.cwd);
+    if (paths.length > 0) {
+      // Nine letters and digits: the form of a call id that the strictest provider (Mistral) takes.
+      const calls = paths.map((path) => ({
+        type: "tool_call" as const,
+        id: `pf${randomUUID().replace(/-/g, "").slice(0, 7)}`,
+        name: "read",
+        input: { path },
+      }));
+      for (const call of calls)
+        options.onEvent?.({ type: "tool_start", id: call.id, name: call.name, input: call.input });
+      await append({ role: "assistant", content: calls });
+      const results = await runTools(calls, toolOptions, new Map(), options.signal);
+      await append({ role: "user", content: dedupeReads(results, calls, messages.slice(0, -1)) });
+    }
+  }
   for (let iteration = 0; iteration < maxToolIterations; iteration++) {
     // One fold for each request: a long turn can fill the window more than once.
     let overflowRetried = false;

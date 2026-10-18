@@ -81,6 +81,18 @@ describe("createBashTool", () => {
 
   // Two sequential real shell spawns; PowerShell's cold start in this
   // sandbox is slow and variable enough that the 5s default is too tight.
+  test("a command runs in the folder that a cwd or workdir argument names, inside the workspace only", async () => {
+    const { tool, state, root } = setup();
+    mkdirSync(join(root, "subdir"));
+    // Live: models sent `cwd` unasked, which the command ignored.
+    for (const key of ["cwd", "workdir"]) {
+      const result = await tool.handler({ command: pwdCommand, [key]: "subdir" }, { signal });
+      expect(result.content.toLowerCase()).toContain("subdir");
+    }
+    expect(state.cwd).toBe(root);
+    await expect(tool.handler({ command: pwdCommand, cwd: ".." }, { signal })).rejects.toThrow();
+  }, 30_000);
+
   test("a cd lasts for its own command only: the next command starts in the root again", async () => {
     const { tool, state, root } = setup();
     mkdirSync(join(root, "subdir"));

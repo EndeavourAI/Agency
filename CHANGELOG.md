@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`bash` runs a command in the folder that a `cwd` or `workdir` argument names**, in the workspace only: in
+  two of three live edit sessions a model sent `cwd` unasked, as Codex has models name the folder of each command,
+  and the command ran in the project root instead.
 - **A whole `read` of a file over 20 KB gives its outline**: the numbered line of each declaration (function,
   class, type, method, Markdown heading), as the file skeletons that Agentless shows a model, and a note to read
   the lines it needs with offset and limit. In research sessions, whole reads of 20 KB to 45 KB files were most of

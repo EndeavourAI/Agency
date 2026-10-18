@@ -1,3 +1,4 @@
+import { isAbsolute, join } from "node:path";
 import { isReadOnlyCommand } from "@agency/guard";
 import { t } from "@agency/i18n";
 import { AgencyError, ErrorCode } from "@agency/schema";
@@ -160,7 +161,14 @@ export function createBashTool(
   // Under an OS sandbox with no network, a command can ask for it: the user decides each time, as the escalation
   // of Codex and the unsandboxed retry of Claude Code. Else a command that needs the network has no way on.
   const offline = (deps.sandbox as { offline?: boolean }).offline === true;
-  const spec: ToolSpec<{ command: string; background?: boolean; timeout?: number; network?: boolean }> = {
+  const spec: ToolSpec<{
+    command: string;
+    background?: boolean;
+    timeout?: number;
+    network?: boolean;
+    cwd?: string;
+    workdir?: string;
+  }> = {
     name: "bash",
     description:
       `Runs a shell command in ${shell.label}. ` +
@@ -202,6 +210,11 @@ export function createBashTool(
 
     async handler(input, ctx) {
       deps.sandbox.checkCommand(input.command);
+      // Models name the folder of a command unasked, as Codex has them do: it runs there, in the workspace only.
+      const named = str(input.workdir) || str(input.cwd);
+      const cwd = named
+        ? deps.sandbox.resolvePath(isAbsolute(named) ? named : join(state.cwd, named))
+        : state.cwd;
       const network = offline && input.network === true;
       if (network) {
         // Asked in every mode, as a rule or a mode allows the command and not its way out of the sandbox.
@@ -232,11 +245,11 @@ export function createBashTool(
         if (wrapHeld === undefined && asContainerExecBackend(deps.sandbox) !== undefined) {
           return { content: t("tool.bash.background_refused"), isError: true as const };
         }
-        const held = wrapHeld?.call(deps.sandbox, argv, state.cwd, network);
+        const held = wrapHeld?.call(deps.sandbox, argv, cwd, network);
         let info: ReturnType<typeof processManager.spawn>;
         try {
           info = processManager.spawn(held?.argv ?? argv, {
-            cwd: state.cwd,
+            cwd,
             ...(ctx.env === undefined ? {} : { env: ctx.env }),
             ...(held === undefined ? {} : { onExit: held.release }),
           });
@@ -264,7 +277,7 @@ export function createBashTool(
         timedOut: boolean,
         normalizeCwd: (cwd: string) => string = (cwd) => cwd,
       ): ToolResult => {
-        const parsed = parseShellOutput(outcome.stdout, state.cwd);
+        const parsed = parseShellOutput(outcome.stdout, cwd);
         const { output, cwd: markerCwd } = parsed;
         // `exit 3` or `set -e` ends the shell before the wrapper prints its marker; the process exit code is then the only signal.
         const exitCode = outcome.stdout.includes(EXIT_MARKER) ? parsed.exitCode : (outcome.exitCode ?? 0);
@@ -274,7 +287,7 @@ export function createBashTool(
         if (!outcome.aborted && /\b(cd|pushd)\b/.test(input.command)) {
           let moved = true;
           try {
-            moved = deps.sandbox.resolvePath(normalizeCwd(markerCwd)) !== deps.sandbox.resolvePath(state.cwd);
+            moved = deps.sandbox.resolvePath(normalizeCwd(markerCwd)) !== deps.sandbox.resolvePath(cwd);
           } catch {}
           if (moved) cwdNotice = `\n${t("tool.bash.cwd_reset")}`;
         }
@@ -302,12 +315,12 @@ export function createBashTool(
 
       const container = asContainerExecBackend(deps.sandbox);
       if (container !== undefined) {
-        return runContainerExec(container, argv, state.cwd, ctx, timeout, finish, network);
+        return runContainerExec(container, argv, cwd, ctx, timeout, finish, network);
       }
 
       const proc = Bun.spawn(argv, {
         windowsHide: true,
-        cwd: state.cwd,
+        cwd,
         env: { ...modelCommandEnv(), ...ctx.env },
         stdout: "pipe",
         stderr: "pipe",

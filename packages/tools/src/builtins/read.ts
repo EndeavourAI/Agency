@@ -72,14 +72,17 @@ function outlineOf(content: string): string | undefined {
   for (const [index, line] of lines.entries()) {
     if (!DECLARATION.some((pattern) => pattern.test(line))) continue;
     if (kept.length === OUTLINE_MAX) return undefined;
-    kept.push(`${String(index + 1).padStart(6)}  ${line.length > 160 ? `${line.slice(0, 160)}…` : line}`);
+    kept.push(`${index + 1}\t${line.length > 160 ? `${line.slice(0, 160)}…` : line}`);
   }
   if (kept.length < 3) return undefined;
   const size = Math.round(Buffer.byteLength(content, "utf8") / 1000);
   return `${kept.join("\n")}\n[The file has ${lines.length} lines (${size} KB), too many to send whole: these are the lines of its declarations. To see the code, read with offset and limit (limit 2000 for the whole file), or grep.]`;
 }
 
-/** Each line with its number, as Claude Code reads: with none, models read again with `sed -n` to cite or find one. */
+/**
+ * Each line after its number and a tab, as Claude Code reads: with none, models read again with `sed -n` to cite or
+ * find one. A padded number and two spaces cost about 30% more tokens than the file, a tab about 11% (o200k).
+ */
 function numbered(content: string, offset: number, limit: number | undefined): string {
   const lines = content.split("\n");
   if (lines.at(-1) === "") lines.pop();
@@ -87,7 +90,7 @@ function numbered(content: string, offset: number, limit: number | undefined): s
   const out: string[] = [];
   let used = 0;
   for (let index = offset - 1; index < end && out.length < HEAD_LINES; index++) {
-    const rendered = `${String(index + 1).padStart(6)}  ${lines[index]}`;
+    const rendered = `${index + 1}\t${lines[index]}`;
     used += Buffer.byteLength(rendered, "utf8") + 1;
     // One line over the limit (a minified file) is the loop's to cut.
     if (used > HEAD_BYTES && out.length > 0) break;

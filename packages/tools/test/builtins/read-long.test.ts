@@ -45,8 +45,8 @@ test("a whole read of a large source file gives its outline, and a range gives t
   ].join("\n");
   const { content } = await readOf("big.ts", text);
   // Live: whole reads of 20 to 45 KB files were most of the input of a research session, sent again in each request.
-  expect(content).toContain("    45  export async function runTurn(options: Options) {");
-  expect(content).toContain("   127  class Store {");
+  expect(content).toContain("45\texport async function runTurn(options: Options) {");
+  expect(content).toContain("127\tclass Store {");
   expect(content).toContain("helper()");
   expect(content).not.toContain("compute(3)");
   expect(content).toMatch(/\[The file has 211 lines .* read with offset and limit/);
@@ -58,14 +58,14 @@ test("a whole read of a large source file gives its outline, and a range gives t
 test("a large file with no outline to give comes as its head", async () => {
   const text = Array.from({ length: 5000 }, (_, i) => `line ${i + 1}`).join("\n");
   const { content } = await readOf("long.txt", text);
-  expect(content).toContain("  1000  line 1000\n");
+  expect(content).toContain("1000\tline 1000\n");
 });
 
 test("a read of a long file stops where the loop would cut it, and says where the rest starts", async () => {
   const text = Array.from({ length: 5000 }, (_, i) => `line ${i + 1}`).join("\n");
   const { content } = await readOf("long.txt", text);
-  expect(content.startsWith("     1  line 1\n     2  line 2\n")).toBe(true);
-  expect(content).toContain("  2000  line 2000\n");
+  expect(content.startsWith("1\tline 1\n2\tline 2\n")).toBe(true);
+  expect(content).toContain("2000\tline 2000\n");
   expect(content).not.toContain("line 2001");
   expect(content).toContain("The file has 5000 lines: these are lines 1 to 2000. Read with offset 2001");
 });
@@ -78,5 +78,5 @@ test("lines that are long make the read stop before 50 KB", async () => {
 });
 
 test("a file under both limits comes whole, with no note", async () => {
-  expect((await readOf("short.txt", "a\nb\n")).content).toBe("     1  a\n     2  b");
+  expect((await readOf("short.txt", "a\nb\n")).content).toBe("1\ta\n2\tb");
 });

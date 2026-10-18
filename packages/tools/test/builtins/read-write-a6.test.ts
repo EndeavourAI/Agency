@@ -29,8 +29,8 @@ describe("read: offset/limit + line numbers (A6)", () => {
     const tool = createReadTool(depsFor(root));
 
     const result = await tool.handler({ path: "lines.txt", offset: 10, limit: 3 }, { signal });
-    expect(result.content).toContain("    10  line 10");
-    expect(result.content).toContain("    12  line 12");
+    expect(result.content).toContain("10\tline 10");
+    expect(result.content).toContain("12\tline 12");
     expect(result.content).not.toContain("line 13");
     expect(result.content).not.toContain("line 9");
   });

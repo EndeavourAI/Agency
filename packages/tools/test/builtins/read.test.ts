@@ -29,7 +29,8 @@ describe("createReadTool", () => {
     const result = await tool.handler({ path: "a.ts" }, { signal });
 
     // Live: with no numbers, models read the file again with `sed -n` or a slice to cite or find a line.
-    expect(result.content).toBe("     1  export const x = 1;\n     2  \n     3  export const y = 2;");
+    // A number and a tab cost about 11% more tokens than the file (o200k); a padded number and two spaces about 30%.
+    expect(result.content).toBe("1\texport const x = 1;\n2\t\n3\texport const y = 2;");
     expect(result.isError).toBeFalsy();
   });
 
@@ -45,10 +46,10 @@ describe("createReadTool", () => {
       { offset: 2, end: 3 },
     ]) {
       const result = await tool.handler({ path: "a.txt", ...range } as { path: string }, { signal });
-      expect(result.content).toBe("     2  two\n     3  three");
+      expect(result.content).toBe("2\ttwo\n3\tthree");
     }
     const open = await tool.handler({ path: "a.txt", start: 3 } as { path: string }, { signal });
-    expect(open.content).toBe("     3  three\n     4  four");
+    expect(open.content).toBe("3\tthree\n4\tfour");
   });
 
   test("rejects a path outside the sandbox root", async () => {

@@ -21,6 +21,8 @@ describe("applyEdit", () => {
       newText: "     2    log();\n  return 1;",
     });
     expect(added).toBe("function foo() {\n  log();\n  return 1;\n}\n");
+    const tabbed = applyEdit(content, { oldText: "2\t  return 1;", newText: "2\t  return 3;" });
+    expect(tabbed).toBe("function foo() {\n  return 3;\n}\n");
     // Numbers that do not count up one by one are text of the file, not of a read.
     expect(() => applyEdit("a\n", { oldText: "     1  a\n     3  b", newText: "x" })).toThrow();
   });

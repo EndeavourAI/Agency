@@ -78,7 +78,7 @@ function changedLines(after: string, hunks: readonly EditHunk[]): string {
     blocks.push(
       lines
         .slice(start, end + 1)
-        .map((line, i) => `${String(start + i + 1).padStart(6)}  ${line}`)
+        .map((line, i) => `${start + i + 1}\t${line}`)
         .join("\n"),
     );
   }

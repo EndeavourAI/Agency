@@ -329,7 +329,8 @@ export function restorePairedIndent(oldText: string, newText: string): string {
     .join("\n");
 }
 
-const READ_NUMBER = /^ *(\d+) {2}/;
+/** The prefix of a read line: a number and a tab, or the padded number and two spaces of older sessions. */
+const READ_NUMBER = /^ *(\d+)(?:\t| {2})/;
 
 /**
  * Text copied from a read with its numbers: each line has the prefix of a read, and the numbers count up one by one,
@@ -345,7 +346,7 @@ function withoutReadNumbers(text: string): string | undefined {
     first ??= Number(number);
     if (Number(number) !== first + index) return undefined;
   }
-  return lines.length === 0 ? undefined : text.replace(/^ *\d+ {2}/gm, "");
+  return lines.length === 0 ? undefined : text.replace(/^ *\d+(?:\t| {2})/gm, "");
 }
 
 export interface HunkAutocorrect {
@@ -363,7 +364,7 @@ export function autocorrectHunk(hunk: EditHunk): HunkAutocorrect {
   if (unnumbered !== undefined) {
     oldText = unnumbered;
     // New lines that the model added have no number of their own.
-    newText = newText.replace(/^ *\d+ {2}/gm, "");
+    newText = newText.replace(/^ *\d+(?:\t| {2})/gm, "");
     notes.push("removed the line numbers of a read from oldText");
   }
   const oldStripped = stripTrailingSlop(oldText);

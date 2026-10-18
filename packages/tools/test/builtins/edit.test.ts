@@ -87,10 +87,10 @@ describe("createEditTool", () => {
     expect(result.isError).toBeFalsy();
     const shown = result.content.split(String.fromCharCode(10));
     expect(shown[0]).toBe("edited a.ts");
-    expect(shown).toContain("    20  const v20 = 200;");
-    expect(shown).toContain("    17  const v17 = 17;");
-    expect(shown).toContain("    23  const v23 = 23;");
-    expect(shown).not.toContain("    16  const v16 = 16;");
+    expect(shown).toContain("20\tconst v20 = 200;");
+    expect(shown).toContain("17\tconst v17 = 17;");
+    expect(shown).toContain("23\tconst v23 = 23;");
+    expect(shown).not.toContain("16\tconst v16 = 16;");
     expect(tool.renderResult?.({ content: result.content, isError: false })).toBe("edited a.ts");
   });
 });

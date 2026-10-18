@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A line of a read or of an edit result starts with its number and a tab**, not a number padded to six places
+  and two spaces: measured with o200k on three source files, the padded form added 28% to 34% to the tokens of
+  the file and the tab form 10% to 12%. `edit` takes text copied with either form.
 - **The environment block names the workspace `project root`**, not `cwd`, with the note that the shell starts
   each command there and tools take paths relative to it: the words of the path rule of the prompt. With
   `cwd: <path>`, a model wrote that path out in each call of a debug session (4 of 4).

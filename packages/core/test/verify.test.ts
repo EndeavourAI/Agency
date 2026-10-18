@@ -9,7 +9,7 @@ import type { ProviderAdapter, ProviderRequest, StreamEvent } from "@agency/prov
 import { Scheduler } from "@agency/providers";
 import type { Message } from "@agency/schema";
 import { runTurn } from "../src/loop.ts";
-import { untestedEdits } from "../src/verify.ts";
+import { untestedEdits, untestedNote } from "../src/verify.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -53,6 +53,27 @@ test("names the tests that import a file the turn changed and that no command of
   expect(untestedEdits([call("e3", "write", { path: "src/other.ts" }), result("e3")], root)).toEqual([
     "test/other.test.ts",
   ]);
+  // Live: the test that a changed grep.ts broke imported it through builtin-set.ts, two hops away.
+  writeFileSync(join(root, "src", "set.ts"), 'export * from "./other.ts";\n');
+  writeFileSync(join(root, "test", "set.test.ts"), 'import "../src/set";\n');
+  execFileSync("git", ["add", "."], { cwd: root });
+  expect(untestedEdits([call("e4", "edit", { path: "src/other.ts" }), result("e4")], root)).toEqual([
+    "test/other.test.ts",
+    "test/set.test.ts",
+  ]);
+});
+
+test("the note names five tests and the folders of the rest", () => {
+  const note = untestedNote([
+    "a/1.test.ts",
+    "a/2.test.ts",
+    "a/3.test.ts",
+    "a/4.test.ts",
+    "a/5.test.ts",
+    "b/6.test.ts",
+  ]);
+  expect(note).toContain("a/5.test.ts and 1 more in b.");
+  expect(note).not.toContain("6.test.ts");
 });
 
 test("a turn that would end with such a test unrun is told once, and goes on", async () => {

@@ -7,8 +7,9 @@ const EDIT_TOOLS = new Set(["edit", "write", "notebook_edit"]);
 const TEST_COMMAND =
   /\b(?:bun|npm|pnpm|yarn|npx|vitest|jest|pytest|go|cargo|deno)\b.*\btest\b|\bvitest\b|\bjest\b|\bpytest\b/;
 const TEST_FILE_ARG = /\.(?:test|spec)\.|_test\.|\btest_\w/;
-const RELATIVE_IMPORT = /(?:from\s+|require\(\s*|import\(\s*)["'](\.{1,2}\/[^"']+)["']/g;
+const RELATIVE_IMPORT = /(?:from\s+|import\s+|require\(\s*|import\(\s*)["'](\.{1,2}\/[^"']+)["']/g;
 const MAX_LISTED = 5;
+const SOURCE_EXTENSIONS = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
 
 const withoutExtension = (path: string): string => path.replace(/\.[cm]?[jt]sx?$/, "");
 
@@ -30,8 +31,8 @@ function trackedTests(root: string): string[] {
 
 /**
  * The tests that import a file that `turn` changed (or that it changed itself) and that no test command of the turn
- * ran. Imports by a relative path of JS and TS only.
- * ponytail: one import hop, JS/TS only; a Python or Go test of a changed file goes unnamed.
+ * ran: direct importers first, then those two imports away. Imports by a relative path of JS and TS only.
+ * ponytail: two import hops, JS/TS only; a Python or Go test of a changed file goes unnamed.
  */
 export function untestedEdits(turn: Message[], root: string): string[] {
   const calls = new Map<string, { name: string; input: Record<string, unknown> }>();
@@ -53,20 +54,38 @@ export function untestedEdits(turn: Message[], root: string): string[] {
   }
   if (edited.size === 0) return [];
   const sources = new Set([...edited].map(withoutExtension));
-  const related = trackedTests(root).filter((test) => {
-    if (edited.has(test)) return true;
-    let text: string;
-    try {
-      text = readFileSync(join(root, test), "utf8");
-    } catch {
-      return false;
+  const imports = new Map<string, string[]>();
+  /** What `file` imports by a relative path, from the root with no extension. */
+  const importsOf = (file: string): string[] => {
+    const cached = imports.get(file);
+    if (cached !== undefined) return cached;
+    const found: string[] = [];
+    imports.set(file, found);
+    let text = "";
+    for (const extension of SOURCE_EXTENSIONS) {
+      try {
+        text = readFileSync(join(root, file + extension), "utf8");
+        break;
+      } catch {}
     }
-    for (const [, spec] of text.matchAll(RELATIVE_IMPORT)) {
-      const target = relative(root, resolve(root, dirname(test), spec ?? "")).replace(/\\/g, "/");
-      if (sources.has(withoutExtension(target))) return true;
-    }
-    return false;
-  });
+    for (const [, spec] of text.matchAll(RELATIVE_IMPORT))
+      found.push(
+        withoutExtension(relative(root, resolve(root, dirname(file), spec ?? "")).replace(/\\/g, "/")),
+      );
+    return found;
+  };
+  // Live: the test that a changed grep.ts broke imported it through builtin-set.ts, two hops away.
+  const hops = (test: string): number => {
+    if (edited.has(test)) return 0;
+    const direct = importsOf(test);
+    if (direct.some((file) => sources.has(file))) return 1;
+    return direct.some((file) => importsOf(file).some((next) => sources.has(next))) ? 2 : 3;
+  };
+  const related = trackedTests(root)
+    .map((test) => ({ test, hops: hops(test) }))
+    .filter(({ hops }) => hops < 3)
+    .sort((a, b) => a.hops - b.hops)
+    .map(({ test }) => test);
   const tests = commands.filter((command) => TEST_COMMAND.test(command));
   const ran = (test: string): boolean =>
     tests.some((command) => {
@@ -74,5 +93,13 @@ export function untestedEdits(turn: Message[], root: string): string[] {
       // A run with no test file named runs a whole suite or folder: it counts for each test.
       return command.includes(name) || !TEST_FILE_ARG.test(command);
     });
-  return related.filter((test) => !ran(test)).slice(0, MAX_LISTED);
+  return related.filter((test) => !ran(test));
+}
+
+/** The note for the model: the first tests by name, the folders of the rest, as running a folder runs them all. */
+export function untestedNote(unrun: string[]): string {
+  const rest = unrun.slice(MAX_LISTED);
+  const folders = [...new Set(rest.map((test) => dirname(test).replace(/\\/g, "/")))];
+  const more = rest.length === 0 ? "" : ` and ${rest.length} more in ${folders.join(", ")}`;
+  return `[harness: these tests import a file that you changed in this turn, and no command of this turn ran them: ${unrun.slice(0, MAX_LISTED).join(", ")}${more}. Run them before you finish, or say why they need not run.]`;
 }

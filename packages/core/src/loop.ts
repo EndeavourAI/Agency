@@ -47,7 +47,7 @@ import type { MessageOrigin } from "./sessions/entry.ts";
 import { modelSummarizer, type SentRequest, summarizeAtEnd } from "./sessions/summarize.ts";
 import type { TraceRecorder } from "./trace/recorder.ts";
 import { truncateToolResults } from "./truncate.ts";
-import { untestedEdits } from "./verify.ts";
+import { untestedEdits, untestedNote } from "./verify.ts";
 
 export interface ToolSpec<Input = Record<string, unknown>> extends ToolDefinition {
   handler(
@@ -668,8 +668,7 @@ export async function runTurn(
           const unrun = untestedEdits(messages.slice(turnStart), options.cwd);
           if (unrun.length > 0) {
             verifyNoted = true;
-            const text = `[harness: these tests import a file that you changed in this turn, and no command of this turn ran them: ${unrun.join(", ")}. Run them before you finish, or say why they need not run.]`;
-            await append({ role: "user", content: [{ type: "text", text }] }, "harness");
+            await append({ role: "user", content: [{ type: "text", text: untestedNote(unrun) }] }, "harness");
             continue;
           }
         }

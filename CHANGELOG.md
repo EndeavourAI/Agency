@@ -71,11 +71,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 - **`read` takes a line range by the names of other harnesses** (`start`/`end`, `start_line`/`end_line`,
   `startLine`/`endLine`): in a live session a model sent `{start: 940, end: 1020}` twice, the read ignored both
   and gave the whole file, and the model went on with `sed -n`.
-- **`read` gives each line after its number, for a whole file too**, as the Read tool of Claude Code does: with
-  no numbers, models read a file whole and then again in slices or with `sed -n` to cite a line or to find where
-  to edit (44 `cat`/`sed -n` calls and 60 second reads of a file in 207 reads, over the stored sessions). `edit`
-  takes text that a model copied with those numbers, as the file has it: each line has the prefix of a read and
-  the numbers count up one by one, which text of a file almost never does.
+- **`edit` takes text that a model copied with the line numbers of a read**, as the file has it: each line has
+  the prefix of a read and the numbers count up one by one, which text of a file almost never does. A whole read
+  that fits stays raw: numbering it too, as the Read tool of Claude Code does, was tried live, and in three of
+  three paired runs of a research task it raised input tokens (in the last pair, a median of 846K numbered against
+  725K raw, and 28 replies against 17), while edit and debug runs did not change.
 - **Each `bash` command starts in the project root**, as each command of Codex names its folder: a `cd` lasts
   for its own command only, and a command with a `cd` that moved says so. In live sessions the folder that a
   `cd` kept was lost: a model ran `cd packages/tools && bun test` from inside `packages/tools` (`No such file or

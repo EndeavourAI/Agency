@@ -110,9 +110,9 @@ export function createReadTool(deps: ToolDeps, options?: ReadToolOptions): ToolS
   const spec: ToolSpec<ReadInput> = {
     name: "read",
     description:
-      "Reads the contents of a file at the given path, each line after its number (not part of the file: " +
-      "leave it out of edit text). For a part, pass offset (1-based line to start from) and limit (lines " +
-      "per read); files over 1MB must be read in parts.",
+      "Reads the contents of a file at the given path. A whole file comes as it is; a part, or a file too large " +
+      "to send whole, has each line after its number (not part of the file: leave it out of edit text). For a " +
+      "part, pass offset (1-based line to start from) and limit (lines per read); files over 1MB must be read in parts.",
     inputSchema: {
       type: "object",
       properties: {
@@ -176,6 +176,8 @@ export function createReadTool(deps: ToolDeps, options?: ReadToolOptions): ToolS
       // Only a file that a whole read would cut: live, an outline of a 30 KB file had a model page through it in
       // seven reads of 100 lines, each a round trip that sent the whole history again.
       const { text, cut } = numbered(content, offset, limit);
+      // Raw when it fits: in three paired live runs numbered whole reads raised research input 14% to 35%.
+      if (!slicing && !cut) return { content };
       return { content: (!slicing && cut && outlineOf(content)) || text };
     },
   };

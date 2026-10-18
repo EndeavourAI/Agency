@@ -91,5 +91,5 @@ test("lines that are long make the read stop before 50 KB", async () => {
 });
 
 test("a file under both limits comes whole, with no note", async () => {
-  expect((await readOf("short.txt", "a\nb\n")).content).toBe("1\ta\n2\tb");
+  expect((await readOf("short.txt", "a\nb\n")).content).toBe("a\nb\n");
 });

@@ -21,16 +21,15 @@ function tempDeps(): { deps: ToolDeps; root: string } {
 const signal = new AbortController().signal;
 
 describe("createReadTool", () => {
-  test("reads a whole file with the number of each line, as a slice gives it", async () => {
+  test("reads a whole file that fits as it is, with no line numbers", async () => {
     const { deps, root } = tempDeps();
     writeFileSync(join(root, "a.ts"), "export const x = 1;\n\nexport const y = 2;\n");
 
     const tool = createReadTool(deps);
     const result = await tool.handler({ path: "a.ts" }, { signal });
 
-    // Live: with no numbers, models read the file again with `sed -n` or a slice to cite or find a line.
-    // A number and a tab cost about 11% more tokens than the file (o200k); a padded number and two spaces about 30%.
-    expect(result.content).toBe("1\texport const x = 1;\n2\t\n3\texport const y = 2;");
+    // Numbered whole reads were tried live: research input rose in three of three paired runs.
+    expect(result.content).toBe("export const x = 1;\n\nexport const y = 2;\n");
     expect(result.isError).toBeFalsy();
   });
 

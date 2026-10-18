@@ -46,7 +46,7 @@ import {
 import type { MessageOrigin } from "./sessions/entry.ts";
 import { modelSummarizer, type SentRequest, summarizeAtEnd } from "./sessions/summarize.ts";
 import type { TraceRecorder } from "./trace/recorder.ts";
-import { foldFirstReads, relativePaths } from "./transcript.ts";
+import { relativePaths } from "./transcript.ts";
 import { truncateToolResults } from "./truncate.ts";
 import { untestedEdits, untestedNote } from "./verify.ts";
 
@@ -299,47 +299,13 @@ export async function runTurn(
   const messages = [...options.session];
   // The reviewer of auto mode reads the transcript of this turn as it grows.
   const review = options.reviewApproval;
-  const ask = options.requestApproval;
-  // An ask shows the stored transcript: a held reply is stored first, and then no longer folds.
-  const toolOptions: RunTurnOptions = {
-    ...options,
-    ...(ask === undefined
-      ? {}
-      : {
-          requestApproval: async (request) => {
-            await store();
-            return ask(request);
-          },
-        }),
-    ...(review === undefined
-      ? {}
-      : {
-          reviewApproval: async (request) => {
-            await store();
-            return review(request, messages);
-          },
-        }),
-  };
+  const toolOptions: RunTurnOptions =
+    review === undefined ? options : { ...options, reviewApproval: (request) => review(request, messages) };
   // Grants are kept by options object: each copy of the options shares the one list.
   turnGrants.set(toolOptions, grants);
-  // Live: sessions whose first reply made one call went on at 1.1 calls a reply (26.7 replies), the others at 2.6.
-  // So a first single read waits to be stored until the next reply shows whether it folds into it (foldFirstReads).
-  let held: Array<[Message, MessageOrigin | undefined]> = [];
-  const store = async (): Promise<void> => {
-    for (const [message, origin] of held.splice(0)) await options.onMessage?.(message, origin);
-  };
-  const append = async (message: Message, origin?: MessageOrigin, hold = false): Promise<void> => {
+  const append = async (message: Message, origin?: MessageOrigin): Promise<void> => {
     messages.push(message);
-    if (hold) {
-      held.push([message, origin]);
-      return;
-    }
-    await store();
     await options.onMessage?.(message, origin);
-  };
-  const readOnlyBlock = (call: Extract<ContentBlock, { type: "tool_call" }>): boolean => {
-    const spec = resolveToolSpec(options.tools, call.name);
-    return spec !== undefined && readOnlyCall(spec, call.input);
   };
   const maxToolIterations = options.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS;
   const toolDefs = (): ToolDefinition[] =>
@@ -633,18 +599,8 @@ export async function runTurn(
       }
       // A reply with no content is not stored: strict providers reject an empty message.
       // Live: a session whose first call wrote the absolute root wrote it in every later call; a model copies itself.
-      if (turn.content.length > 0) {
-        const singleRead =
-          turn.content.length === 1 &&
-          turn.content[0]?.type === "tool_call" &&
-          readOnlyBlock(turn.content[0]);
-        const first = !messages.slice(turnStart).some((m) => m.role === "assistant");
-        await append(
-          { role: "assistant", content: relativePaths(turn.content, options.cwd) },
-          undefined,
-          singleRead && (first ? held.length === 0 : held.length === 2),
-        );
-      }
+      if (turn.content.length > 0)
+        await append({ role: "assistant", content: relativePaths(turn.content, options.cwd) });
       spoke = turn.content.some((block) => block.type === "text" && block.text.trim() !== "");
       cumulativeUsage = addUsage(cumulativeUsage, turn.usage);
       requestTokens = turn.usage.inputTokens + turn.usage.outputTokens;
@@ -881,11 +837,7 @@ export async function runTurn(
         };
       }
       const visible = options.keepToolResults ? messages : pruneStaleResults(messages);
-      const reply: Message = { role: "user", content: dedupeReads(results, toolCalls, visible) };
-      if (held.length === 3 && foldFirstReads(messages, turnStart, reply, readOnlyBlock)) {
-        held = [];
-        for (const message of messages.slice(-2)) await options.onMessage?.(message);
-      } else await append(reply, undefined, held.length === 1);
+      await append({ role: "user", content: dedupeReads(results, toolCalls, visible) });
     } catch (error) {
       if (tracer && modelSpanId) {
         try {
@@ -906,7 +858,6 @@ export async function runTurn(
       endTurnError();
       emitErrorEvent(error, options.onEvent);
       if (calls.length > 0) await append(unrunResults(calls, "error"));
-      await store();
       throw error;
     } finally {
       // Calls that started early and whose results the turn did not take are cancelled; taken ones are done already.
@@ -915,7 +866,6 @@ export async function runTurn(
     }
   }
 
-  await store();
   // The stop reason stays tool_use; the error tells a caller with no event listener that the work is not finished.
   let turnError = salvageError;
   if (stopReason === "tool_use" && !options.signal?.aborted) {

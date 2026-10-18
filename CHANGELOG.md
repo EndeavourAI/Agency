@@ -8,14 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
-- **The history that a model sees shows it the habits to copy.** A model copies its own earlier replies: over 64
-  stored research sessions, those whose first reply made one call went on at 1.1 calls a reply (26.7 replies),
-  the others at 2.6 (16.9), and the one session whose first call wrote the absolute project root wrote it in every
-  later call. A note at reply 3 (the serial-read reminder) changed nothing: the next reply made more than one call in
-  2 of 17 sessions. So an absolute path inside the project is kept relative in the history (the tool still gets
-  the path as sent; the reply is new, so no cached prefix changes), and when the first two replies of a turn are
-  each one read-only call, they are shown, and stored, as one reply with both calls. That costs one uncached copy
-  of the first result; a call that asks for approval stores the held reply first, and then nothing folds.
+- **An absolute path inside the project is kept relative in the history that the model sees**: a model copies
+  its own earlier calls, and in the stored research sessions the one whose first call wrote the absolute project
+  root wrote it in every later call (up to 38 a session). The tool still gets the path as sent, and the reply is
+  new, so no cached prefix changes. In 8 live research runs after it no call sent an absolute path, though most
+  runs before it sent none either: the habit comes in some sessions only.
 - **`grep` names each file once, above its match lines** (`12:text`), as `rg --heading` and OpenCode's grep print
   them, instead of the path on every line. On four broad greps that live research sessions sent, the result fell
   from 47K to 33K characters (−29%) with every match kept. A search with `context` keeps the path on each line.

@@ -470,6 +470,13 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Fixed
 
+- **Smaller fixes from a review of the sandbox work**: the sandbox proxy no longer leaves a connection open when
+  its client leaves during the DNS lookup, tries each checked address in turn (as a connect by name does), and
+  counts an IPv4 address carried in an IPv6 one (NAT64, 6to4, `::127.0.0.1`) as that address; an IPv6 entry of
+  `allowedDomains` matches with or without brackets; on macOS a write to `.Claude` counts as one to `.claude`; the
+  default sandbox is tried with the network settings of the config, so `allowedDomains` with no `socat` falls back
+  to software instead of stopping the daemon; a rate limit or a server error no longer turns off the Gemini prefix
+  cache for an hour; and the network prompt of `bash` says that local sockets open too.
 - **A Gemini request no longer waits for a refused cache each time**: when the API refused to make the explicit
   cache of the prompt prefix (a prefix under the model's minimum, a model with no explicit cache), the refusal was
   not kept, so each request first made the same refused call. It is now kept for the life of the cache.

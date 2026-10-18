@@ -188,7 +188,9 @@ export function secretShellValues(shellEnv: Record<string, string> | undefined):
  * why the default fell back, for the log.
  */
 export async function chooseSandboxBackend(
-  config: { sandbox?: { backend?: "software" | "docker" | "os"; allowNetwork?: boolean } },
+  config: {
+    sandbox?: { backend?: "software" | "docker" | "os"; allowNetwork?: boolean; allowedDomains?: string[] };
+  },
   workspaceRoot: string,
   platform: NodeJS.Platform = process.platform,
 ): Promise<string | undefined> {
@@ -199,7 +201,12 @@ export async function chooseSandboxBackend(
     sandbox.backend = "software";
     return undefined;
   }
-  const probe = new OsSandboxBackend(workspaceRoot, {}, undefined, { platform });
+  // The probe has the network settings of the real backend: `allowedDomains` needs socat on Linux.
+  const probe = new OsSandboxBackend(workspaceRoot, {}, undefined, {
+    platform,
+    ...(sandbox.allowNetwork === undefined ? {} : { allowNetwork: sandbox.allowNetwork }),
+    ...(sandbox.allowedDomains === undefined ? {} : { allowedDomains: sandbox.allowedDomains }),
+  });
   sandbox.backend = (await probe.isAvailable()) ? "os" : "software";
   return sandbox.backend === "os"
     ? undefined

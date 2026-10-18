@@ -209,7 +209,9 @@ async function explicitPrefixCache(
       }),
       signal: request.signal,
     });
-    if (!res.ok) return refused();
+    // Only a refusal of this prefix is kept: a rate limit or a server error is gone at the next request.
+    if (res.status === 400 || res.status === 404) return refused();
+    if (!res.ok) return undefined;
     const payload = (await res.json().catch(() => undefined)) as { name?: string } | undefined;
     if (!payload?.name) return refused();
     prefixCache.set(key, { name: payload.name, expiresAt: Date.now() + ttlSeconds * 1000 });

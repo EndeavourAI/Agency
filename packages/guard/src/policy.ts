@@ -1236,7 +1236,8 @@ export class PermissionsGate implements ToolPolicy {
           : [];
     for (const target of targets) {
       const rel = relativeWorkspacePath(this.options.workspaceRoot, target);
-      const key = process.platform === "win32" ? rel.toLowerCase() : rel;
+      // The disks of Windows and macOS ignore case: `.Claude` is `.claude` there.
+      const key = process.platform === "win32" || process.platform === "darwin" ? rel.toLowerCase() : rel;
       const under = (dir: string) => key === dir || key.startsWith(`${dir}/`);
       // In a worktree, the files of that workspace count as those of this one.
       const inner = /^\.agency\/worktrees\/[^/]+\/(.+)$/.exec(key)?.[1];

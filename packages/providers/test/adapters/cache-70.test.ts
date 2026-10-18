@@ -401,3 +401,29 @@ test("google asks for an explicit cache one time when the API refuses it, not be
   expect(urls.filter((url) => url.includes("/cachedContents"))).toHaveLength(1);
   expect(urls.filter((url) => url.includes(":streamGenerateContent"))).toHaveLength(2);
 });
+
+test("google keeps no refusal for a rate limit: the next request asks for the cache again", async () => {
+  let creates = 0;
+  const sse = `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }] })}\n\n`;
+  const http: HttpClient = {
+    fetch: async (url) => {
+      if (url.includes("/cachedContents")) {
+        creates += 1;
+        return creates === 1
+          ? new Response("{}", { status: 429 })
+          : new Response(JSON.stringify({ name: "cachedContents/later" }));
+      }
+      return sseResponse(sse);
+    },
+  };
+  const request = {
+    model: "gemini-rate-limited",
+    apiKey: "k",
+    systemSegments: [{ stability: "shared" as const, text: pad("a prefix asked twice") }],
+    messages: [{ role: "user" as const, content: [{ type: "text" as const, text: "hi" }] }],
+    maxTokens: 64,
+  };
+  await collect(googleAdapter.stream(request, http));
+  await collect(googleAdapter.stream(request, http));
+  expect(creates).toBe(2);
+});

@@ -92,6 +92,25 @@ describe("domain proxy", () => {
       expect(isPrivateAddress(ip)).toBe(false);
   });
 
+  test("an IPv4 address carried in an IPv6 one counts as that IPv4 address", () => {
+    // Mapped in hex, compatible, NAT64 and 6to4.
+    for (const ip of [
+      "::ffff:7f00:1",
+      "::127.0.0.1",
+      "64:ff9b::7f00:1",
+      "64:ff9b::169.254.169.254",
+      "2002:7f00:1::",
+    ])
+      expect(isPrivateAddress(ip)).toBe(true);
+    for (const ip of ["64:ff9b::808:808", "2002:808:808::1"]) expect(isPrivateAddress(ip)).toBe(false);
+  });
+
+  test("an IPv6 host matches with or without the brackets of a URL", () => {
+    expect(hostAllowed("[::1]", ["[::1]"])).toBe(true);
+    expect(hostAllowed("::1", ["[::1]"])).toBe(true);
+    expect(hostAllowed("[::1]", ["::1"])).toBe(true);
+  });
+
   test("an allowed name that resolves to a private address is refused; an allowed address itself passes", async () => {
     const proxy = await startDomainProxy(
       ["rebind.example", "127.0.0.1"],

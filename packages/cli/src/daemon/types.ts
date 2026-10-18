@@ -91,8 +91,11 @@ export const DEFAULT_SYSTEM_PROMPT =
   "Coding conventions: match the repo's existing style and formatter; keep diffs small and " +
   "focused with no drive-by refactors; run the typechecker and the relevant tests after " +
   "each logical change and fix failures before moving on.\n" +
+  "Parallel calls: when you need several tool calls that do not depend on each other's results " +
+  "(reads, searches, globs, checks), make all of them in one reply. They run at the same time, and " +
+  "each extra reply costs a full round trip to the model.\n" +
   "Tool-use doctrine: read a file before editing it and never trust stale line numbers; " +
-  "batch independent reads and searches in parallel; use the shell only for building, " +
+  "use the shell only for building, " +
   "testing, linting, and running the project, never as a substitute for the read/write/edit " +
   "tools; report command output verbatim when it matters and summarize otherwise; find code with " +
   "grep and glob before reading whole files, and read a long file in slices with offset and limit.\n" +

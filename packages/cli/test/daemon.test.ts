@@ -1704,7 +1704,13 @@ describe("resolveSystemPrompt", () => {
   });
 
   test("the shared default carries safety, conventions, tool-use, and shell doctrine", () => {
-    for (const phrase of ["Safety first", "Coding conventions", "Tool-use doctrine", "Shell dialect"]) {
+    for (const phrase of [
+      "Safety first",
+      "Coding conventions",
+      "Parallel calls",
+      "Tool-use doctrine",
+      "Shell dialect",
+    ]) {
       expect(DEFAULT_SYSTEM_PROMPT).toContain(phrase);
     }
   });

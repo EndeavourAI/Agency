@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The system prompt asks for independent tool calls in one reply**, with the reason: they run at the same
+  time, and each extra reply is a full round trip. A trace of a real session showed a model making 32 replies
+  of one read each (about 32 output tokens, 3 seconds per reply).
 - **The sandbox of the OS is the default on Linux and macOS**, as Codex runs its sandbox by default: with no
   `sandbox.backend`, shell commands run under bubblewrap or Seatbelt, with no network and writes only in the
   workspace, when the program works there. A command that needs the network asks for it (`network: true`), or set

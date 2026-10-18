@@ -33,6 +33,24 @@ describe("createReadTool", () => {
     expect(result.isError).toBeFalsy();
   });
 
+  test("takes a line range in the names that models send for it", async () => {
+    const { deps, root } = tempDeps();
+    writeFileSync(join(root, "a.txt"), "one\ntwo\nthree\nfour\n");
+    const tool = createReadTool(deps);
+    // Live: `{start, end}` was ignored, so a model got the whole file (or a note that it was unchanged) twice.
+    for (const range of [
+      { start: 2, end: 3 },
+      { start_line: 2, end_line: 3 },
+      { startLine: 2, endLine: 3 },
+      { offset: 2, end: 3 },
+    ]) {
+      const result = await tool.handler({ path: "a.txt", ...range } as { path: string }, { signal });
+      expect(result.content).toBe("     2  two\n     3  three");
+    }
+    const open = await tool.handler({ path: "a.txt", start: 3 } as { path: string }, { signal });
+    expect(open.content).toBe("     3  three\n     4  four");
+  });
+
   test("rejects a path outside the sandbox root", async () => {
     const { deps } = tempDeps();
     const tool = createReadTool(deps);

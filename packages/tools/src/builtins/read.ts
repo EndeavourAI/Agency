@@ -35,8 +35,12 @@ function positiveInt(value: unknown): number | undefined {
 
 type ReadInput = { path: string; offset?: number; limit?: number } & Record<string, unknown>;
 
+/** Live: models sent `{start, end}` and the names of other harnesses, which a read ignored and so gave the whole file. */
 function rangeOf(input: ReadInput): { offset: number; limit: number | undefined } {
-  return { offset: positiveInt(input.offset) ?? 1, limit: positiveInt(input.limit) };
+  const offset = positiveInt(input.offset) ?? positiveInt(input.start ?? input.start_line ?? input.startLine) ?? 1;
+  const end = positiveInt(input.end ?? input.end_line ?? input.endLine);
+  const limit = positiveInt(input.limit) ?? (end !== undefined && end >= offset ? end - offset + 1 : undefined);
+  return { offset, limit };
 }
 
 /** The loop cuts a result at 2000 lines or 50 KB: a read stops first, at a whole line, and says where the rest starts. */

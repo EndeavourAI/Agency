@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`read` takes a line range by the names of other harnesses** (`start`/`end`, `start_line`/`end_line`,
+  `startLine`/`endLine`): in a live session a model sent `{start: 940, end: 1020}` twice, the read ignored both
+  and gave the whole file, and the model went on with `sed -n`.
 - **`read` gives each line after its number, for a whole file too**, as the Read tool of Claude Code does: with
   no numbers, models read a file whole and then again in slices or with `sed -n` to cite a line or to find where
   to edit (44 `cat`/`sed -n` calls and 60 second reads of a file in 207 reads, over the stored sessions). `edit`

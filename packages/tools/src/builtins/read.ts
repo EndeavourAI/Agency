@@ -49,8 +49,6 @@ function rangeOf(input: ReadInput): { offset: number; limit: number | undefined 
 const HEAD_LINES = 2000;
 const HEAD_BYTES = 45_000;
 
-/** A whole file larger than this comes as its outline: in research sessions 20 KB to 45 KB reads were most of the input. */
-const OUTLINE_CHARS = 20_000;
 const OUTLINE_MAX = 200;
 /** Declaration lines: JS/TS, Python, Rust, Go, methods two spaces in, Markdown headings. */
 const DECLARATION = [
@@ -83,7 +81,11 @@ function outlineOf(content: string): string | undefined {
  * Each line after its number and a tab, as Claude Code reads: with none, models read again with `sed -n` to cite or
  * find one. A padded number and two spaces cost about 30% more tokens than the file, a tab about 11% (o200k).
  */
-function numbered(content: string, offset: number, limit: number | undefined): string {
+function numbered(
+  content: string,
+  offset: number,
+  limit: number | undefined,
+): { text: string; cut: boolean } {
   const lines = content.split("\n");
   if (lines.at(-1) === "") lines.pop();
   const end = Math.min(lines.length, limit === undefined ? lines.length : offset - 1 + limit);
@@ -97,8 +99,11 @@ function numbered(content: string, offset: number, limit: number | undefined): s
     out.push(rendered);
   }
   const last = offset - 1 + out.length;
-  if (last >= end) return out.join("\n");
-  return `${out.join("\n")}\n[The file has ${lines.length} lines: these are lines ${offset} to ${last}. Read with offset ${last + 1} for the rest, or grep for what you need.]`;
+  if (last >= end) return { text: out.join("\n"), cut: false };
+  return {
+    text: `${out.join("\n")}\n[The file has ${lines.length} lines: these are lines ${offset} to ${last}. Read with offset ${last + 1} for the rest, or grep for what you need.]`,
+    cut: true,
+  };
 }
 
 export function createReadTool(deps: ToolDeps, options?: ReadToolOptions): ToolSpec {
@@ -168,8 +173,10 @@ export function createReadTool(deps: ToolDeps, options?: ReadToolOptions): ToolS
           return { content };
         }
       }
-      const text = numbered(content, offset, limit);
-      return { content: (!slicing && text.length > OUTLINE_CHARS && outlineOf(content)) || text };
+      // Only a file that a whole read would cut: live, an outline of a 30 KB file had a model page through it in
+      // seven reads of 100 lines, each a round trip that sent the whole history again.
+      const { text, cut } = numbered(content, offset, limit);
+      return { content: (!slicing && cut && outlineOf(content)) || text };
     },
   };
   return spec;

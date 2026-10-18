@@ -23,9 +23,12 @@ function readOf(name: string, text: string, range: { offset?: number; limit?: nu
   return tool.handler({ path: name, ...range }, { signal });
 }
 
-test("a whole read of a large source file gives its outline, and a range gives the lines", async () => {
-  const body = Array.from({ length: 40 }, (_, i) => `  const v${i} = compute(${i}); // ${"pad ".repeat(20)}`);
-  const text = [
+function source(bodyLines: number): string {
+  const body = Array.from(
+    { length: bodyLines },
+    (_, i) => `  const v${i} = compute(${i}); // ${"pad ".repeat(20)}`,
+  );
+  return [
     'import { a } from "./a.ts";',
     "",
     "export interface Options {",
@@ -43,16 +46,26 @@ test("a whole read of a large source file gives its outline, and a range gives t
     ...body,
     "}",
   ].join("\n");
+}
+
+test("a whole read of a source file too large to send whole gives its outline, and a range gives the lines", async () => {
+  const text = source(100);
   const { content } = await readOf("big.ts", text);
   // Live: whole reads of 20 to 45 KB files were most of the input of a research session, sent again in each request.
-  expect(content).toContain("45\texport async function runTurn(options: Options) {");
-  expect(content).toContain("127\tclass Store {");
+  expect(content).toContain("105\texport async function runTurn(options: Options) {");
+  expect(content).toContain("307\tclass Store {");
   expect(content).toContain("helper()");
   expect(content).not.toContain("compute(3)");
-  expect(content).toMatch(/\[The file has 211 lines .* read with offset and limit/);
+  expect(content).toMatch(/\[The file has 511 lines .* read with offset and limit/);
   expect(Buffer.byteLength(content)).toBeLessThan(3_000);
   const { content: whole } = await readOf("big.ts", text, { offset: 1, limit: 2000 });
   expect(whole).toContain("compute(3)");
+});
+
+test("a source file that fits a whole read comes whole, with no outline", async () => {
+  const { content } = await readOf("mid.ts", source(40));
+  expect(Buffer.byteLength(content)).toBeGreaterThan(20_000);
+  expect(content).toContain("compute(3)");
 });
 
 test("a large file with no outline to give comes as its head", async () => {

@@ -26,11 +26,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 - **`bash` runs a command in the folder that a `cwd` or `workdir` argument names**, in the workspace only: in
   two of three live edit sessions a model sent `cwd` unasked, as Codex has models name the folder of each command,
   and the command ran in the project root instead.
-- **A whole `read` of a file over 20 KB gives its outline**: the numbered line of each declaration (function,
-  class, type, method, Markdown heading), as the file skeletons that Agentless shows a model, and a note to read
-  the lines it needs with offset and limit. In research sessions, whole reads of 20 KB to 45 KB files were most of
-  the input, sent again with each request; the outline of `loop.ts` is 3.1K characters for 70.7K. A file with
-  fewer than three declarations comes as its head, as before, and a read with a range gives the lines.
+- **A whole `read` of a file too large to send whole (over 2000 lines or 45 KB) gives its outline**, not its
+  first 45 KB: the numbered line of each declaration (function, class, type, method, Markdown heading), as the
+  file skeletons that Agentless shows a model, and a note to read the lines it needs with offset and limit. The
+  outline of `loop.ts` is 3.1K characters for 70.7K. A smaller file still comes whole: live, an outline of a 30 KB
+  file had a model page through it in seven reads of 100 lines, each a round trip. A file with fewer than three
+  declarations comes as its head, as before, and a read with a range gives the lines.
 - **`read` takes a line range by the names of other harnesses** (`start`/`end`, `start_line`/`end_line`,
   `startLine`/`endLine`): in a live session a model sent `{start: 940, end: 1020}` twice, the read ignored both
   and gave the whole file, and the model went on with `sed -n`.

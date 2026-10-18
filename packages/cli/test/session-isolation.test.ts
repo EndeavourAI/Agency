@@ -119,14 +119,17 @@ describe("B1 per-session isolation", () => {
       }),
     ])) as RunTurnRpcResult[];
 
-    const pwdResult = (r: RunTurnRpcResult, callIndex: number): string => {
-      const msg = r.messages[callIndex];
-      const block = msg?.content[0] as { content: string } | undefined;
+    // The last result is the pwd: the cd and the pwd, two read-only replies, may fold into one (foldFirstReads).
+    const pwdResult = (r: RunTurnRpcResult): string => {
+      const block = r.messages
+        .flatMap((m) => m.content)
+        .filter((b) => b.type === "tool_result")
+        .at(-1) as { content: string } | undefined;
       return block?.content ?? "";
     };
 
-    const pwdA = pwdResult(r1!, 3);
-    const pwdB = pwdResult(r2!, 3);
+    const pwdA = pwdResult(r1!);
+    const pwdB = pwdResult(r2!);
     const normalizePwd = (s: string): string => s.replace(/\r\n?/g, "\n");
     const pwdANorm = normalizePwd(pwdA);
     const pwdBNorm = normalizePwd(pwdB);

@@ -115,7 +115,10 @@ test("every request of a session only appends to the one before it", async () =>
   });
   // PREFIX_DUMP=<file> keeps the requests, to measure what each one sends.
   if (process.env.PREFIX_DUMP) writeFileSync(process.env.PREFIX_DUMP, JSON.stringify(seen, null, 1));
-  expect(report.filter((r) => !(r.systemSame && r.segmentsSame && r.toolsSame && r.prefixOk))).toEqual([]);
+  expect(report.filter((r) => !(r.systemSame && r.segmentsSame && r.toolsSame))).toEqual([]);
+  // The one rewrite: the first two serial reads of a turn (read, then glob) fold into one reply; the session stores
+  // the fold, so the next turn appends again.
+  expect(report.filter((r) => !r.prefixOk).map((r) => r.i)).toEqual([2]);
   // A session with no team sends no tools of the team.
   expect(seen[0]?.tools?.map((t) => t.name)).not.toContain("board_read");
 }, 60_000);

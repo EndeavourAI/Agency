@@ -1114,8 +1114,16 @@ function resolveToolSpec(tools: ToolSpec[], name: string): ToolSpec | undefined 
   if (exact) return exact;
   // Tool-call repair: providers occasionally mangle tool-name casing; fall back to a
   // case-insensitive match. Mismatch repair for "${name}" is silent by design (no log dependency).
-  return tools.find((t) => t.name.toLowerCase() === name.toLowerCase());
+  const lower = name.toLowerCase();
+  const alias = TOOL_ALIASES[lower];
+  return (
+    tools.find((t) => t.name.toLowerCase() === lower) ??
+    (alias ? tools.find((t) => t.name === alias) : undefined)
+  );
 }
+
+/** A name that another harness gives a tool here: models trained on Codex call its shell tool `shell`. */
+const TOOL_ALIASES: Record<string, string> = { shell: "bash" };
 
 const MUTATING_TOOLS: ReadonlySet<string> = new Set(["write", "edit", "notebook_edit", "bash"]);
 const SEARCH_TOOLS = ["grep", "glob", "read"];

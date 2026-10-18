@@ -8,6 +8,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A call to `shell` runs `bash`**: models trained on Codex, whose shell tool has that name, sent it 3 times in
+  the benchmark sessions, and each call failed as no such tool. A tool of that name, if one is offered, still wins.
 - **A `read` of a missing file names the project files of that name** (up to five, from the git index and the
   untracked files that are not ignored): in live sessions, 19 of 26 failed reads named a file that the project
   has in another folder (`packages/tools/test/read-long.test.ts` for `test/builtins/read-long.test.ts`), and the

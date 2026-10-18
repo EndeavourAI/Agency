@@ -202,6 +202,37 @@ describe("runTurn", () => {
     expect(toolResult.content).toContain("no such tool");
   });
 
+  test("a call to `shell`, the name of the shell tool of Codex, runs bash", async () => {
+    let ran: unknown;
+    const spec: ToolSpec = {
+      name: "bash",
+      description: "runs a command",
+      inputSchema: {},
+      handler: async (input) => {
+        ran = input;
+        return { content: "ran" };
+      },
+    };
+    const result = await runTurn(
+      toolThenDoneAdapter("shell", { command: "git log -1" }),
+      new Scheduler(),
+      noopHttp,
+      {
+        identity: user,
+        capabilities: FULL_CAPABILITIES,
+        systemPrompt: "sys",
+        tools: [spec],
+        model: "test-model",
+        apiKey: "key",
+        session: [],
+      },
+    );
+
+    // Live: 3 calls to `shell` in the benchmark sessions, each refused as no such tool.
+    expect(ran).toEqual({ command: "git log -1" });
+    expect((result.messages[1]!.content[0] as { content: string }).content).toBe("ran");
+  });
+
   test("a tool handler that throws becomes a tool_result error, not an unhandled rejection", async () => {
     const spec: ToolSpec = {
       name: "flaky",

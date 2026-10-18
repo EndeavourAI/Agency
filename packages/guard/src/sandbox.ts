@@ -225,7 +225,8 @@ export function rebaseSandbox<T extends SandboxBackend>(inner: T, base: () => st
 /** Git Bash prints a drive as `/c/...`, and a model copies that form into the file tools. Windows reads it as `C:\c\...`. */
 export function fromMsysPath(candidate: string): string {
   if (process.platform !== "win32") return candidate;
-  return candidate.replace(/^\/([a-zA-Z])(\/|$)/, (_, drive: string) => `${drive.toUpperCase()}:/`);
+  // `/c/x` of Git Bash, and `/C:/x`, the form of a file URL that models write too.
+  return candidate.replace(/^\/([a-zA-Z]):?(\/|$)/, (_, drive: string) => `${drive.toUpperCase()}:/`);
 }
 
 function windowsCompareKey(p: string): string {

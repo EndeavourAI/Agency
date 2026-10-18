@@ -41,6 +41,9 @@ describe("SandboxBoundary.resolvePath", () => {
     expect(() => boundary.resolvePath("/c/Windows/System32")).toThrow(AgencyError);
     // The bare drive is the drive root. "C:" alone is the current folder of that drive, which is the sandbox root.
     expect(() => boundary.resolvePath("/c")).toThrow(AgencyError);
+    // The path of a file URL, which models write too: `/C:/...` was read as `C:\C:\...`.
+    expect(boundary.resolvePath("/C:/repo/project/src/index.ts")).toBe(join(root, "src", "index.ts"));
+    expect(() => boundary.resolvePath("/C:/Windows")).toThrow(AgencyError);
   });
 
   test("the thrown error carries PERMISSION_DENIED", () => {

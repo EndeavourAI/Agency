@@ -636,10 +636,23 @@ export async function executeTurn(
               : tools.filter((t) => sessionGate.toolOffered(t.name, t.riskTier));
           const leadTurn = !findChildSession(ctx, sessionId) && !handleForSession(ctx, sessionId);
           const withheld = new Set<string>(LEAD_WITHHELD_TOOLS);
-          const offeredTools =
+          const leadTools =
             leadTurn && isTeamLive(boardStore.list())
               ? gatedTools.filter((t) => !withheld.has(t.name))
               : gatedTools;
+          // Live: under `bun test*` a model ran `npx bun test` first, was refused, and only then wrote `bun test`.
+          const allowedCommands = sessionGate.allowedPatterns("bash").slice(0, 10);
+          const offeredTools =
+            allowedCommands.length === 0
+              ? leadTools
+              : leadTools.map((t) =>
+                  t.name === "bash"
+                    ? {
+                        ...t,
+                        description: `${t.description} The permission rules let these commands run with no ask: ${allowedCommands.map((p) => `\`${p}\``).join(", ")}.`,
+                      }
+                    : t,
+                );
           const effectiveTools = [
             ...deferTools(offeredTools, deferMode),
             ...codeTools(sessionGate),

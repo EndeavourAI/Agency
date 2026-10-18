@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The `bash` tool names the commands that the permission rules allow**, when rules allow some by pattern (up
+  to ten, as `--allowed-tools "Bash(bun test*)"` gives): in 4 of 6 live debug sessions under that rule the first
+  test command was `npx bun test …`, refused, and only the next call wrote `bun test …`.
 - **The `code` tool says that a call returns one string, a list one item a line**: in a live run on Linux two
   scripts iterated the text of `glob` as if it were an array, read the file `p`, and failed.
 - **A refused command names the command patterns that the rules allow** (up to ten): under

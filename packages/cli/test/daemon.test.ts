@@ -1568,6 +1568,37 @@ describe("system prompt composition", () => {
     expect(trusted.system).toContain("Plugin rule: QUARTZ-881.");
   });
 
+  test("the bash tool that the model gets names the commands that the rules allow", async () => {
+    const descriptions: string[] = [];
+    const { client } = await startFakeDaemon({
+      adapterFor: () => ({
+        family: "fake",
+        async *stream(request) {
+          descriptions.push(request.tools?.find((tool) => tool.name === "bash")?.description ?? "");
+          yield { type: "text_delta", text: "ok" };
+          yield { type: "message_stop", stopReason: "end_turn", usage: { inputTokens: 3, outputTokens: 2 } };
+        },
+      }),
+    });
+    const turn = (turnId: string, permissions?: Record<string, unknown>) =>
+      client.call("run_turn", {
+        turnId,
+        provider: "anthropic",
+        model: "test-model",
+        apiKey: "key",
+        systemPrompt: "sys",
+        session: [],
+        ...(permissions ? { permissions } : {}),
+      });
+    // Live: under `bun test*` a model ran `npx bun test` first, was refused, and only then wrote `bun test`.
+    await turn("allowed-1", { bash: { "bun test*": "allow" } });
+    await turn("allowed-2");
+    expect(descriptions[0]).toContain(
+      "The permission rules let these commands run with no ask: `bun test*`.",
+    );
+    expect(descriptions[1]).not.toContain("The permission rules let");
+  });
+
   test("a plain systemPrompt string is used as the base, with the environment block appended", async () => {
     const capture = { systems: [] as string[] };
     const { client, workspaceRoot } = await startFakeDaemon({

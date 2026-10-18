@@ -156,7 +156,7 @@ describe("createGrepTool", () => {
         { pattern: "(?i)max_\\w+ = \\d+|PRUNE\\(", glob: "*.ts" },
         { signal },
       );
-      expect(result.content).toBe(
+      expect(result.content.split("\n\n[The code around")[0]).toBe(
         ["src/a.ts", "2:const MAX_ITEMS = 200;", "4:function prune() {}"].join("\n"),
       );
       const around = await tool.handler({ pattern: "three", context: 1, type: "ts" }, { signal });
@@ -171,6 +171,32 @@ describe("createGrepTool", () => {
     } finally {
       (Bun as unknown as { spawn: unknown }).spawn = original;
     }
+  });
+
+  test("a grep that hits one or two files shows the code around each match, from its declaration", async () => {
+    const { deps, root } = setup();
+    mkdirSync(join(root, "src"));
+    const body = Array.from({ length: 30 }, (_, i) => `  const v${i} = ${i};`).join("\n");
+    writeFileSync(
+      join(root, "src", "a.ts"),
+      `import x from "./x";\n\nexport function first() {\n${body}\n  return target;\n}\n\nexport function second() {\n  return 2;\n}\n`,
+    );
+    const tool = createGrepTool(deps);
+    const result = await tool.handler({ pattern: "target" }, { signal });
+    if (isMissingBinary(result.content)) return;
+    // Live: after such a grep, 82% of the next slice reads held a match line.
+    const [matches, code] = result.content.split(
+      "\n\n[The code around these matches, as a read of these lines gives it:]\n",
+    );
+    expect(matches).toBe("src/a.ts\n34:  return target;");
+    expect(code?.split("\n")[0]).toBe("src/a.ts");
+    expect(code?.split("\n")[1]).toBe("14\t  const v10 = 10;");
+    expect(code?.split("\n").at(-1)).toBe("36\t");
+    for (const many of ["b", "c"]) writeFileSync(join(root, "src", `${many}.ts`), "const target = 1;\n");
+    expect((await tool.handler({ pattern: "target" }, { signal })).content).not.toContain("[The code around");
+    expect(
+      (await tool.handler({ pattern: "target", path: "src/a.ts", context: 1 }, { signal })).content,
+    ).not.toContain("[The code around");
   });
 
   test("a long matching line keeps its start, so one minified file cannot fill the result", async () => {

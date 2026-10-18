@@ -1,14 +1,65 @@
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { requirePathScope } from "@agency/guard";
 import { t } from "@agency/i18n";
 import type { ToolDeps, ToolSpec } from "../contract.ts";
 import { loadGitignore } from "../gitignore.ts";
 import { clip, lineCount, str, summarize } from "../render.ts";
+import { DECLARATION } from "./read.ts";
 
 const MAX_MATCHES = 200;
 /** A longer line keeps its start: one match in a minified file would fill the whole result. */
 const MAX_LINE_CHARS = 1_000;
+
+// Live: after a grep that hit one or two files, 82% of the next slice reads held a match line; median 50 lines.
+const AROUND_FILES = 2;
+const AROUND_MATCHES = 6;
+const AROUND_SPAN = 60;
+const AROUND_LINES = 120;
+
+const isDeclaration = (line: string | undefined): boolean =>
+  line !== undefined && DECLARATION.some((pattern) => pattern.test(line));
+
+/** For a few matches, the numbered lines from the declaration that holds each to the next one, as a slice shows them. */
+function codeAround(matches: Array<{ path: string; line: number }>, open: (path: string) => string): string {
+  const files = [...new Set(matches.map((match) => match.path))];
+  if (files.length > AROUND_FILES || matches.length > AROUND_MATCHES) return "";
+  let budget = AROUND_LINES;
+  const out: string[] = [];
+  for (const file of files) {
+    let lines: string[];
+    try {
+      lines = open(file)
+        .replace(/\r?\n$/, "")
+        .split(/\r?\n/);
+    } catch {
+      continue;
+    }
+    // A minified file shows nothing more than its cut match line.
+    if (lines.some((line) => line.length > MAX_LINE_CHARS)) continue;
+    const spans: Array<[number, number]> = [];
+    for (const { line } of matches.filter((match) => match.path === file)) {
+      const at = line - 1;
+      let start = at;
+      while (start > 0 && start > at - AROUND_SPAN / 3 && !isDeclaration(lines[start])) start--;
+      let end = at + 1;
+      while (end < lines.length && end - start < AROUND_SPAN && !isDeclaration(lines[end])) end++;
+      const last = spans.at(-1);
+      if (last && start <= last[1]) last[1] = Math.max(last[1], end);
+      else spans.push([start, end]);
+    }
+    const shown: string[] = [];
+    for (const [start, end] of spans) {
+      const take = Math.min(end - start, budget);
+      budget -= take;
+      for (let index = start; index < start + take; index++) shown.push(`${index + 1}\t${lines[index]}`);
+    }
+    if (shown.length > 0) out.push(file, ...shown);
+  }
+  return out.length === 0
+    ? ""
+    : `\n\n[The code around these matches, as a read of these lines gives it:]\n${out.join("\n")}`;
+}
 
 /** rg and grep -rn both print matches as `path:line:content`; context lines use `-` separators. */
 const MATCH_LINE = /^(.+):(\d+):/;
@@ -373,7 +424,13 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
       const notice = found.capped
         ? `\n${filesOnly ? t("tool.grep.truncated_files", { count: MAX_MATCHES }) : t("tool.grep.truncated", { count: MAX_MATCHES })}`
         : "";
-      return { content: trimmed + notice, ...(value ? { value } : {}) };
+      const around =
+        filesOnly || context !== undefined || found.capped || !Array.isArray(value)
+          ? ""
+          : codeAround(value as Array<{ path: string; line: number }>, (path) =>
+              readFileSync(deps.sandbox.resolvePath(path), "utf8"),
+            );
+      return { content: trimmed + notice + around, ...(value ? { value } : {}) };
     },
   };
   return spec;

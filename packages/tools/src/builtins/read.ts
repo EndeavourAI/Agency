@@ -71,7 +71,7 @@ const HEAD_BYTES = 45_000;
 
 const OUTLINE_MAX = 200;
 /** Declaration lines: JS/TS, Python, Rust, Go, methods two spaces in, Markdown headings. */
-const DECLARATION = [
+export const DECLARATION = [
   /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\*?\s+[\w$]/,
   /^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+[\w$]/,
   /^(?:export\s+)?(?:declare\s+)?(?:interface|type|enum|namespace)\s+[\w$]/,

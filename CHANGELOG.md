@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A `grep` that hits one or two files, with six matches at most, also shows the code around each match**: the
+  numbered lines from the declaration that holds the match (up to 20 lines above it) to the next declaration, 60
+  lines a match and 120 in all, as a slice read gives them. In 112 stored research sessions, 141 slice reads
+  followed such a grep and 82% of them held a match line (median 50 lines): about one model round trip a session
+  that the result can answer. Aider shows search matches inside their enclosing scopes the same way (grep-ast). A
+  search with `context`, `filesOnly`, more files, a capped search and a minified file show none.
 - **`agency testmap` maps each test to the source lines it runs, and the "untested edits" note then names only the
   tests that ran a changed line** (bun projects): it runs each tracked test file alone under `bun test --coverage`
   and keeps the map in the cache. On 43 stored runs of the benchmark edit task (`plural()` in `render.ts`, used in

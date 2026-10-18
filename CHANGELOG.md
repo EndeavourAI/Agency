@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A refused shell search names the tools that need no permission**: when a rule refuses a `bash` call that
+  searches or shows files (`grep`, `find`, `cat`, `sed -n` and similar, also after `cd dir &&`), the refusal says
+  that `grep`, `glob` and `read` do it with no ask. Most of 75 refused shell calls in stored sessions were such
+  searches (a recursive `grep`, a `\|` in quotes, `find -exec grep`), and models went on to send others.
 - **A line of a read or of an edit result starts with its number and a tab**, not a number padded to six places
   and two spaces: measured with o200k on three source files, the padded form added 28% to 34% to the tokens of
   the file and the tab form 10% to 12%. `edit` takes text copied with either form.

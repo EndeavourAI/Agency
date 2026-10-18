@@ -1070,6 +1070,9 @@ function resolveToolSpec(tools: ToolSpec[], name: string): ToolSpec | undefined 
 }
 
 const MUTATING_TOOLS: ReadonlySet<string> = new Set(["write", "edit", "notebook_edit", "bash"]);
+const SEARCH_TOOLS = ["grep", "glob", "read"];
+/** A shell command that searches or shows files, after an optional `cd dir &&`. */
+const SHELL_SEARCH = /^\s*(?:cd\s+[^&;|]+&&\s*)?(?:grep|rg|find|ls|cat|head|tail|sed|nl|wc)\b/;
 
 async function executeOne(
   spec: ToolSpec | undefined,
@@ -1255,13 +1258,19 @@ async function executeOne(
       if (verdict === "deny") {
         // A rule on a command or a path refuses this call only: a model told the tool is refused gave up on it.
         const target = subject.command ?? subject.path;
+        // Live: most of 75 refused shell calls were searches and file views that the safe tools do with no ask.
+        const instead = SEARCH_TOOLS.filter((name) => resolveToolSpec(options.tools, name) !== undefined);
+        const hint =
+          resolved.name === "bash" && SHELL_SEARCH.test(subject.command ?? "") && instead.includes("grep")
+            ? ` The ${instead.join(", ").replace(/, (\w+)$/, " and $1")} tools need no permission: search with them, and see lines of a file with read and its offset and limit.`
+            : "";
         return {
           // Measured: with the bare first sentence a weaker model sent the same refused call 15 times on average.
           content:
             options.toolPolicy.denyReason?.(policyRequest) ??
             (target === undefined
               ? `permission denied: ${resolved.name} is not permitted by the current permissions policy. Do not call it again: the answer will be the same. Continue without it, or tell the user that the task needs this permission.`
-              : `permission denied: ${resolved.name} with ${JSON.stringify(target)} is not permitted by the current permissions policy. Do not send this call again: the answer will be the same. A ${resolved.name} call with another ${subject.command === undefined ? "path" : "command"} can be permitted. Continue without this one, or tell the user that the task needs this permission.`),
+              : `permission denied: ${resolved.name} with ${JSON.stringify(target)} is not permitted by the current permissions policy. Do not send this call again: the answer will be the same. A ${resolved.name} call with another ${subject.command === undefined ? "path" : "command"} can be permitted.${hint} Continue without this one, or tell the user that the task needs this permission.`),
           isError: true,
         };
       }

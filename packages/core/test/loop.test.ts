@@ -1476,6 +1476,40 @@ describe("A5: input validation and permissions gating", () => {
     }
   });
 
+  test("a refused shell search names the search tools of the turn, which need no permission", async () => {
+    const tool = (name: string): ToolSpec => ({
+      name,
+      description: name,
+      inputSchema: { type: "object", properties: { command: { type: "string" } } },
+      riskTier: name === "bash" ? "dangerous" : "safe",
+      handler: async () => ({ content: "ran" }),
+    });
+    const refused = async (command: string, names: string[]) => {
+      const result = await runTurn(toolThenDoneAdapter("bash", { command }), new Scheduler(), noopHttp, {
+        identity: user,
+        capabilities: FULL_CAPABILITIES,
+        systemPrompt: "sys",
+        tools: names.map(tool),
+        model: "m",
+        apiKey: "k",
+        session: [],
+        toolPolicy: { check: async () => "deny" as const },
+      });
+      const block = result.messages[1]?.content[0];
+      return block?.type === "tool_result" ? block.content : "";
+    };
+    // Live: most of 75 refused shell calls were `grep -rn`, `find -exec grep` and `sed -n` that these tools do.
+    const search = await refused('grep -rn "a\\|b" packages', ["bash", "grep", "glob", "read"]);
+    expect(search).toContain("The grep, glob and read tools need no permission");
+    expect(await refused("cd src && find . -name '*.ts'", ["bash", "grep", "glob", "read"])).toContain(
+      "grep, glob",
+    );
+    expect(await refused("rm -rf build", ["bash", "grep", "glob", "read"])).not.toContain(
+      "need no permission",
+    );
+    expect(await refused("grep -rn x .", ["bash"])).not.toContain("need no permission");
+  });
+
   test("an ask decision routes through requestApproval; once runs, reject refuses", async () => {
     const spec: ToolSpec = {
       name: "bash",

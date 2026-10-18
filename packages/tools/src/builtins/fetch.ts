@@ -1,8 +1,8 @@
-import { requireNetwork } from "@agency/guard";
 import { t } from "@agency/i18n";
 import type { HttpClient } from "@agency/net";
 import type { ToolDeps, ToolSpec } from "../contract.ts";
 import { extractHtmlTitle, htmlToMarkdown } from "../html.ts";
+import { networkOrAsk } from "../network-ask.ts";
 import { clip, str, summarize } from "../render.ts";
 
 const MAX_FETCH_CHARS = 50_000;
@@ -44,9 +44,10 @@ export function createFetchTool(deps: ToolDeps, http: HttpClient): ToolSpec {
       return `${label}: ${result.content.length} chars (${body})`;
     },
 
-    async handler(input) {
+    async handler(input, ctx) {
       let url = new URL(input.url);
-      requireNetwork(deps.identity, deps.capabilities, url.hostname);
+      const refused = await networkOrAsk(deps, "fetch", url.hostname, ctx);
+      if (refused !== undefined) return { content: refused, isError: true };
       // A redirect to another host comes back as a note, as in Claude Code: the next call to that host passes the
       // permission and network checks of its own. Followed blindly, an allowed host could lead to any other.
       let res = await http.fetch(url.href, { redirect: "manual" });

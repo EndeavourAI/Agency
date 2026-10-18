@@ -48,7 +48,35 @@ describe("createFetchTool", () => {
     const scoped = deps({ ...FULL_CAPABILITIES, network: ["allowed.example.com"] });
     const tool = createFetchTool(scoped, http);
 
-    await expect(tool.handler({ url: "https://evil.example.com" }, { signal })).rejects.toThrow();
+    // No one to ask: refused, and the host is not reached.
+    const refused = await tool.handler({ url: "https://evil.example.com" }, { signal });
+    expect(refused.isError).toBe(true);
+    expect(refused.content).not.toContain("should not be reached");
+  });
+
+  test("past the network limit the user is asked for that host, as bash asks with network: true", async () => {
+    const http: HttpClient = { fetch: async () => new Response("page") };
+    const tool = createFetchTool(deps({ ...FULL_CAPABILITIES, network: "none" }), http);
+    const asked: Array<{ source?: string; command?: string }> = [];
+    const answer =
+      (response: "once" | "reject") => async (request: { source?: string; command?: string }) => {
+        asked.push(request);
+        return response;
+      };
+    const no = await tool.handler(
+      { url: "https://docs.example.com/a" },
+      { signal, requestApproval: answer("reject") },
+    );
+    expect(no.isError).toBe(true);
+    const yes = await tool.handler(
+      { url: "https://docs.example.com/a" },
+      { signal, requestApproval: answer("once") },
+    );
+    expect(yes.content).toBe("page");
+    expect(asked).toEqual([
+      expect.objectContaining({ source: "sandbox:network", command: "fetch docs.example.com" }),
+      expect.objectContaining({ source: "sandbox:network", command: "fetch docs.example.com" }),
+    ]);
   });
 });
 

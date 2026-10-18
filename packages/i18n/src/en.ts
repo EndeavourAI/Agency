@@ -119,6 +119,9 @@ export const en = {
   "tool.glob.no_matches": "no files matched",
   "tool.glob.truncated": "[truncated at {count} results]",
   "tool.fetch.truncated": "[truncated at {chars} characters]",
+  "tool.network_ask": "Let {tool} reach {host}, past the network limit of the sandbox",
+  "tool.network_refused":
+    "not run: {host} is past the network limit of the sandbox, and the user did not allow it. Do the work without it, or say that the task needs it.",
   "tool.fetch.redirect":
     "{url} redirects to {location}, which is on another host. To follow it, fetch that URL.",
   "tool.browser.truncated": "[truncated at {chars} characters]",

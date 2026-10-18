@@ -13,6 +13,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   workspace, when the program works there. A command that needs the network asks for it (`network: true`), or set
   `sandbox.allowNetwork`. Where it does not work, and on Windows, commands run with your rights as before, and the
   daemon log says why. `sandbox.backend: "software"` keeps the old behavior.
+- **`fetch`, `websearch` and `browser` ask for a host past the network limit of the sandbox**, as the sandbox of
+  Claude Code asks for a new domain: with the OS sandbox and no network, or a host outside `allowedDomains`, they
+  failed with no way on. An "always" answer holds for that host in the session; with no one to ask they are refused.
 - **A sandboxed command can ask for the network**, as the escalation of Codex and the unsandboxed retry of Claude
   Code: under `sandbox.backend: "os"` with no network, `bash` takes `network: true` for one command (an install, a
   fetch). You are asked each time, in every permission mode; the command then runs in the same sandbox with the

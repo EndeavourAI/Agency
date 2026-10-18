@@ -1,4 +1,5 @@
 import { lstatSync, readdirSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { AgencyError, ErrorCode } from "@agency/schema";
 import type { RequestApproval } from "./approval.ts";
@@ -225,7 +226,8 @@ export function rebaseSandbox<T extends SandboxBackend>(inner: T, base: () => st
 /** Git Bash prints a drive as `/c/...`, and a model copies that form into the file tools. Windows reads it as `C:\c\...`. */
 export function fromMsysPath(candidate: string): string {
   if (process.platform !== "win32") return candidate;
-  // `/c/x` of Git Bash, and `/C:/x`, the form of a file URL that models write too.
+  // `/c/x` of Git Bash, and `/C:/x`, the form of a file URL that models write too. Git Bash mounts `/tmp` on TEMP.
+  if (/^\/tmp(\/|$)/.test(candidate)) return `${tmpdir()}${candidate.slice(4)}`;
   return candidate.replace(/^\/([a-zA-Z]):?(\/|$)/, (_, drive: string) => `${drive.toUpperCase()}:/`);
 }
 

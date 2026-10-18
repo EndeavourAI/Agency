@@ -44,6 +44,14 @@ describe("SandboxBoundary.resolvePath", () => {
     // The path of a file URL, which models write too: `/C:/...` was read as `C:\C:\...`.
     expect(boundary.resolvePath("/C:/repo/project/src/index.ts")).toBe(join(root, "src", "index.ts"));
     expect(() => boundary.resolvePath("/C:/Windows")).toThrow(AgencyError);
+    // Git Bash mounts `/tmp` on TEMP, and its `pwd` prints a workspace there as `/tmp/...`.
+    const inTemp = realpathSync(mkdtempSync(join(tmpdir(), "agency-msys-tmp-")));
+    try {
+      const msys = `/tmp/${inTemp.slice(realpathSync(tmpdir()).length + 1).replace(/\\/g, "/")}/a.ts`;
+      expect(new SandboxBoundary(inTemp).resolvePath(msys)).toBe(join(inTemp, "a.ts"));
+    } finally {
+      rmSync(inTemp, { recursive: true, force: true });
+    }
   });
 
   test("the thrown error carries PERMISSION_DENIED", () => {

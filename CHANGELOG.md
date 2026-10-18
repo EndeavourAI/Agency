@@ -35,8 +35,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   `websearch`, a read-only shell command with no `cd` (`git status`, `ls`, `cat`) and an MCP tool with
   `readOnlyHint` now run beside the other read-only calls of a reply, where before each ran alone. A read-only
   call before the first write of a reply starts as soon as its arguments are complete, while the model still
-  writes the rest; a call whose result the turn does not use is cancelled. A call that asks waits until the
-  reply is whole, so you and the auto reviewer see all of it.
+  writes the rest; a call whose result the turn does not use is cancelled. Only a call that changes nothing starts
+  early (`read`, `grep`, `glob`, the LSP tools and the read-only calls above), not `spawn`, `memory` or `todo_write`.
+  A call that asks waits until the turn runs the calls of the reply, so you and the auto reviewer see all of it, and
+  a reply that ends without running them asks nothing.
 - **Claude caches a short system prompt and the first messages**: the minimum size of a cache mark counts
   the tools, the system prompt and the messages before it, as the API does. Before, each part had to pass
   1,024 tokens alone, so with the default prompt (about 500 tokens) the system prompt and the messages of

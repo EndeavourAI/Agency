@@ -89,6 +89,7 @@ export function createReadTool(deps: ToolDeps, options?: ReadToolOptions): ToolS
       required: ["path"],
     },
     riskTier: "safe",
+    readOnly: () => true,
     renderCall: (input) => `read ${str(input.path)}`,
     renderResult: (result) => {
       const path = str(result.input?.path);

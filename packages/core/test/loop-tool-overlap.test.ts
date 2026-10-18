@@ -106,7 +106,7 @@ describe("tool overlap", () => {
     const started = new Promise<void>((r) => {
       began = r;
     });
-    const read = tool("read", { riskTier: "safe" }, async () => {
+    const read = tool("read", { riskTier: "safe", readOnly: () => true }, async () => {
       began();
       return { content: "text" };
     });
@@ -130,7 +130,7 @@ describe("tool overlap", () => {
       order.push("write");
       return { content: "written" };
     });
-    const read = tool("read", { riskTier: "safe" }, async () => {
+    const read = tool("read", { riskTier: "safe", readOnly: () => true }, async () => {
       order.push("read");
       return { content: "text" };
     });
@@ -149,7 +149,7 @@ describe("tool overlap", () => {
 
   test("an early call whose result the turn does not use is cancelled", async () => {
     let aborted = false;
-    const slow = tool("slow", { riskTier: "safe" }, async (_input, ctx) => {
+    const slow = tool("slow", { riskTier: "safe", readOnly: () => true }, async (_input, ctx) => {
       await new Promise<void>((r) => {
         ctx.signal.addEventListener("abort", () => {
           aborted = true;
@@ -205,4 +205,54 @@ test("an early call that asks waits until its reply is stored", async () => {
     },
   });
   expect(order.slice(0, 3)).toEqual(["reply stored", "ask", "ran"]);
+});
+
+test("a safe tool that can change something waits for the whole reply", async () => {
+  let streamed = false;
+  let startedAfterStream: boolean | undefined;
+  const spawnish = tool("spawnish", { riskTier: "safe" }, async () => {
+    startedAfterStream = streamed;
+    return { content: "ok" };
+  });
+  const a = adapter([
+    async function* () {
+      yield* call("a", "spawnish");
+      await new Promise((r) => setTimeout(r, 20));
+      streamed = true;
+      yield { type: "message_stop", stopReason: "tool_use", usage };
+    },
+    done,
+  ]);
+  await run(a, [spawnish]);
+  expect(startedAfterStream).toBe(true);
+});
+
+test("an early call asks nothing when the reply ends without running its calls", async () => {
+  const asks: string[] = [];
+  const net = tool("net", { riskTier: "moderate", readOnly: () => true }, async () => ({ content: "ok" }));
+  const a = adapter([
+    async function* () {
+      yield* call("a", "net");
+      yield { type: "text_delta", text: "never mind" };
+      yield { type: "message_stop", stopReason: "end_turn", usage };
+    },
+  ]);
+  await runTurn(a, new Scheduler({ maxConcurrent: 4, requestsPerMinute: 6000 }), http, {
+    identity: { type: "user" },
+    capabilities: FULL_CAPABILITIES,
+    systemPrompt: "sys",
+    tools: [net],
+    model: "m",
+    apiKey: "k",
+    session: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+    toolPolicy: {
+      check: async (request, ask) =>
+        (await ask?.({ tool: request.tool, title: request.tool })) === "once" ? "allow" : "deny",
+    },
+    requestApproval: async () => {
+      asks.push("ask");
+      return "once";
+    },
+  });
+  expect(asks).toEqual([]);
 });

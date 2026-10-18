@@ -130,6 +130,7 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
       required: ["pattern"],
     },
     riskTier: "safe",
+    readOnly: () => true,
     renderCall: (input) => `grep ${summarize(str(input.pattern))}${input.path ? ` ${str(input.path)}` : ""}`,
     renderResult: (result) => {
       const pattern = str(result.input?.pattern);

@@ -373,7 +373,9 @@ export async function runTurn(
   let storeReply = (): void => {};
   const startCall: StartCall = (call, signal) => {
     const spec = resolveToolSpec(options.tools, call.name);
-    if (!parallelSafe(spec, undefined, call.input)) return undefined;
+    // Only a call that changes nothing: a safe tool such as spawn or memory may change something before the turn
+    // knows that it will run the calls of this reply.
+    if (spec === undefined || !readOnlyCall(spec, call.input)) return undefined;
     const afterReply = async (): Promise<boolean> => {
       await replyStored;
       return !signal.aborted;
@@ -547,7 +549,6 @@ export async function runTurn(
       }
       // A reply with no content is not stored: strict providers reject an empty message.
       if (turn.content.length > 0) await append({ role: "assistant", content: turn.content });
-      storeReply();
       spoke = turn.content.some((block) => block.type === "text" && block.text.trim() !== "");
       cumulativeUsage = addUsage(cumulativeUsage, turn.usage);
       requestTokens = turn.usage.inputTokens + turn.usage.outputTokens;
@@ -584,6 +585,8 @@ export async function runTurn(
 
       if (exceedsBudget(cumulativeUsage, spentCostUsd, options.budget)) {
         if (toolCalls.length > 0) {
+          // An early call asks only once the turn will run the calls: else the user answers for a thrown-away one.
+          storeReply();
           await append(
             options.signal?.aborted
               ? unrunResults(toolCalls, "cancelled")
@@ -687,6 +690,7 @@ export async function runTurn(
           }
         }
       }
+      storeReply();
       const results = await runTools(
         toolCalls,
         toolOptions,
@@ -898,7 +902,10 @@ function parallelSafe(
 ): boolean {
   if (malformed !== undefined) return true;
   if (spec === undefined) return true;
-  if (spec.riskTier === "safe") return true;
+  return spec.riskTier === "safe" || readOnlyCall(spec, input);
+}
+
+function readOnlyCall(spec: ToolSpec, input: Record<string, unknown>): boolean {
   try {
     return spec.readOnly?.(input) === true;
   } catch {
@@ -1004,7 +1011,10 @@ async function runCall(
   signal: AbortSignal | undefined,
 ): Promise<ToolResultLike> {
   const t = options.traceRecorder;
-  const spanId = t ? t.startToolSpan(t.getTurnSpanId(), { toolName: item.call.name }) : null;
+  let spanId: string | null = null;
+  try {
+    spanId = t ? t.startToolSpan(t.getTurnSpanId(), { toolName: item.call.name }) : null;
+  } catch {}
   let result: ToolResultLike;
   try {
     result = item.malformed
@@ -1013,12 +1023,14 @@ async function runCall(
   } catch (error) {
     result = { content: error instanceof Error ? error.message : String(error), isError: true };
   }
-  if (t && spanId) {
-    t.endSpan(spanId, {
-      status: result.isError ? "error" : "ok",
-      attributes: { isError: result.isError },
-    });
-  }
+  try {
+    if (t && spanId) {
+      t.endSpan(spanId, {
+        status: result.isError ? "error" : "ok",
+        attributes: { isError: result.isError },
+      });
+    }
+  } catch {}
   return result;
 }
 

@@ -25,6 +25,7 @@ export function createGlobTool(deps: ToolDeps): ToolSpec {
       required: ["pattern"],
     },
     riskTier: "safe",
+    readOnly: () => true,
     renderCall: (input) => `glob ${summarize(str(input.pattern))}`,
     renderResult: (result) => {
       const pattern = str(result.input?.pattern);

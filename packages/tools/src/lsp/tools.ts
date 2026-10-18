@@ -93,6 +93,7 @@ export function createLspGotoDefinitionTool(options: LspToolsOptions): ToolSpec 
       required: ["path"],
     },
     riskTier: "safe",
+    readOnly: () => true,
     renderCall: rendering.renderCall,
     renderResult: rendering.renderResult,
     async handler(input, ctx) {
@@ -140,6 +141,7 @@ export function createLspFindReferencesTool(options: LspToolsOptions): ToolSpec 
       required: ["path"],
     },
     riskTier: "safe",
+    readOnly: () => true,
     renderCall: rendering.renderCall,
     renderResult: rendering.renderResult,
     async handler(input, ctx) {
@@ -184,6 +186,7 @@ export function createLspSymbolsTool(options: LspToolsOptions): ToolSpec {
       },
     },
     riskTier: "safe",
+    readOnly: () => true,
     renderCall: (input) => `symbols ${str(input.path ?? input.query)}`,
     renderResult: (result) => {
       if (result.isError) return `symbols failed: ${summarize(result.content)}`;
@@ -260,6 +263,7 @@ export function createLspPrepareRenameTool(options: LspToolsOptions): ToolSpec {
       required: ["path"],
     },
     riskTier: "safe",
+    readOnly: () => true,
     renderCall: rendering.renderCall,
     renderResult: rendering.renderResult,
     async handler(input, ctx) {
@@ -311,6 +315,7 @@ export function createLspRenameTool(options: LspToolsOptions): ToolSpec {
       required: ["path", "newName"],
     },
     riskTier: "safe",
+    readOnly: () => true,
     renderCall: (input) => `rename ${str(input.path)} to ${str(input.newName)}`,
     renderResult: rendering.renderResult,
     async handler(input, ctx) {
@@ -361,6 +366,7 @@ export function createLspInstallDecisionTool(options: LspToolsOptions): ToolSpec
       required: ["server", "decision"],
     },
     riskTier: "safe",
+    readOnly: () => true,
     renderCall: (input) => `lsp_install_decision ${str(input.server)} ${str(input.decision)}`,
     renderResult: (result) => {
       if (result.isError) return `lsp_install_decision failed: ${summarize(result.content)}`;

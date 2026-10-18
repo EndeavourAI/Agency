@@ -890,7 +890,7 @@ describe("runTurn", () => {
 
     const toolResult = result.messages[1]!.content[0] as { type: string; content: string };
     expect(toolResult.type).toBe("tool_result");
-    expect(toolResult.content).toContain("[Output truncated at 50000 bytes]");
+    expect(toolResult.content).toMatch(/\[Output truncated: \d+ bytes omitted here\]/);
     expect(toolResult.content.length).toBeLessThan(60_000);
   });
 

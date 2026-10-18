@@ -21,6 +21,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   `sandbox.backend: "os"`, "Read-only file system" or "Could not resolve host" in the output of a command gets a
   line that says the command can write only in the workspace, or has no network (or only the hosts of
   `allowedDomains`), and not to retry it in another way. Before, a model read these as faults to work around.
+- **A cut tool result keeps its end**, as Codex keeps head and tail: a result over 2,000 lines or 50,000 bytes (an
+  MCP tool, a subagent's answer) keeps its first three quarters and its last quarter, with a note where the middle
+  went. Before, the end was lost, and the error of a run is most often there. `bash` already kept both ends.
 - **An out-of-date read leaves the requests sooner**: a `read` of a file that a later read shows again (the
   whole file, or the same slice) is due at once, not 10 model calls later, in the same cache-friendly 20,000-token
   batches. The model no longer reads old text of a file it changed, and each request is smaller. An edit alone

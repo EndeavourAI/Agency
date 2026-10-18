@@ -234,3 +234,41 @@ test("with a cache that holds, the same session sends each request as an append 
       );
   }
 }, 60_000);
+
+test("sessions in two folders send one system prompt; the environment goes in the first user message", async () => {
+  const seen: ProviderRequest[] = [];
+  const roots: string[] = [];
+  for (const userText of ["hi", "hello"]) {
+    const ws = tempDir("agency-prefix-ws-");
+    roots.push(ws);
+    const turns: Call[][] = [[]];
+    const daemon = await createAgentDaemon({
+      workspaceRoot: ws,
+      instanceFile: join(ws, ".agency", "instance.json"),
+      sessionsDir: tempDir("agency-prefix-sess-"),
+      approvalsDir: tempDir("agency-prefix-appr-"),
+      configDir: tempDir("agency-prefix-cfg-"),
+      adapterFor: () => recorder(turns, seen),
+      http: { fetch: async () => new Response() } satisfies HttpClient,
+    });
+    daemons.push(daemon);
+    const res = await fetch(`http://127.0.0.1:${daemon.httpPort}/rpc`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${daemon.server.token}` },
+      body: JSON.stringify({
+        id: 1,
+        method: "session_send",
+        params: { sessionId: "s", provider: "anthropic", model: "m", userText, permissionMode: "allow-all" },
+      }),
+    });
+    expect(((await res.json()) as { error?: unknown }).error).toBeUndefined();
+  }
+  expect(seen).toHaveLength(2);
+  expect(seen[1]?.system).toBe(seen[0]?.system as string);
+  expect(JSON.stringify(seen[1]?.systemSegments)).toBe(JSON.stringify(seen[0]?.systemSegments));
+  for (const [i, request] of seen.entries()) {
+    const [prompt, env] = request.messages[0]?.content ?? [];
+    expect(env?.type === "text" && env.text).toContain(`project root: ${roots[i]}`);
+    expect(prompt).toEqual({ type: "text", text: i === 0 ? "hi" : "hello" });
+  }
+}, 60_000);

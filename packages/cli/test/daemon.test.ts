@@ -16,6 +16,7 @@ import {
   DEFAULT_SYSTEM_PROMPT,
   type RunTurnRpcResult,
   resolveAdapter,
+  resolvePrompt,
   resolveSystemPrompt,
   sessionEnvironmentStore,
 } from "../src/daemon.ts";
@@ -1600,9 +1601,9 @@ describe("system prompt composition", () => {
     expect(descriptions[1]).not.toContain("The permission rules let");
   });
 
-  test("a plain systemPrompt string is used as the base, with the environment block appended", async () => {
+  test("a plain systemPrompt string is used as the base, and the environment block stays out of it", async () => {
     const capture = { systems: [] as string[] };
-    const { client, workspaceRoot } = await startFakeDaemon({
+    const { client } = await startFakeDaemon({
       adapterFor: () => textAdapter("ok", capture),
     });
 
@@ -1618,10 +1619,7 @@ describe("system prompt composition", () => {
     expect(capture.systems).toHaveLength(1);
     const system = capture.systems[0] ?? "";
     expect(system.startsWith("sys\n\n")).toBe(true);
-    expect(system).toContain("<environment>");
-    expect(system).toContain(`project root: ${workspaceRoot} (`);
-    expect(system).toContain("date: ");
-    expect(system).not.toContain("git: branch");
+    expect(system).not.toContain("<environment>");
   });
 
   test("systemPromptParts compose identity, role, instructions, and context in order", async () => {
@@ -1643,12 +1641,7 @@ describe("system prompt composition", () => {
     });
 
     const system = capture.systems[0] ?? "";
-    const order = [
-      system.indexOf("IDENTITY"),
-      system.indexOf("INSTR1"),
-      system.indexOf("ROLE"),
-      system.indexOf("<environment>"),
-    ];
+    const order = [system.indexOf("IDENTITY"), system.indexOf("INSTR1"), system.indexOf("ROLE")];
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(system).not.toContain("raw-string-ignored");
   });
@@ -1698,6 +1691,7 @@ describe("system prompt composition", () => {
 });
 
 describe("resolveSystemPrompt", () => {
+  const envOf = (...args: Parameters<typeof resolvePrompt>) => resolvePrompt(...args).context ?? "";
   const params = (overrides: Partial<RunTurnParams> = {}): RunTurnParams => ({
     turnId: "t",
     provider: "p",
@@ -1742,7 +1736,7 @@ describe("resolveSystemPrompt", () => {
   });
 
   test("the git seam feeds branch and dirty state into the environment block", () => {
-    const system = resolveSystemPrompt(params(), {
+    const system = envOf(params(), {
       workspaceRoot: tempRoot(),
       git: (_cwd, args) => (args.includes("status") ? "## main...origin/main\n M a.ts\n" : null),
     });
@@ -1756,10 +1750,10 @@ describe("resolveSystemPrompt", () => {
       git: () => status,
       environments: new Map<string, string>(),
     };
-    const first = resolveSystemPrompt(params({ sessionId: "s1" }), options);
+    const first = envOf(params({ sessionId: "s1" }), options);
     status = "## main\n M a.ts\n";
-    expect(resolveSystemPrompt(params({ sessionId: "s1" }), options)).toBe(first);
-    expect(resolveSystemPrompt(params({ sessionId: "s2" }), options)).toContain("dirty, 1 changed file");
+    expect(envOf(params({ sessionId: "s1" }), options)).toBe(first);
+    expect(envOf(params({ sessionId: "s2" }), options)).toContain("dirty, 1 changed file");
   });
 
   test("identity falls back to the shared default when parts omit it", () => {
@@ -1767,7 +1761,7 @@ describe("resolveSystemPrompt", () => {
       workspaceRoot: tempRoot(),
       git: () => null,
     });
-    expect(system.startsWith(`${DEFAULT_SYSTEM_PROMPT}\n\nROLE\n\n<environment>`)).toBe(true);
+    expect(system.startsWith(`${DEFAULT_SYSTEM_PROMPT}\n\nROLE\n\n`)).toBe(true);
   });
 
   test("the environment block of a session outlives the daemon, and is made again on another day", () => {
@@ -1781,11 +1775,11 @@ describe("resolveSystemPrompt", () => {
       environments: sessionEnvironmentStore(join(dir, "sessions")),
     });
     const day = new Date(2026, 9, 13, 10);
-    const first = resolveSystemPrompt(params({ sessionId: "s1" }), options(day));
+    const first = envOf(params({ sessionId: "s1" }), options(day));
     status = "## main\n M a.ts\n";
-    expect(resolveSystemPrompt(params({ sessionId: "s1" }), options(day))).toBe(first);
+    expect(envOf(params({ sessionId: "s1" }), options(day))).toBe(first);
     // The date in the prompt must be right, and after a day the cache of the provider is gone.
-    const later = resolveSystemPrompt(params({ sessionId: "s1" }), options(new Date(2026, 9, 14, 10)));
+    const later = envOf(params({ sessionId: "s1" }), options(new Date(2026, 9, 14, 10)));
     expect(later).toContain("date: 2026-10-14");
     expect(later).toContain("dirty, 1 changed file");
     // An id that is not a safe file name is kept in memory only.
@@ -1806,7 +1800,7 @@ describe("resolveSystemPrompt", () => {
   });
 
   test("shellLabel renders into the environment block so the model uses the right dialect", () => {
-    const system = resolveSystemPrompt(params(), {
+    const system = envOf(params(), {
       workspaceRoot: tempRoot(),
       git: () => null,
       shellLabel: "PowerShell",
@@ -1815,7 +1809,7 @@ describe("resolveSystemPrompt", () => {
   });
 
   test("no shellLabel means no shell line", () => {
-    const system = resolveSystemPrompt(params(), {
+    const system = envOf(params(), {
       workspaceRoot: tempRoot(),
       git: () => null,
     });

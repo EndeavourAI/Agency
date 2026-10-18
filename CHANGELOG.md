@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The environment block goes in the first user message, not in the system prompt**, as Codex sends its
+  environment context as a user message. The system prompt and the tools no longer hold the project root, the
+  date or the git state, so sessions in other folders share their cached prefix: on OpenRouter the cross-session
+  cache hit ended at about 480 tokens, where `<environment>` began, out of a static prefix of about 2.8K. The
+  block is added to each request and kept out of the transcript, and a session keeps its first block as before.
 - **Old tool results are pruned at 6 model calls, in batches sized by the cache that the session's provider
   shows**: the first three requests of a session fix the rule. With no cache, or one that held under half the
   input, each result goes at age 6; a cache that only reads keeps 10K-token batches; a cache that also reports

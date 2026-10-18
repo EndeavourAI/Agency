@@ -205,6 +205,8 @@ export interface RunTurnOptions {
   keepToolResults?: boolean;
   /** The session's cache so far, so its prune rule lasts across turns. Absent: the turn counts its own. */
   cacheSeen?: CacheSeen;
+  /** The environment block: each request sends it in the first user message, not in the system prompt. */
+  context?: string;
   /** Rules of Claude Code that the turn starts with pre-approved: the `allowed-tools` of a skill that `/name` ran. */
   grantedTools?: string[];
   /** The model takes image input: images that a tool returned go to it. Absent means no. */
@@ -420,9 +422,10 @@ export async function runTurn(
         system: options.systemPrompt,
         ...(options.systemSegments !== undefined ? { systemSegments: options.systemSegments } : {}),
         // A copy: the loop changes `messages` in place, and the request is kept for a later compaction.
-        messages: [
-          ...(options.keepToolResults ? messages : pruneStaleResults(messages, pruneRule(cacheSeen))),
-        ],
+        messages: withContext(
+          options.keepToolResults ? messages : pruneStaleResults(messages, pruneRule(cacheSeen)),
+          options.context,
+        ),
         tools: toolDefs(),
         maxTokens: options.maxTokensPerRequest ?? 8192,
         thinkingLevel: options.thinkingLevel,
@@ -1742,6 +1745,15 @@ function appendText(content: ContentBlock[], type: "text" | "thinking", delta: s
     return;
   }
   content.push(type === "text" ? { type: "text", text: delta } : { type: "thinking", text: delta });
+}
+
+/** A new list with `context` as the last block of the first user message, which differs by session anyway. */
+function withContext(messages: Message[], context: string | undefined): Message[] {
+  if (context === undefined || messages.length === 0) return [...messages];
+  const block: ContentBlock = { type: "text", text: context };
+  const [first, ...rest] = messages;
+  if (first?.role !== "user") return [{ role: "user", content: [block] }, ...messages];
+  return [{ ...first, content: [...first.content, block] }, ...rest];
 }
 
 export function addUsage(a: Usage, b: Usage): Usage {

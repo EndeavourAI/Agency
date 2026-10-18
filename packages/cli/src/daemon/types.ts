@@ -799,7 +799,7 @@ export function resolveSystemPrompt(params: RunTurnParams, options: ResolveSyste
 export function resolvePrompt(
   params: RunTurnParams,
   options: ResolveSystemPromptOptions,
-): { text: string; segments: CacheSegment[] } {
+): { text: string; segments: CacheSegment[]; context?: string } {
   const parts = params.systemPromptParts;
   const identity = parts?.identity;
   const role = parts?.role;
@@ -844,7 +844,6 @@ export function resolvePrompt(
       ...(parts?.context === false ? notes : []),
     ],
     toolDescriptions: [],
-    context,
   });
 
   const reminders: SystemReminder[] = [...(params.systemReminders ?? [])];
@@ -853,5 +852,6 @@ export function resolvePrompt(
     for (const [name, reason] of options.mcpFailures) reminders.push(mcpServerDownReminder(name, reason));
   }
   const final = withPromptVersion(withSystemReminders(composed, reminders));
-  return { text: final.text, segments: final.segments };
+  // Codex sends its environment as a user message: the system prompt stays one text across sessions and folders.
+  return { text: final.text, segments: final.segments, ...(context === undefined ? {} : { context }) };
 }

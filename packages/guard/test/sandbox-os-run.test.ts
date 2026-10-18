@@ -54,6 +54,35 @@ describe.skipIf(!runs)("OS sandbox: real commands", () => {
     expect(existsSync(join(ws, ".vscode"))).toBe(false);
   });
 
+  test.skipIf(process.platform !== "linux" || Bun.which("curl") === null)(
+    "a command cannot open a Unix socket of the host, with the network or without it",
+    async () => {
+      const ws = dir(tmpdir());
+      // Not in /tmp or the runtime folder, which the sandbox hides: as Docker Desktop's socket in the home folder.
+      const socket = join(dir(homedir()), "host.sock");
+      const host = Bun.serve({ unix: socket, fetch: () => new Response("host socket") });
+      try {
+        const sandbox = new OsSandboxBackend(ws);
+        expect(await sandbox.isAvailable()).toBe(true);
+        const curl = ["curl", "-s", "--max-time", "5", "--unix-socket", socket, "http://x/"];
+        for (const network of [false, true]) {
+          const run = await sandbox.exec(curl, { cwd: ws, network });
+          expect(run.stdout).not.toContain("host socket");
+          expect(run.exitCode).not.toBe(0);
+        }
+        // The filter leaves the rest: a pipe, and with the network a TCP socket.
+        const tcp = await sandbox.exec(["curl", "-s", "--max-time", "5", `http://127.0.0.1:${site.port}/`], {
+          cwd: ws,
+          network: true,
+        });
+        expect(tcp.stdout).toContain("site body");
+        expect((await sandbox.exec(["sh", "-c", "echo piped | cat"], { cwd: ws })).stdout).toBe("piped\n");
+      } finally {
+        host.stop(true);
+      }
+    },
+  );
+
   test.skipIf(process.platform !== "linux")(
     "a command that outlives the call holds its placeholders while other commands start and end",
     async () => {

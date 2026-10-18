@@ -495,7 +495,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   sockets of the disk open, so `systemd-run` over the system bus or the user bus, or `docker run`, started a
   program with no sandbox (seen in WSL 2: a command wrote `/root` through the system bus). The system bus, the
   runtime folder of the user and the sockets of Docker, containerd, Podman and snapd are now gone in the
-  sandbox, as the seccomp filter of Claude Code's sandbox keeps a command off them.
+  sandbox. A seccomp filter now also fails `socket(AF_UNIX)` and io_uring, as Claude Code's sandbox does, so no
+  other socket of the host is open: one in the home folder, as Docker Desktop's (reached in WSL 2 before), or
+  X11's abstract one when the command has the network. With `sandbox.allowedDomains` the relay of the proxy
+  needs a Unix socket, so only the masks hold there.
 - **A sandboxed command could change the files of other agents that Agency runs outside the sandbox**
   (security): with `sandbox.backend: "os"`, a command could write `.mcp.json`, `.claude/settings.json` (hooks),
   `opencode.json`, `.cursor/hooks.json` and the other files that Agency loads hooks, MCP servers or plugins

@@ -8,6 +8,7 @@ import {
   buildScriptSandboxArgv,
   buildSeatbeltProfile,
   OsSandboxBackend,
+  unixSocketFilter,
 } from "../src/sandbox-os.ts";
 
 // The arguments and the profile text. sandbox-os-run.test.ts runs real commands on Linux and macOS.
@@ -123,12 +124,28 @@ describe("OS sandbox arguments", () => {
     const linux = new OsSandboxBackend("/home/u/ws", { deny: [/rm -rf/] }, undefined, {
       platform: "linux",
     });
-    expect(linux.wrap(["sh", "-c", "ls"]).slice(-4)).toEqual(["--", "sh", "-c", "ls"]);
+    const bwrap = linux.wrap(["sh", "-c", "ls"]);
+    expect(bwrap.slice(-4)).toEqual(["--", "sh", "-c", "ls"]);
+    // bubblewrap reads the seccomp program on fd 3, which the shell before it opens.
+    expect(bwrap.slice(0, 3)).toEqual(["/bin/sh", "-c", 'exec "$@" 3<"$0"']);
+    expect(bwrap.slice(4, 7)).toEqual(["bwrap", "--seccomp", "3"]);
     expect(() => linux.checkCommand("rm -rf /")).toThrow();
     const mac = new OsSandboxBackend("/Users/u/ws", {}, undefined, { platform: "darwin" });
     const wrapped = mac.wrap(["sh", "-c", "ls"]);
     expect(wrapped.slice(0, 2)).toEqual(["/usr/bin/sandbox-exec", "-p"]);
     expect(wrapped.slice(-3)).toEqual(["sh", "-c", "ls"]);
+  });
+
+  test("the seccomp program checks the arch, then fails socket(AF_UNIX) and io_uring", () => {
+    const filter = unixSocketFilter("x64");
+    expect(filter?.length).toBe(11 * 8);
+    expect(filter?.readUInt32LE(1 * 8 + 4)).toBe(0xc000003e);
+    // The socket call of x86-64, then a domain of AF_UNIX: EPERM.
+    expect(filter?.readUInt32LE(5 * 8 + 4)).toBe(41);
+    expect(filter?.readUInt32LE(7 * 8 + 4)).toBe(1);
+    expect(filter?.readUInt32LE(9 * 8 + 4)).toBe(0x00050001);
+    expect(unixSocketFilter("arm64")?.readUInt32LE(5 * 8 + 4)).toBe(198);
+    expect(unixSocketFilter("ia32")).toBeUndefined();
   });
 
   test("script sandbox: no network, nothing writable, and of the user's disk only the files of the runner", () => {

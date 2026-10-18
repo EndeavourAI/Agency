@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmdirSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { AgencyError, ErrorCode } from "@agency/schema";
@@ -249,6 +249,45 @@ function runtimeDirs(): string[] {
   ].filter((path): path is string => path !== undefined && path !== "");
 }
 
+const SECCOMP_ARCH: Partial<Record<NodeJS.Architecture, { arch: number; socket: number }>> = {
+  x64: { arch: 0xc000003e, socket: 41 },
+  arm64: { arch: 0xc00000b7, socket: 198 },
+};
+
+/**
+ * Fails `socket(AF_UNIX)`, as Claude Code's sandbox does: a host socket (Docker Desktop's, X11's) runs programs
+ * outside. Also io_uring, which makes sockets past seccomp, x32 calls and those of another arch.
+ */
+export function unixSocketFilter(arch: NodeJS.Architecture = process.arch): Buffer | undefined {
+  const calls = SECCOMP_ARCH[arch];
+  if (calls === undefined) return undefined;
+  const [LD, JEQ, JGE, RET] = [0x20, 0x15, 0x35, 0x06];
+  const [ALLOW, EPERM, ENOSYS] = [0x7fff0000, 0x00050001, 0x00050026];
+  const program: Array<[number, number, number, number]> = [
+    [LD, 0, 0, 4], // arch
+    [JEQ, 0, 8, calls.arch],
+    [LD, 0, 0, 0], // the call
+    [JGE, 6, 0, 0x40000000], // x32
+    [JEQ, 5, 0, 425], // io_uring_setup
+    [JEQ, 0, 2, calls.socket],
+    [LD, 0, 0, 16], // its domain
+    [JEQ, 1, 0, 1], // AF_UNIX
+    [RET, 0, 0, ALLOW],
+    [RET, 0, 0, EPERM],
+    [RET, 0, 0, ENOSYS],
+  ];
+  const out = Buffer.alloc(program.length * 8);
+  program.forEach(([code, jt, jf, k], i) => {
+    out.writeUInt16LE(code, i * 8);
+    out.writeUInt8(jt, i * 8 + 2);
+    out.writeUInt8(jf, i * 8 + 3);
+    out.writeUInt32LE(k, i * 8 + 4);
+  });
+  return out;
+}
+
+let filterFile: string | undefined;
+
 /** An empty read-only folder mounted where a protected path is missing, so that a command cannot make it. */
 export interface Placeholder {
   path: string;
@@ -376,20 +415,23 @@ export class OsSandboxBackend implements SandboxBackend {
   wrap(argv: string[], cwd: string = this.root, network = false, placeholders: Placeholder[] = []): string[] {
     const allowNetwork = this.allowNetwork || network;
     if (this.platform === "linux") {
-      return [
-        ...buildBwrapArgs(
-          this.root,
-          cwd,
-          allowNetwork,
-          this.options.bwrapBin,
-          [...this.hidden(), ...existing(runtimeDirs())],
-          allowNetwork ? undefined : this.proxy?.socket,
-          existing(HOST_SOCKETS),
-          worktreeProtectedPaths(this.root),
-          placeholders,
-        ),
-        ...argv,
-      ];
+      const proxySocket = allowNetwork ? undefined : this.proxy?.socket;
+      const [bin = "bwrap", ...args] = buildBwrapArgs(
+        this.root,
+        cwd,
+        allowNetwork,
+        this.options.bwrapBin,
+        [...this.hidden(), ...existing(runtimeDirs())],
+        proxySocket,
+        existing(HOST_SOCKETS),
+        worktreeProtectedPaths(this.root),
+        placeholders,
+      );
+      // socat, which relays the proxy, needs a Unix socket: with allowedDomains the network namespace holds the
+      // abstract sockets, and the masks the known ones of the disk.
+      const filter = proxySocket === undefined ? this.filterFile() : undefined;
+      if (filter === undefined) return [bin, ...args, ...argv];
+      return ["/bin/sh", "-c", 'exec "$@" 3<"$0"', filter, bin, "--seccomp", "3", ...args, ...argv];
     }
     if (this.platform === "darwin") {
       const port = allowNetwork ? undefined : this.proxy?.port;
@@ -413,6 +455,18 @@ export class OsSandboxBackend implements SandboxBackend {
     throw new AgencyError(ErrorCode.INTERNAL, `sandbox.backend "os" has no backend for ${this.platform}`, {
       source: "sandbox-os",
     });
+  }
+
+  /** The file of `unixSocketFilter`, which bubblewrap reads on fd 3. None on an arch that it does not know. */
+  private filterFile(): string | undefined {
+    const filter = unixSocketFilter();
+    if (filter === undefined) return undefined;
+    if (filterFile === undefined) {
+      const file = join(mkdtempSync(join(tmpdir(), "agency-seccomp-")), "unix.bpf");
+      writeFileSync(file, filter);
+      filterFile = file;
+    }
+    return filterFile;
   }
 
   /** `wrap` for a command that outlives the call: call `release` once it exits, which removes its placeholders. */
@@ -447,8 +501,12 @@ export class OsSandboxBackend implements SandboxBackend {
         output,
       )
     ) {
+      const sockets =
+        this.platform === "linux" && (this.allowNetwork || network || this.proxy?.socket === undefined)
+          ? " It cannot open a Unix socket either."
+          : "";
       notes.push(
-        "agency sandbox: this command runs in the sandbox of the operating system. It can write only in the workspace and the temporary folder, and not in .git/hooks, .git/config, .agency or the hook and MCP files of agents. A write error above can come from that: do not try the same write in another way.",
+        `agency sandbox: this command runs in the sandbox of the operating system. It can write only in the workspace and the temporary folder, and not in .git/hooks, .git/config, .agency or the hook and MCP files of agents.${sockets} An error above can come from that: do not try the same thing in another way.`,
       );
     }
     const offline =

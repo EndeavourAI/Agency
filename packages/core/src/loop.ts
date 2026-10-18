@@ -46,7 +46,7 @@ import {
 import type { MessageOrigin } from "./sessions/entry.ts";
 import { modelSummarizer, type SentRequest, summarizeAtEnd } from "./sessions/summarize.ts";
 import type { TraceRecorder } from "./trace/recorder.ts";
-import { expandReads, isMultiRead, relativePaths } from "./transcript.ts";
+import { relativePaths } from "./transcript.ts";
 import { truncateToolResults } from "./truncate.ts";
 import { untestedEdits, untestedNote } from "./verify.ts";
 
@@ -388,7 +388,7 @@ export async function runTurn(
     const spec = resolveToolSpec(options.tools, call.name);
     // Only a call that changes nothing: a safe tool such as spawn or memory may change something before the turn
     // knows that it will run the calls of this reply.
-    if (spec === undefined || !readOnlyCall(spec, call.input) || isMultiRead(call)) return undefined;
+    if (spec === undefined || !readOnlyCall(spec, call.input)) return undefined;
     const afterReply = async (): Promise<boolean> => {
       await replyStored;
       return !signal.aborted;
@@ -598,7 +598,6 @@ export async function runTurn(
         turn.content = withoutCutLine(turn.content);
       }
       // A reply with no content is not stored: strict providers reject an empty message.
-      turn.content = expandReads(turn.content);
       // Live: a session whose first call wrote the absolute root wrote it in every later call; a model copies itself.
       if (turn.content.length > 0)
         await append({ role: "assistant", content: relativePaths(turn.content, options.cwd) });

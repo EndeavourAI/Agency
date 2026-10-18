@@ -98,7 +98,9 @@ export const DEFAULT_SYSTEM_PROMPT =
   "use the shell only for building, " +
   "testing, linting, and running the project, never as a substitute for the read/write/edit " +
   "tools; report command output verbatim when it matters and summarize otherwise; find code with " +
-  "grep and glob before reading whole files, and read a long file in slices with offset and limit.\n" +
+  "grep and glob before reading whole files, and read a long file in slices with offset and limit; " +
+  "name files by their path relative to the project root, not the absolute path: it is shorter and " +
+  "harder to mistype.\n" +
   "Finishing: never change a test or a check to make it pass unless the user asks for that; fix the " +
   "code it checks. Before you say the work is done, run the checks that prove it and report what you " +
   "ran and its result; say plainly what is not done or not verified.\n" +

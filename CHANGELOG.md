@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Three replies in a row of one read-only call each get a reminder**, once a turn, in the last result: calls
+  that do not depend on each other go in one reply. The system prompt asks for that, and still research sessions
+  ran 21 reads in 22 replies, each a round trip that sent the whole history again.
 - **A turn that changed files is told of the tests that it did not run**, once, before it ends: the tests that
   git tracks and that import a changed file by a relative path (JS and TS), directly or through one more file, or
   that the turn changed itself, when no test command of the turn named them or ran a whole suite. The note names

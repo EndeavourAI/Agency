@@ -100,6 +100,7 @@ const LOW_STEPS = 5;
 const COST_NOTE_SHARE = 0.8;
 /** The same failure of the same call this many times in a turn gets a note to the model. */
 const REPEATED_FAILURES = 3;
+const SERIAL_READS = 3;
 
 export interface Budget {
   maxTokens?: number;
@@ -319,6 +320,8 @@ export async function runTurn(
   let outputContinuations = 0;
   let stopBlocked = false;
   let verifyNoted = false;
+  let serialReads = 0;
+  let serialNoted = false;
   const turnStart = messages.length;
   const tracer = options.traceRecorder;
   const turnSpanId = tracer
@@ -770,6 +773,19 @@ export async function runTurn(
       }
       // A model does not know the limits of its turn. The line goes into a result: the history stays append-only.
       const notes: string[] = [];
+      // Live: research sessions ran 21 reads in 22 replies, each a round trip that sent the whole history again.
+      const only = toolCalls.length === 1 ? toolCalls[0] : undefined;
+      const onlySpec = only === undefined ? undefined : resolveToolSpec(options.tools, only.name);
+      serialReads =
+        only !== undefined && onlySpec !== undefined && readOnlyCall(onlySpec, only.input)
+          ? serialReads + 1
+          : 0;
+      if (serialReads === SERIAL_READS && !serialNoted) {
+        serialNoted = true;
+        notes.push(
+          `${SERIAL_READS} replies in a row each made one call that only reads. Make the calls that do not depend on each other in one reply: they run at the same time, and each reply is a full round trip.`,
+        );
+      }
       const stepsLeft = maxToolIterations - iteration - 1;
       if (stepsLeft === LOW_STEPS && maxToolIterations >= 2 * LOW_STEPS) {
         notes.push(

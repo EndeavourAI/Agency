@@ -1,4 +1,4 @@
-import { lstatSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { AgencyError, ErrorCode } from "@agency/schema";
@@ -177,7 +177,15 @@ export class SandboxBoundary implements SandboxBackend {
   }
 
   private resolveUncontained(candidate: string): string {
-    return canonicalPath(resolve(this.root, fromMsysPath(candidate)));
+    const path = fromMsysPath(candidate);
+    const resolved = canonicalPath(resolve(this.root, path));
+    // Live: models wrote a path from the root with a leading slash (`/packages/x/a.ts`), which names the root of the
+    // disk. Read so only when the disk has neither that path nor its folder, and the root has the file or its folder.
+    if (/^[\\/](?![\\/])/.test(path) && !this.contains(resolved) && !existsSync(dirname(resolved))) {
+      const inRoot = resolve(this.root, `.${path}`);
+      if (existsSync(inRoot) || existsSync(dirname(inRoot))) return canonicalPath(inRoot);
+    }
+    return resolved;
   }
 
   private contains(resolved: string): boolean {

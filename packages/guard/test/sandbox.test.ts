@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgencyError, ErrorCode } from "@agency/schema";
@@ -90,6 +90,16 @@ describe("SandboxBoundary.resolvePath symlink handling", () => {
   function linkType(): "junction" | "dir" {
     return process.platform === "win32" ? "junction" : "dir";
   }
+
+  test("a path from the root with a leading slash is read in the root when the disk has no such path", () => {
+    const { root } = setup();
+    writeFileSync(join(root, "sub", "a.ts"), "x");
+    const boundary = new SandboxBoundary(root);
+    // Live: models wrote `/packages/tools/src/truncate.ts`, which named the root of the disk and was refused.
+    expect(boundary.resolvePath("/sub/a.ts")).toBe(join(root, "sub", "a.ts"));
+    expect(boundary.resolvePath("/sub/new.ts")).toBe(join(root, "sub", "new.ts"));
+    expect(() => boundary.resolvePath("/no-such-folder-71c2/a.ts")).toThrow(AgencyError);
+  });
 
   test("a symlink inside the root pointing outside it is rejected", () => {
     const { root, outside } = setup();

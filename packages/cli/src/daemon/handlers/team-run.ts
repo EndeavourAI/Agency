@@ -406,6 +406,7 @@ export async function runCompareChildTurn(
         systemPrompt: agentSystemPrompt.text,
         systemSegments: agentSystemPrompt.segments,
         tools: offeredTools,
+        role: agent.role,
         model: childModel,
         apiKey: childApiKey,
         provider: childProvider,

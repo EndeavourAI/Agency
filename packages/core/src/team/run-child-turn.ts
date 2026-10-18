@@ -12,6 +12,7 @@ import {
   runTurn,
   type ToolSpec,
 } from "../loop.ts";
+import { deferByRole, deferTools } from "../tool-search.ts";
 import type { TraceRecorder } from "../trace/recorder.ts";
 
 export interface ChildTurnTrace {
@@ -29,6 +30,8 @@ export interface ChildTurnSpec {
   systemPrompt: string;
   systemSegments?: CacheSegment[];
   tools: ToolSpec[];
+  /** The agent's role: picks which seldom used tools wait for `tool_search`. */
+  role?: string;
   model: string;
   apiKey: string;
   provider: string;
@@ -87,7 +90,7 @@ export async function runChildTurn(deps: ChildTurnDeps, spec: ChildTurnSpec): Pr
       ...(deps.redactToolResult !== undefined ? { redactToolResult: deps.redactToolResult } : {}),
       systemPrompt: spec.systemPrompt,
       ...(spec.systemSegments !== undefined ? { systemSegments: spec.systemSegments } : {}),
-      tools: spec.tools,
+      tools: deferTools(deferByRole(spec.tools, spec.role), "never"),
       model: spec.model,
       apiKey: spec.apiKey,
       provider: spec.provider,

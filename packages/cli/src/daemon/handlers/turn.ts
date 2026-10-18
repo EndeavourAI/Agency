@@ -5,6 +5,7 @@ import {
   codeRunner,
   codeRunnerReadPaths,
   codeTool,
+  deferByRole,
   deferTools,
   isTeamLive,
   LEAD_WITHHELD_TOOLS,
@@ -642,10 +643,15 @@ export async function executeTurn(
               : tools.filter((t) => sessionGate.toolOffered(t.name, t.riskTier));
           const leadTurn = !findChildSession(ctx, sessionId) && !handleForSession(ctx, sessionId);
           const withheld = new Set<string>(LEAD_WITHHELD_TOOLS);
-          const leadTools =
+          const teamTools =
             leadTurn && isTeamLive(boardStore.list())
               ? gatedTools.filter((t) => !withheld.has(t.name))
               : gatedTools;
+          const handle = handleForSession(ctx, sessionId);
+          const leadTools = deferByRole(
+            teamTools,
+            handle === undefined ? undefined : config.agents?.[handle]?.role,
+          );
           // Live: under `bun test*` a model ran `npx bun test` first, was refused, and only then wrote `bun test`.
           const allowedCommands = sessionGate.allowedPatterns("bash").slice(0, 10);
           const offeredTools =

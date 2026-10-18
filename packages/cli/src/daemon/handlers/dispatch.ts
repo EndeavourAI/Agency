@@ -410,6 +410,7 @@ export function buildDispatchTool(daemon: DaemonContext, parentSessionId: string
                 systemPrompt: agentSystemPrompt.text,
                 systemSegments: agentSystemPrompt.segments,
                 tools: offeredTools,
+                role: agent.role,
                 model: childModel,
                 apiKey: childApiKey,
                 provider: childProvider,

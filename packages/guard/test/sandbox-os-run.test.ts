@@ -54,6 +54,25 @@ describe.skipIf(!runs)("OS sandbox: real commands", () => {
     expect(existsSync(join(ws, ".vscode"))).toBe(false);
   });
 
+  test.skipIf(process.platform !== "linux")(
+    "a command that outlives the call holds its placeholders while other commands start and end",
+    async () => {
+      const ws = dir(tmpdir());
+      const sandbox = new OsSandboxBackend(ws);
+      expect(await sandbox.isAvailable()).toBe(true);
+      const held = sandbox.wrapHeld(["sh", "-c", "sleep 1; echo '{}' > .mcp.json; echo done"], ws);
+      const long = Bun.spawn(held.argv, { cwd: ws, stdout: "pipe", stderr: "pipe" });
+      // Started while the long one runs, and ended before it writes: the host folder stays until both end.
+      const short = await sandbox.exec(["sh", "-c", "echo '{}' > .mcp.json"], { cwd: ws });
+      expect(short.exitCode).not.toBe(0);
+      expect(existsSync(join(ws, ".mcp.json"))).toBe(true);
+      await long.exited;
+      held.release();
+      expect(await new Response(long.stdout).text()).toContain("done");
+      expect(existsSync(join(ws, ".mcp.json"))).toBe(false);
+    },
+  );
+
   test.skipIf(Bun.which("git") === null)(
     "git init works in a new folder, and git status shows no placeholder",
     async () => {

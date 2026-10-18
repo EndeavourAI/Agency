@@ -256,6 +256,8 @@ export interface Placeholder {
 }
 
 let placeholderSource: string | undefined;
+/** The running commands that hold each placeholder. Its empty mount point is writable on the host until the last ends. */
+const held = new Map<string, number>();
 
 /**
  * bubblewrap holds only paths that exist: each missing protected path gets an empty read-only folder for the length
@@ -266,16 +268,28 @@ let placeholderSource: string | undefined;
 function placeholdersFor(root: string): Placeholder[] {
   placeholderSource ??= mkdtempSync(join(tmpdir(), "agency-placeholder-"));
   const source = placeholderSource;
-  return [...PROTECTED_PATHS.readOnly, ...worktreeProtectedPaths(root)]
-    .filter((path) => !existsSync(join(root, path)) && existsSync(dirname(join(root, path))))
+  const placed = [...PROTECTED_PATHS.readOnly, ...worktreeProtectedPaths(root)]
+    .filter((path) => {
+      const full = join(root, path);
+      return held.has(full) || (!existsSync(full) && existsSync(dirname(full)));
+    })
     .map((path) => ({ path, source }));
+  for (const { path } of placed) held.set(join(root, path), (held.get(join(root, path)) ?? 0) + 1);
+  return placed;
 }
 
 /** bubblewrap made the mount point of each placeholder here: one still empty goes, one filled from outside stays. */
 function removePlaceholders(root: string, placed: Placeholder[]): void {
   for (const { path } of placed) {
+    const full = join(root, path);
+    const count = (held.get(full) ?? 1) - 1;
+    if (count > 0) {
+      held.set(full, count);
+      continue;
+    }
+    held.delete(full);
     try {
-      rmdirSync(join(root, path));
+      rmdirSync(full);
     } catch {}
   }
 }
@@ -399,6 +413,19 @@ export class OsSandboxBackend implements SandboxBackend {
     throw new AgencyError(ErrorCode.INTERNAL, `sandbox.backend "os" has no backend for ${this.platform}`, {
       source: "sandbox-os",
     });
+  }
+
+  /** `wrap` for a command that outlives the call: call `release` once it exits, which removes its placeholders. */
+  wrapHeld(
+    argv: string[],
+    cwd: string = this.root,
+    network = false,
+  ): { argv: string[]; release: () => void } {
+    const placed = this.placeholders();
+    return {
+      argv: this.wrap(argv, cwd, network, placed),
+      release: () => removePlaceholders(this.root, placed),
+    };
   }
 
   /** The hidden folders that exist and do not hold the workspace: bubblewrap mounts only on a folder that exists. */

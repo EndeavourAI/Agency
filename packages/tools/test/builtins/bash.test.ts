@@ -174,11 +174,13 @@ describe("createBashTool", () => {
     const root = mkdtempSync(join(tmpdir(), "agency-bash-test-"));
     dirs.push(root);
     const wrapped: string[][] = [];
+    let released!: () => void;
+    const release = new Promise<void>((resolve) => (released = resolve));
     const osLike = Object.assign(new SandboxBoundary(root), {
       exec: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
-      wrap: (argv: string[]) => {
+      wrapHeld: (argv: string[]) => {
         wrapped.push(argv);
-        return [process.execPath, "-e", "setTimeout(() => {}, 100)"];
+        return { argv: [process.execPath, "-e", "setTimeout(() => {}, 100)"], release: released };
       },
     });
     const manager = new ProcessManager();
@@ -194,6 +196,8 @@ describe("createBashTool", () => {
     expect(wrapped).toHaveLength(1);
     expect(wrapped[0]?.at(-1)).toContain("echo outside");
     expect(manager.list()[0]?.command).toContain(process.execPath);
+    // The placeholders of the sandbox go once the command exits.
+    await release;
 
     const containerLike = Object.assign(new SandboxBoundary(root), {
       exec: async () => ({ stdout: "", stderr: "", exitCode: 0 }),

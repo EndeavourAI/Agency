@@ -221,17 +221,31 @@ export function createBashTool(
 
       if (input.background) {
         const argv = [shell.command, ...shell.buildArgs(input.command)];
-        const wrap = (
-          deps.sandbox as { wrap?: (argv: string[], cwd?: string, network?: boolean) => string[] }
-        ).wrap;
+        const wrapHeld = (
+          deps.sandbox as {
+            wrapHeld?: (
+              argv: string[],
+              cwd?: string,
+              network?: boolean,
+            ) => { argv: string[]; release: () => void };
+          }
+        ).wrapHeld;
         // A backend that runs commands elsewhere must hold this one too: on the host it has the user's rights.
-        if (wrap === undefined && asContainerExecBackend(deps.sandbox) !== undefined) {
+        if (wrapHeld === undefined && asContainerExecBackend(deps.sandbox) !== undefined) {
           return { content: t("tool.bash.background_refused"), isError: true as const };
         }
-        const info = processManager.spawn(wrap ? wrap.call(deps.sandbox, argv, state.cwd, network) : argv, {
-          cwd: state.cwd,
-          ...(ctx.env === undefined ? {} : { env: ctx.env }),
-        });
+        const held = wrapHeld?.call(deps.sandbox, argv, state.cwd, network);
+        let info: ReturnType<typeof processManager.spawn>;
+        try {
+          info = processManager.spawn(held?.argv ?? argv, {
+            cwd: state.cwd,
+            ...(ctx.env === undefined ? {} : { env: ctx.env }),
+            ...(held === undefined ? {} : { onExit: held.release }),
+          });
+        } catch (error) {
+          held?.release();
+          throw error;
+        }
         return { content: t("tool.bash.background_started", { id: info.id, pid: info.pid }) };
       }
 

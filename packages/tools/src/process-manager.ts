@@ -35,7 +35,10 @@ function appendBounded(log: string, chunk: string): string {
 export class ProcessManager {
   private readonly entries = new Map<string, Entry>();
 
-  spawn(command: string[], options: { cwd?: string; env?: Record<string, string> } = {}): ManagedProcessInfo {
+  spawn(
+    command: string[],
+    options: { cwd?: string; env?: Record<string, string>; onExit?: () => void } = {},
+  ): ManagedProcessInfo {
     const id = randomUUID();
     const proc = Bun.spawn(command, {
       windowsHide: true,
@@ -44,6 +47,7 @@ export class ProcessManager {
       stdout: "pipe",
       stderr: "pipe",
     });
+    if (options.onExit) void proc.exited.then(options.onExit, options.onExit);
     trackJob(proc.pid, proc.exited);
     this.track(id, proc, command.join(" "), "");
     void this.pump(id, proc.stdout);

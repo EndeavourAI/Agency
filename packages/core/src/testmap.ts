@@ -120,9 +120,8 @@ export async function buildTestMap(
 }
 
 /**
- * The tests that ran a line that the work tree changed since the map's commit, by the old line numbers of each hunk;
- * an insertion counts the lines on both sides of it. Undefined when git fails or a changed source file is not mapped,
- * or when each changed line that ran is one that every test of its file runs, as an import does at load.
+ * The tests that ran a changed line, by each hunk's old lines (an insertion: both sides). Undefined when git fails,
+ * a changed source is unmapped, or every changed line that ran is one that all tests of its file run (an import).
  */
 export function coveringTests(map: TestMap, root: string, changed: string[]): string[] | undefined {
   const sources = changed.filter((path) => !TEST_FILE.test(path));

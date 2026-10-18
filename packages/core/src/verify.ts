@@ -31,8 +31,7 @@ function trackedTests(root: string): string[] {
 }
 
 /**
- * The tests that no test command of the turn ran and that ran a line it changed, by the coverage map of `agency
- * testmap`. With no map, or a changed file that it lacks: the tests that import a changed file, one or two hops away.
+ * Unrun tests that ran a changed line, by the `agency testmap` map; with none, the importers one or two hops away.
  * ponytail: the graph reads relative JS/TS imports only; a Python or Go test of a changed file goes unnamed.
  */
 export function untestedEdits(

@@ -21,6 +21,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   message @-mentions: up to four files of the workspace, each as a `read` call and its result in the transcript.
   In each live debug and edit session the first reply only read the files that the prompt named: a full round
   trip to the model for the text the harness could give.
+  A named test file brings the files that it imports by a relative path: in each debug session the next read
+  after the failing test was the file that it tests.
 - **`bash` runs a command in the folder that a `cwd` or `workdir` argument names**, in the workspace only: in
   two of three live edit sessions a model sent `cwd` unasked, as Codex has models name the folder of each command,
   and the command ran in the project root instead.

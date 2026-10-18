@@ -35,6 +35,21 @@ test("names the files of the workspace that a prompt names, once each and at mos
   expect(namedFiles("../outside.ts", root)).toEqual([]);
 });
 
+test("a named test file brings the files that it imports by a relative path", () => {
+  const root = workspace();
+  mkdirSync(join(root, "test"));
+  writeFileSync(
+    join(root, "test", "render.test.ts"),
+    'import { expect } from "bun:test";\nimport { a } from "../src/render.ts";\nimport { b } from "../src/missing";\n',
+  );
+  writeFileSync(join(root, "src", "util.js"), "x");
+  writeFileSync(join(root, "src", "util.test.js"), "const u = require('./util');\n");
+  // Live: in each debug session the next read after the failing test was the file that it imports.
+  expect(namedFiles("test/render.test.ts fails", root)).toEqual(["test/render.test.ts", "src/render.ts"]);
+  expect(namedFiles("src/util.test.js fails", root)).toEqual(["src/util.test.js", "src/util.js"]);
+  expect(namedFiles("src/render.ts", root)).toEqual(["src/render.ts"]);
+});
+
 test("a turn starts with the named files read, so the first reply need not ask for them", async () => {
   const root = workspace();
   const seen: ProviderRequest[] = [];

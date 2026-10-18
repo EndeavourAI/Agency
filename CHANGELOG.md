@@ -461,6 +461,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Fixed
 
+- **A Gemini request no longer waits for a refused cache each time**: when the API refused to make the explicit
+  cache of the prompt prefix (a prefix under the model's minimum, a model with no explicit cache), the refusal was
+  not kept, so each request first made the same refused call. It is now kept for the life of the cache.
 - **A team worktree held the same way out of the sandbox** (security): `.agency/worktrees` is writable, and
   `-p --worktree <name>` runs that folder as a trusted workspace, so a sandboxed command could write its
   `.mcp.json` or `.claude/settings.json` and have it run with your rights. In each worktree the same files are now

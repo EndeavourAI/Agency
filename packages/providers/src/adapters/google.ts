@@ -162,7 +162,8 @@ function buildRequestBody(
 }
 
 interface PrefixCacheEntry {
-  name: string;
+  /** Undefined when the API refused to make it: the prefix then goes in each request until the entry expires. */
+  name?: string;
   expiresAt: number;
 }
 
@@ -185,6 +186,12 @@ async function explicitPrefixCache(
   const key = hashPrefix(request.model, stable);
   const hit = prefixCache.get(key);
   if (hit && hit.expiresAt > Date.now()) return hit.name;
+  // A refusal (a prefix under the model's minimum, a model with no explicit cache) is kept too: else each request
+  // waits for the same refused call first.
+  const refused = (): undefined => {
+    prefixCache.set(key, { expiresAt: Date.now() + ttlSeconds * 1000 });
+    return undefined;
+  };
   const ttlSeconds =
     request.systemSegments?.find((s) => s.stability !== "dynamic" && s.ttlSeconds !== undefined)
       ?.ttlSeconds ??
@@ -202,9 +209,9 @@ async function explicitPrefixCache(
       }),
       signal: request.signal,
     });
-    if (!res.ok) return undefined;
+    if (!res.ok) return refused();
     const payload = (await res.json().catch(() => undefined)) as { name?: string } | undefined;
-    if (!payload?.name) return undefined;
+    if (!payload?.name) return refused();
     prefixCache.set(key, { name: payload.name, expiresAt: Date.now() + ttlSeconds * 1000 });
     return payload.name;
   } catch {

@@ -377,3 +377,27 @@ test("a short system prompt and a short first message are cached when the whole 
   expect(system[0]?.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
   expect(messages[0]?.content[0]?.cache_control).toEqual({ type: "ephemeral" });
 });
+
+test("google asks for an explicit cache one time when the API refuses it, not before each request", async () => {
+  const urls: string[] = [];
+  const sse = `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }] })}\n\n`;
+  const http: HttpClient = {
+    fetch: async (url) => {
+      urls.push(url);
+      if (url.includes("/cachedContents"))
+        return new Response('{"error":{"message":"cached content is too small"}}', { status: 400 });
+      return sseResponse(sse);
+    },
+  };
+  const request = {
+    model: "gemini-refuses-cache",
+    apiKey: "k",
+    systemSegments: [{ stability: "shared" as const, text: pad("a prefix the model will not cache") }],
+    messages: [{ role: "user" as const, content: [{ type: "text" as const, text: "hi" }] }],
+    maxTokens: 64,
+  };
+  await collect(googleAdapter.stream(request, http));
+  await collect(googleAdapter.stream(request, http));
+  expect(urls.filter((url) => url.includes("/cachedContents"))).toHaveLength(1);
+  expect(urls.filter((url) => url.includes(":streamGenerateContent"))).toHaveLength(2);
+});

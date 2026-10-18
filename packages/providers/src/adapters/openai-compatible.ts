@@ -143,6 +143,9 @@ function buildRequestBody(request: ProviderRequest, family: string): Record<stri
     body.cache_control = { type: "ephemeral" };
   // Other servers of this format may refuse a field they do not know.
   if (family === "openai" && request.cacheKey !== undefined) body.prompt_cache_key = request.cacheKey;
+  // OpenRouter keeps the requests of a session on one provider from the first one, so its cache stays warm.
+  if (family === "openrouter" && request.cacheKey !== undefined)
+    body.session_id = request.cacheKey.slice(0, 256);
 
   if (request.tools?.length) {
     body.tools = request.tools.map((t) => ({

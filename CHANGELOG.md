@@ -40,6 +40,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   a new session were sent again uncached at each step until the messages alone passed that size.
 - **`prompt_cache_key` for OpenAI**: each request of a session names the session, so OpenAI sends it to
   the machine that holds its cached prefix, as Codex does. Other servers of the format do not get the field.
+- **`session_id` for OpenRouter**: OpenRouter keeps each request of a session on one provider from the first request,
+  so the cache of DeepSeek, Gemini, Grok, Moonshot and the others stays warm. Before, it held a session there only
+  after a first cache hit. Run live on OpenRouter.
 - **More rule files**: `.windsurf/rules/` (by `trigger`), `.kilocode/rules/`, Zed's `.rules`,
   `.trae/rules/project_rules.md`, and the `AGENTS.override.md` of Codex in place of `AGENTS.md`.
 - **`opencode.json` of a workspace**: its `instructions` files, its `command` map and its

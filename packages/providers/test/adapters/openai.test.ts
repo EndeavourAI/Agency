@@ -126,6 +126,13 @@ test("the session goes to OpenAI as prompt_cache_key, and not to other servers o
   await collect(
     createOpenAiCompatibleAdapter("deepseek", "http://x").stream({ ...baseRequest, cacheKey: "s1" }, http),
   );
+  await collect(
+    createOpenAiCompatibleAdapter("openrouter", "http://x").stream({ ...baseRequest, cacheKey: "s1" }, http),
+  );
   expect(bodies[0]?.prompt_cache_key).toBe("s1");
   expect(bodies[1]?.prompt_cache_key).toBeUndefined();
+  expect(bodies[1]?.session_id).toBeUndefined();
+  // OpenRouter takes it as session_id, which keeps the session on one provider and its cache warm.
+  expect(bodies[2]?.session_id).toBe("s1");
+  expect(bodies[2]?.prompt_cache_key).toBeUndefined();
 });

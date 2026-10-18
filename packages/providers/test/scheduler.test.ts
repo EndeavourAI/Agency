@@ -52,10 +52,10 @@ describe("Scheduler retry behavior", () => {
     expect((err as AgencyError).code).toBe(ErrorCode.RATE_LIMIT);
   });
 
-  test("a rate limit gets more attempts than another retryable failure by default", async () => {
-    // Measured on OpenRouter's free models: a limit clears in 11 s to 22 s. Four attempts span 3.5 s at most.
+  test("a rate limit is retried for a window of time, another retryable failure four times", async () => {
+    // Live: 4 of 13 sessions on a free model ended on an upstream limit that outlasted 7 attempts (about 60 s).
     const attemptsFor = async (code: ErrorCode): Promise<number> => {
-      const scheduler = new Scheduler({ baseDelayMs: 1, maxDelayMs: 2 });
+      const scheduler = new Scheduler({ baseDelayMs: 1, maxDelayMs: 2, rateLimitWindowMs: 200 });
       let calls = 0;
       await scheduler
         .schedule(async () => {
@@ -67,7 +67,9 @@ describe("Scheduler retry behavior", () => {
     };
 
     expect(await attemptsFor(ErrorCode.TRANSIENT)).toBe(4);
-    expect(await attemptsFor(ErrorCode.RATE_LIMIT)).toBe(7);
+    const started = Date.now();
+    expect(await attemptsFor(ErrorCode.RATE_LIMIT)).toBeGreaterThan(7);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(190);
   });
 
   test("honors a server-provided retryAfterMs instead of the computed backoff", async () => {

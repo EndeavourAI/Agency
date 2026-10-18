@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A rate limit is retried for up to 5 minutes**, not 7 attempts (about 60 seconds): in 4 of 13 live sessions
+  on a free model, an upstream limit outlasted the attempts and the whole session was lost, in one after the fix
+  was made. Each wait is still at most 30 seconds, and a retry event says when the next try runs.
 - **The files that a prompt names are read before the first request**, as Claude Code reads a file that a
   message @-mentions: up to four files of the workspace, each as a `read` call and its result in the transcript.
   In each live debug and edit session the first reply only read the files that the prompt named: a full round

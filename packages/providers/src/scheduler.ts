@@ -10,6 +10,8 @@ export interface SchedulerOptions {
   maxAttempts?: number;
   baseDelayMs?: number;
   maxDelayMs?: number;
+  /** How long a rate limit is retried when `maxAttempts` is unset. Default 5 minutes. */
+  rateLimitWindowMs?: number;
 }
 
 export interface ScheduleOptions {
@@ -97,6 +99,7 @@ export class Scheduler {
   private readonly bucket: TokenBucket | undefined;
   private readonly maxAttempts: number;
   private readonly rateLimitAttempts: number;
+  private readonly rateLimitWindowMs: number;
   private readonly baseDelayMs: number;
   private readonly maxDelayMs: number;
   private rotationCursor = 0;
@@ -112,8 +115,9 @@ export class Scheduler {
     this.bucket =
       rpm === undefined ? undefined : new TokenBucket(Math.max(1, Math.ceil(rpm / 10)), rpm / 60_000);
     this.maxAttempts = options.maxAttempts ?? 4;
-    // A rate limit clears in seconds (11 s to 22 s measured on OpenRouter's free models): it gets about 30 s, not 3.5 s.
-    this.rateLimitAttempts = options.maxAttempts ?? 7;
+    // Live: an upstream limit of a free model outlasted 7 attempts (about 60 s) in 4 of 13 sessions, each lost whole.
+    this.rateLimitAttempts = options.maxAttempts ?? Number.POSITIVE_INFINITY;
+    this.rateLimitWindowMs = options.rateLimitWindowMs ?? 300_000;
     this.baseDelayMs = options.baseDelayMs ?? 500;
     this.maxDelayMs = options.maxDelayMs ?? 30_000;
   }
@@ -229,6 +233,7 @@ export class Scheduler {
   }
 
   private async runWithRetry<T>(fn: () => Promise<T>, onRetry: ScheduleOptions["onRetry"]): Promise<T> {
+    const started = Date.now();
     let attempt = 0;
     while (true) {
       attempt += 1;
@@ -236,8 +241,9 @@ export class Scheduler {
         return await fn();
       } catch (error) {
         if (!(error instanceof AgencyError) || error.retryClass !== "retryable") throw error;
-        const limit = error.code === ErrorCode.RATE_LIMIT ? this.rateLimitAttempts : this.maxAttempts;
-        if (attempt >= limit) throw error;
+        const rateLimit = error.code === ErrorCode.RATE_LIMIT;
+        if (attempt >= (rateLimit ? this.rateLimitAttempts : this.maxAttempts)) throw error;
+        if (rateLimit && Date.now() - started >= this.rateLimitWindowMs) throw error;
 
         const retryAfterMs = extractRetryAfterMs(error);
         // Security bound: a hostile or misconfigured Retry-After must not hang a

@@ -24,6 +24,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   the disk has neither that path nor its folder and the project has the file or its folder: in live research
   sessions models wrote such paths for `read`, `grep` and `glob`, and each named the root of the disk and was
   refused (3 in one session). A path that the disk has keeps its meaning, and none can leave the workspace.
+  This holds for the file tools of a session too, which see the workspace through a view that made the path
+  absolute first: a live session still had three such reads refused.
 - **Three replies in a row of one read-only call each get a reminder**, once a turn, in the last result: calls
   that do not depend on each other go in one reply. The system prompt asks for that, and still research sessions
   ran 21 reads in 22 replies, each a round trip that sent the whole history again.

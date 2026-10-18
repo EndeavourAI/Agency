@@ -223,7 +223,11 @@ function sep(): string {
  * The view inherits from `inner`, so its boundary and every other member stay (a container backend keeps `exec`).
  */
 export function rebaseSandbox<T extends SandboxBackend>(inner: T, base: () => string): T {
-  const at = (candidate: string) => resolve(base(), fromMsysPath(candidate));
+  // A path with one leading slash goes on as it is: the boundary reads it from the project root when the disk has none.
+  const at = (candidate: string) => {
+    const path = fromMsysPath(candidate);
+    return /^[\\/](?![\\/])/.test(path) ? path : resolve(base(), path);
+  };
   return Object.assign(Object.create(inner) as T, {
     resolvePath: (candidate: string) => inner.resolvePath(at(candidate)),
     resolvePathGated: (candidate: string, opts: { tool: string; ask?: RequestApproval }) =>

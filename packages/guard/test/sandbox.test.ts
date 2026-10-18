@@ -99,6 +99,10 @@ describe("SandboxBoundary.resolvePath symlink handling", () => {
     expect(boundary.resolvePath("/sub/a.ts")).toBe(join(root, "sub", "a.ts"));
     expect(boundary.resolvePath("/sub/new.ts")).toBe(join(root, "sub", "new.ts"));
     expect(() => boundary.resolvePath("/no-such-folder-71c2/a.ts")).toThrow(AgencyError);
+    // Live: the file tools of a session go through a rebased view, which made the path absolute first.
+    const view = rebaseSandbox(boundary, () => join(root, "sub"));
+    expect(view.resolvePath("/sub/a.ts")).toBe(join(root, "sub", "a.ts"));
+    expect(view.resolvePath("a.ts")).toBe(join(root, "sub", "a.ts"));
   });
 
   test("a symlink inside the root pointing outside it is rejected", () => {

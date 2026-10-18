@@ -33,6 +33,13 @@ describe("createWriteTool", () => {
     expect(readFileSync(join(root, "src", "nested", "new.ts"), "utf8")).toBe("hello");
   });
 
+  test("names the file from the project root, also when the call gave its absolute path", async () => {
+    const { deps, root, snapshots } = setup();
+    const tool = createWriteTool(deps, snapshots, {});
+    const result = await tool.handler({ path: join(root, "src", "b.ts"), content: "x" }, { signal });
+    expect(result.content).toBe("wrote 1 bytes to src/b.ts");
+  });
+
   test("overwrites an existing file entirely", async () => {
     const { deps, root, snapshots } = setup();
     writeFileSync(join(root, "a.ts"), "old content");

@@ -23,7 +23,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   sets folder rules on the disk; set `codeMode: false` to turn it off.
 - **The system prompt asks for paths relative to the project root**: in live sessions each call wrote out a
   120-character absolute path (about 30 output tokens, the slow part of a small call), and one model dropped part
-  of it and read a file that does not exist.
+  of it and read a file that does not exist. `edit` and `write` now name the file that way in their result too,
+  not by the path the call gave, so the model sees the short form it can write back.
 - **The system prompt asks for independent tool calls in one reply**, with the reason: they run at the same
   time, and each extra reply is a full round trip. A trace of a real session showed a model making 32 replies
   of one read each (about 32 output tokens, 3 seconds per reply).

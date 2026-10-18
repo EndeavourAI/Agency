@@ -7,7 +7,7 @@ import { applyEditsVerified, type EditHunk } from "../edit-engine.ts";
 import type { FormatterConfig } from "../formatter.ts";
 import { runFormatter } from "../formatter.ts";
 import type { ReadState } from "../read-state.ts";
-import { clip, str, summarize } from "../render.ts";
+import { clip, projectPath, str, summarize } from "../render.ts";
 import type { SnapshotStore } from "../snapshot.ts";
 import { syntaxNote } from "../syntax.ts";
 
@@ -164,7 +164,8 @@ export function createEditTool(
         writeFileSync(resolved, outcome.content, "utf8");
         await runFormatter(formatter, resolved);
         snapshots.recordAfter(resolved);
-        let content = t("tool.edit.applied", { path: input.path });
+        const shownPath = projectPath(deps.sandbox.resolvePath("."), resolved, input.path);
+        let content = t("tool.edit.applied", { path: shownPath });
         if (hunks.length > 1) content += `\n${t("tool.edit.hunks_applied", { count: hunks.length })}`;
         const shown = changedLines(readFileSync(resolved, "utf8"), hunks);
         if (shown !== "") content += `\n${shown}`;
@@ -173,7 +174,7 @@ export function createEditTool(
         if (outcome.warnings.length > 0) {
           content += `\n${t("lsp.diagnostics.warning", {
             count: outcome.warnings.length,
-            path: input.path,
+            path: shownPath,
             summary: outcome.warnings.join("; "),
           })}`;
         }

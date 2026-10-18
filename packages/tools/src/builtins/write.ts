@@ -6,7 +6,7 @@ import type { ToolDeps, ToolSpec } from "../contract.ts";
 import type { FormatterConfig } from "../formatter.ts";
 import { runFormatter } from "../formatter.ts";
 import type { ReadState } from "../read-state.ts";
-import { str, summarize } from "../render.ts";
+import { projectPath, str, summarize } from "../render.ts";
 import type { SnapshotStore } from "../snapshot.ts";
 import { syntaxNote } from "../syntax.ts";
 
@@ -57,9 +57,10 @@ export function createWriteTool(
       await runFormatter(formatter, resolved);
       snapshots.recordAfter(resolved);
 
-      let content = t("tool.write.wrote", { bytes: input.content.length, path: input.path });
+      const shownPath = projectPath(deps.sandbox.resolvePath("."), resolved, input.path);
+      let content = t("tool.write.wrote", { bytes: input.content.length, path: shownPath });
       if (existed && options?.readState && !options.readState.has(resolved)) {
-        content += `\n${t("tool.write.unread_overwrite", { path: input.path })}`;
+        content += `\n${t("tool.write.unread_overwrite", { path: shownPath })}`;
       }
       const broken = syntaxNote(input.path, before, input.content);
       if (broken !== undefined) content += `\n${broken}`;

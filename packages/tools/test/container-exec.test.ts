@@ -234,14 +234,16 @@ describe("container-exec routing and cwd", () => {
     expect(backend.translatedCwds).toEqual(["/workspace"]);
   }, 30_000);
 
-  test("cwd persists across calls through container marker translation", async () => {
+  test("a cd in a container command lasts for that command only", async () => {
     const { tool, state, backend } = setupContainer();
-    mkdirSync(join(state.cwd, "sub"));
-    await tool.handler({ command: "cd sub" }, { signal });
-    expect(state.cwd.toLowerCase()).toContain("sub");
+    const root = state.cwd;
+    mkdirSync(join(root, "sub"));
+    const moved = await tool.handler({ command: "cd sub" }, { signal });
+    expect(moved.content).toContain("[the next command starts in the project root again");
+    expect(state.cwd).toBe(root);
     const result = await tool.handler({ command: pwdCommand }, { signal });
-    expect(result.content.toLowerCase()).toContain("sub");
-    expect(backend.translatedCwds[backend.translatedCwds.length - 1]).toBe("/workspace/sub");
+    expect(result.content.toLowerCase()).not.toContain("sub");
+    expect(backend.translatedCwds[backend.translatedCwds.length - 1]).toBe("/workspace");
   }, 30_000);
 
   test("checkCommand gates before exec on the container branch", async () => {
@@ -395,7 +397,7 @@ describe("container-exec docker integration (gated)", () => {
       const echo = await tool.handler({ command: "echo hello-from-docker" }, { signal });
       expect(echo.content).toContain("hello-from-docker");
       await tool.handler({ command: "cd sub" }, { signal });
-      expect(state.cwd).toBe(resolve(join(root, "sub")));
+      expect(state.cwd).toBe(root);
     },
     120_000,
   );

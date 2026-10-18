@@ -1,4 +1,3 @@
-import { relative } from "node:path";
 import { isReadOnlyCommand } from "@agency/guard";
 import { t } from "@agency/i18n";
 import { AgencyError, ErrorCode } from "@agency/schema";
@@ -168,8 +167,8 @@ export function createBashTool(
       (shell.posixSyntax
         ? ""
         : `Despite the tool's name, write commands in ${shell.label} syntax on this platform, not bash/POSIX syntax. `) +
-      "Working directory persists " +
-      "across calls within this session; environment variables do not. Pass background: true for " +
+      "Each command starts in the project root: a cd lasts for that command only, so write `cd dir && command`; " +
+      "environment variables do not persist either. Pass background: true for " +
       "long-running processes (dev servers, watchers) instead of waiting for them to exit. Pass " +
       "timeout (milliseconds) to kill a command that may hang. A command with no timeout that runs " +
       `over ${Math.round(detachMs / 1000)} seconds moves to the background and keeps running.` +
@@ -194,9 +193,7 @@ export function createBashTool(
       required: ["command"],
     },
     riskTier: "dangerous",
-    // `cd` is read-only but moves the cwd that the next call starts in.
-    readOnly: (input) =>
-      !input.background && isReadOnlyCommand(input.command) && !/\bcd\b/.test(input.command),
+    readOnly: (input) => !input.background && isReadOnlyCommand(input.command),
     renderCall: (input) => `bash ${summarize(str(input.command))}`,
     renderResult: (result) =>
       result.isError
@@ -271,28 +268,15 @@ export function createBashTool(
         const { output, cwd: markerCwd } = parsed;
         // `exit 3` or `set -e` ends the shell before the wrapper prints its marker; the process exit code is then the only signal.
         const exitCode = outcome.stdout.includes(EXIT_MARKER) ? parsed.exitCode : (outcome.exitCode ?? 0);
-        const cwd = normalizeCwd(markerCwd);
-        // A cancelled command keeps no cwd side-effect: its wrapper may not
-        // even have run to completion, so the marker cannot be trusted.
-        // The sandbox bound is what makes a persisted cwd safe to keep: a
-        // `cd` that walks out of the workspace (or through a symlink) is
-        // refused and the previous directory retained, otherwise every later
-        // command would silently run — and write — outside containment.
+        // Every command starts in state.cwd, as each exec of Codex names its folder: models lost track of a cd
+        // that persisted. The notice is for a command with a cd only: Git Bash reports its folder in the MSYS form.
         let cwdNotice: string | undefined;
-        if (!outcome.aborted) {
+        if (!outcome.aborted && /\b(cd|pushd)\b/.test(input.command)) {
+          let moved = true;
           try {
-            const before = deps.sandbox.resolvePath(state.cwd);
-            const after = deps.sandbox.resolvePath(cwd);
-            state.cwd = cwd;
-            // The file tools take paths from the project root, not from where the shell went: a model that does
-            // not see the move edits `src/a.ts` for `packages/x/src/a.ts`.
-            if (after !== before) {
-              const where = relative(deps.sandbox.resolvePath("."), after).replace(/\\/g, "/") || ".";
-              cwdNotice = `\n${t("tool.bash.cwd_moved", { cwd: where })}`;
-            }
-          } catch {
-            cwdNotice = `\n${t("tool.bash.cwd_kept", { cwd })}`;
-          }
+            moved = deps.sandbox.resolvePath(normalizeCwd(markerCwd)) !== deps.sandbox.resolvePath(state.cwd);
+          } catch {}
+          if (moved) cwdNotice = `\n${t("tool.bash.cwd_reset")}`;
         }
 
         let combined = outcome.stderr

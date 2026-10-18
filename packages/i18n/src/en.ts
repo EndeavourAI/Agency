@@ -112,9 +112,8 @@ export const en = {
     "Run with the network, outside the network limit of the sandbox (local sockets open too): {command}",
   "tool.bash.network_refused":
     "not run: the user did not allow the network for this command. Do the work without the network, or say that the task needs it.",
-  "tool.bash.cwd_kept": "[cwd kept: {cwd} resolves outside the workspace]",
-  "tool.bash.cwd_moved":
-    "[the shell is now in {cwd} and stays there for the next command; read, edit, write, grep and glob still take paths from the project root]",
+  "tool.bash.cwd_reset":
+    "[the next command starts in the project root again: a cd lasts for its own command only, so write `cd dir && command`]",
   "tool.grep.no_matches": "no matches",
   "tool.grep.truncated": "[truncated at {count} matches]",
   "tool.grep.truncated_files": "[truncated at {count} files]",

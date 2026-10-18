@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { FULL_CAPABILITIES, SandboxBoundary } from "@agency/guard";
 import { AgencyError, ErrorCode } from "@agency/schema";
 import { type BashState, createBashTool } from "../../src/builtins/bash.ts";
@@ -81,19 +81,18 @@ describe("createBashTool", () => {
 
   // Two sequential real shell spawns; PowerShell's cold start in this
   // sandbox is slow and variable enough that the 5s default is too tight.
-  test("working directory persists across calls within a session", async () => {
+  test("a cd lasts for its own command only: the next command starts in the root again", async () => {
     const { tool, state, root } = setup();
     mkdirSync(join(root, "subdir"));
 
     const moved = await tool.handler({ command: "cd subdir" }, { signal });
-    expect(state.cwd.toLowerCase()).toContain("subdir");
-    // The move is named once, with the root that the file tools keep: models took the shell's folder for theirs.
-    expect(moved.content).toContain("[the shell is now in subdir");
-    expect(moved.content).toContain("still take paths from the project root");
+    expect(state.cwd).toBe(root);
+    // Live: models lost track of a folder that a cd kept, and ran `cd packages/x` again from inside it.
+    expect(moved.content).toContain("[the next command starts in the project root again");
 
     const result = await tool.handler({ command: pwdCommand }, { signal });
-    expect(result.content.toLowerCase()).toContain("subdir");
-    expect(result.content).not.toContain("[the shell is now in");
+    expect(result.content.toLowerCase()).not.toContain("subdir");
+    expect(result.content).not.toContain("[the next command");
   }, 15_000);
 
   test("the exit and cwd marker lines are stripped from returned output", async () => {
@@ -338,32 +337,33 @@ describe("createBashTool", () => {
 describe("createBashTool cwd containment (A5: bash calls resolvePath)", () => {
   const signal = new AbortController().signal;
 
-  test("a cd that leaves the workspace is refused and the previous cwd kept", async () => {
+  test("a cd that leaves the workspace does not carry over to the next command", async () => {
     const { tool, state, root } = setup();
     const result = await tool.handler({ command: "cd .." }, { signal });
 
     expect(state.cwd).toBe(root);
-    expect(result.content).toContain("resolves outside the workspace");
+    expect(result.content).toContain("[the next command starts in the project root again");
   }, 30_000);
 
-  test("a cd to a symlinked directory pointing outside is refused too", async () => {
+  test("a cd to a symlinked directory pointing outside does not carry over either", async () => {
     const { tool, state, root } = setup();
     const parent = join(root, "..");
     const linkName = process.platform === "win32" ? "escape-link" : "escape-link";
     const linkPath = join(root, linkName);
     symlinkSync(parent, linkPath, process.platform === "win32" ? "junction" : "dir");
 
-    const result = await tool.handler({ command: `cd ${linkName}` }, { signal });
+    await tool.handler({ command: `cd ${linkName}` }, { signal });
     expect(state.cwd).toBe(root);
-    expect(result.content).toContain("resolves outside the workspace");
+    const where = await tool.handler({ command: pwdCommand }, { signal });
+    expect(where.content.toLowerCase()).not.toContain("escape-link");
   }, 30_000);
 });
 
 describe.skipIf(process.platform !== "win32" || Bun.which("bash") === null)(
   "createBashTool in Git Bash",
   () => {
-    test("a directory change persists across calls, with no notice that it left the workspace", async () => {
-      // Live: `pwd` gave the MSYS form (/tmp/...), no call could change the directory, and each result had the notice.
+    test("a cd works within its command, and a command with no cd gets no notice", async () => {
+      // Live: `pwd` gave the MSYS form (/tmp/...), and each result had the notice.
       const root = mkdtempSync(join(tmpdir(), "agency-bash-test-"));
       dirs.push(root);
       mkdirSync(join(root, "sub"));
@@ -376,10 +376,10 @@ describe.skipIf(process.platform !== "win32" || Bun.which("bash") === null)(
       managers.push(manager);
       const tool = createBashTool(deps, resolveShell("win32", "gitbash"), { cwd: root }, manager);
 
-      const moved = await tool.handler({ command: "cd sub" }, { signal });
-      expect(moved.content).not.toContain("cwd kept");
+      const moved = await tool.handler({ command: 'cd sub && basename "$(pwd)"' }, { signal });
+      expect(moved.content.split("\n")[0]).toBe("sub");
       const where = await tool.handler({ command: 'basename "$(pwd)"' }, { signal });
-      expect(where.content.trim()).toBe("sub");
+      expect(where.content.trim()).toBe(basename(root));
     }, 60_000);
 
     test("aborting stops the command's own child process, through the launcher that Git for Windows installs", async () => {

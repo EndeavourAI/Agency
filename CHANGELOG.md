@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Each `bash` command starts in the project root**, as each command of Codex names its folder: a `cd` lasts
+  for its own command only, and a command with a `cd` that moved says so. In live sessions the folder that a
+  `cd` kept was lost: a model ran `cd packages/tools && bun test` from inside `packages/tools` (`No such file or
+  directory`) and read `./src/render.ts` from the root (`ENOENT`). A command with a `cd` that only reads now
+  runs beside other calls, as it moves no later call.
 - **A compound command runs when each part is allowed or only reads**, as in Claude Code: under
   `Bash(bun test*)`, `cd packages/tools && bun test x.test.ts` asked before, since no rule names the whole line
   (two refused calls in a live session). A part that a rule asks for or denies still asks, and git after a `cd`

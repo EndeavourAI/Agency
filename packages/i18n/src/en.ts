@@ -114,7 +114,6 @@ export const en = {
     "not run: the user did not allow the network for this command. Do the work without the network, or say that the task needs it.",
   "tool.bash.cwd_kept": "[cwd kept: {cwd} resolves outside the workspace]",
   "tool.grep.no_matches": "no matches",
-  "tool.grep.no_search_binary": "neither ripgrep (rg) nor grep is installed or on PATH",
   "tool.grep.truncated": "[truncated at {count} matches]",
   "tool.grep.truncated_files": "[truncated at {count} files]",
   "tool.glob.no_matches": "no files matched",

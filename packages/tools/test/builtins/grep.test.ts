@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FULL_CAPABILITIES, SandboxBoundary } from "@agency/guard";
@@ -63,26 +63,68 @@ describe("createGrepTool", () => {
     expect(result.content).not.toContain("b.md");
   });
 
+  test("takes rg's regex and glob with or without rg: alternation, \\d, **/ and a leading dash; skips .git", async () => {
+    const { deps, root } = setup();
+    mkdirSync(join(root, "src"));
+    mkdirSync(join(root, ".git"));
+    writeFileSync(join(root, "src", "a.ts"), "const MAX_ITEMS = 200;\nfunction prune() {}\n-flag here\n");
+    writeFileSync(join(root, "src", "b.md"), "prune\n");
+    writeFileSync(join(root, ".git", "index"), "prune\0binary\n");
+
+    const tool = createGrepTool(deps);
+    const result = await tool.handler({ pattern: "MAX_\\w+ = \\d+|prune", glob: "**/*.ts" }, { signal });
+    if (isMissingBinary(result.content)) return;
+    expect(result.content).toContain("MAX_ITEMS = 200");
+    expect(result.content).toContain("function prune()");
+    expect(result.content).not.toContain("b.md");
+    expect(result.content).not.toContain(".git");
+    expect((await tool.handler({ pattern: "-flag" }, { signal })).content).toContain("-flag here");
+  });
+
   test("rejects a search root outside the sandbox", async () => {
     const { deps } = setup();
     const tool = createGrepTool(deps);
     await expect(tool.handler({ pattern: "x", path: "../../etc" }, { signal })).rejects.toThrow();
   });
 
-  test("returns the exact missing-binary error when neither rg nor grep is on PATH", async () => {
-    const { deps } = setup();
-    const original = Bun.spawnSync;
-    (Bun as unknown as { spawnSync: unknown }).spawnSync = () => {
+  test("with neither rg nor grep on PATH, as on Windows, it searches in process with the same output", async () => {
+    const { deps, root } = setup();
+    mkdirSync(join(root, "src"));
+    mkdirSync(join(root, "dist"));
+    writeFileSync(join(root, ".gitignore"), "dist/\n");
+    writeFileSync(join(root, "src", "a.ts"), "one\nconst MAX_ITEMS = 200;\nthree\nfunction prune() {}\n");
+    writeFileSync(join(root, "src", "b.md"), "prune\n");
+    writeFileSync(join(root, "dist", "a.ts"), "prune\n");
+    writeFileSync(join(root, "src", "c.ts"), "prune\0binary\n");
+    const original = Bun.spawn;
+    (Bun as unknown as { spawn: unknown }).spawn = () => {
       throw new Error("not found");
     };
     try {
       const tool = createGrepTool(deps);
-      const result = await tool.handler({ pattern: "anything" }, { signal });
-      expect(result.isError).toBe(true);
-      expect(result.content).toBe("neither ripgrep (rg) nor grep is installed or on PATH");
-      expect(isMissingBinary(result.content)).toBe(true);
+      const result = await tool.handler(
+        { pattern: "(?i)max_\\w+ = \\d+|PRUNE\\(", glob: "*.ts" },
+        { signal },
+      );
+      expect(result.content).toBe(
+        [
+          `${join(root, "src/a.ts")}:2:const MAX_ITEMS = 200;`,
+          `${join(root, "src/a.ts")}:4:function prune() {}`,
+        ].join("\n"),
+      );
+      const around = await tool.handler({ pattern: "three", context: 1, type: "ts" }, { signal });
+      expect(around.content.split("\n").map((line) => line.slice(join(root, "src/a.ts").length))).toEqual([
+        "-2-const MAX_ITEMS = 200;",
+        ":3:three",
+        "-4-function prune() {}",
+      ]);
+      const files = await tool.handler({ pattern: "prune", filesOnly: true }, { signal });
+      expect(files.content.split("\n").sort()).toEqual(
+        [join(root, "src/a.ts"), join(root, "src/b.md")].sort(),
+      );
+      expect((await tool.handler({ pattern: "(" }, { signal })).isError).toBe(true);
     } finally {
-      (Bun as unknown as { spawnSync: unknown }).spawnSync = original;
+      (Bun as unknown as { spawn: unknown }).spawn = original;
     }
   });
 

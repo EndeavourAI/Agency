@@ -1,6 +1,8 @@
+import { join } from "node:path";
 import { requirePathScope } from "@agency/guard";
 import { t } from "@agency/i18n";
 import type { ToolDeps, ToolSpec } from "../contract.ts";
+import { loadGitignore } from "../gitignore.ts";
 import { clip, lineCount, str, summarize } from "../render.ts";
 
 const MAX_MATCHES = 200;
@@ -18,20 +20,24 @@ function trySpawn(args: string[]) {
   }
 }
 
-function searchBinaryAvailable(): boolean {
-  for (const binary of ["rg", "grep"]) {
+let grepRegexFlag: string | undefined;
+
+/** rg's regex is near PCRE: GNU grep has -P, BSD grep (macOS) only -E. Plain grep reads `a|b` as text, so finds nothing. */
+function grepRegex(): string {
+  if (grepRegexFlag === undefined) {
     try {
-      const result = Bun.spawnSync([binary, "--version"], {
+      const probe = Bun.spawnSync(["grep", "-qP", "a|\\d"], {
         windowsHide: true,
+        stdin: new TextEncoder().encode("1\n"),
         stdout: "ignore",
         stderr: "ignore",
       });
-      if (result.exitCode === 0) return true;
+      grepRegexFlag = probe.exitCode === 0 ? "-P" : "-E";
     } catch {
-      // not on PATH
+      grepRegexFlag = "-E";
     }
   }
-  return false;
+  return grepRegexFlag;
 }
 
 interface CapOptions {
@@ -100,6 +106,89 @@ async function readWithGlobalCap(
   return { text, capped };
 }
 
+/** rg type names whose files do not end in the name itself. */
+const TYPE_EXTENSIONS: Record<string, string> = {
+  ts: "{ts,tsx,mts,cts}",
+  js: "{js,jsx,mjs,cjs}",
+  rust: "rs",
+  python: "py",
+  markdown: "{md,markdown}",
+};
+
+/**
+ * The search with no rg or grep: rg's output and rules (`.gitignore`, no hidden files, no binary files), and a
+ * JavaScript regex, which reads rg's patterns but `(?i)` at the start, taken here as the flag.
+ */
+async function searchInProcess(
+  root: string,
+  input: {
+    pattern: string;
+    glob?: string;
+    type?: string;
+    caseInsensitive?: boolean;
+    context?: number;
+    filesOnly: boolean;
+  },
+  signal: AbortSignal,
+): Promise<{ text: string; capped: boolean } | { error: string }> {
+  const inline = input.pattern.startsWith("(?i)");
+  let regex: RegExp;
+  try {
+    regex = new RegExp(
+      inline ? input.pattern.slice(4) : input.pattern,
+      input.caseInsensitive || inline ? "i" : "",
+    );
+  } catch (error) {
+    return { error: `invalid regex: ${(error as Error).message}` };
+  }
+  const filter = input.type
+    ? `**/*.${TYPE_EXTENSIONS[input.type] ?? input.type}`
+    : input.glob === undefined
+      ? "**/*"
+      : input.glob.includes("/")
+        ? input.glob
+        : `**/${input.glob}`;
+  const isIgnored = loadGitignore(root);
+  const out: string[] = [];
+  let matches = 0;
+  for await (const rawPath of new Bun.Glob(filter).scan({ cwd: root, onlyFiles: true })) {
+    if (signal.aborted) break;
+    const path = rawPath.replace(/\\/g, "/");
+    if (/(^|\/)node_modules\//.test(path) || isIgnored?.(path)) continue;
+    let bytes: Uint8Array;
+    try {
+      bytes = await Bun.file(join(root, path)).bytes();
+    } catch {
+      continue;
+    }
+    if (bytes.subarray(0, 8000).includes(0)) continue;
+    const lines = new TextDecoder().decode(bytes).split("\n");
+    const hits = lines.flatMap((line, index) => (regex.test(line.replace(/\r$/, "")) ? [index] : []));
+    if (hits.length === 0) continue;
+    const file = join(root, path);
+    if (input.filesOnly) {
+      out.push(file);
+      if (++matches > MAX_MATCHES) return { text: out.slice(0, -1).join("\n"), capped: true };
+      continue;
+    }
+    const around = input.context ?? 0;
+    const shown = new Set(
+      hits.flatMap((hit) => Array.from({ length: 2 * around + 1 }, (_, i) => hit - around + i)),
+    );
+    let last = -2;
+    for (const index of [...shown].filter((i) => i >= 0 && i < lines.length).sort((a, b) => a - b)) {
+      if (around > 0 && last >= 0 && index > last + 1) out.push("--");
+      const hit = hits.includes(index);
+      if (hit && ++matches > MAX_MATCHES) return { text: out.join("\n"), capped: true };
+      out.push(
+        `${file}${hit ? ":" : "-"}${index + 1}${hit ? ":" : "-"}${(lines[index] ?? "").replace(/\r$/, "")}`,
+      );
+      last = index;
+    }
+  }
+  return { text: out.join("\n"), capped: false };
+}
+
 export function createGrepTool(deps: ToolDeps): ToolSpec {
   const spec: ToolSpec<{
     pattern: string;
@@ -112,10 +201,10 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
   }> = {
     name: "grep",
     description:
-      "Searches file contents for a regex pattern (ripgrep if available, otherwise grep), returning " +
-      "matching lines with line numbers under a global 200-match cap. Optional: caseInsensitive, " +
-      "context (matching lines shown around each match), filesWithMatches (list file paths only). " +
-      "type (e.g. 'ts', 'rs') restricts by file type and requires ripgrep.",
+      "Searches file contents for a regex pattern (ripgrep syntax; `a|b` matches either), returning " +
+      "matching lines with line numbers under a global 200-match cap. Skips .gitignore'd, hidden and " +
+      "binary files. Optional: caseInsensitive, context (lines shown around each match), filesOnly " +
+      "(list file paths only), type (e.g. 'ts', 'rust') restricts by file type.",
     inputSchema: {
       type: "object",
       properties: {
@@ -124,7 +213,7 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
         glob: { type: "string", description: "Restrict to files matching this glob, e.g. '*.ts'." },
         caseInsensitive: { type: "boolean" },
         context: { type: "integer", description: "Lines of context around each match." },
-        type: { type: "string", description: "File type filter (ripgrep only), e.g. 'ts'." },
+        type: { type: "string", description: "File type filter, e.g. 'ts'." },
         filesOnly: { type: "boolean", description: "List matching file paths instead of lines." },
       },
       required: ["pattern"],
@@ -146,13 +235,6 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
       const searchRoot = deps.sandbox.resolvePath(input.path ?? ".");
       requirePathScope(deps.identity, deps.capabilities, searchRoot);
 
-      if (!searchBinaryAvailable()) {
-        return {
-          content: t("tool.grep.no_search_binary"),
-          isError: true,
-        };
-      }
-
       const context =
         typeof input.context === "number" && Number.isInteger(input.context) && input.context > 0
           ? input.context
@@ -166,79 +248,78 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
         ...(context !== undefined && !filesOnly ? ["-C", String(context)] : []),
         ...(input.type ? ["--type", input.type] : []),
         ...(input.glob ? ["--glob", input.glob] : []),
+        "--",
         input.pattern,
         searchRoot,
       ];
 
       let proc = trySpawn(rgArgs);
 
-      // grep -rn matches rg's `path:line:content` output and exit-1-on-no-matches semantics.
-      if (!proc) {
-        if (input.type) {
-          return {
-            content: "the type filter requires ripgrep (rg), which is not installed or on PATH",
-            isError: true,
-          };
-        }
+      // grep -rn matches rg's `path:line:content` output and exit-1-on-no-matches semantics. It has no type filter.
+      if (!proc && !input.type) {
+        // As rg does: no binary files, no .git or node_modules. --include takes a file name, not rg's `**/*.ts`.
         proc = trySpawn([
           "grep",
           filesOnly ? "-rl" : "-rn",
+          grepRegex(),
+          "-I",
+          "--exclude-dir=.git",
+          "--exclude-dir=node_modules",
           "--color=never",
           ...(input.caseInsensitive ? ["-i"] : []),
           ...(context !== undefined && !filesOnly ? ["-C", String(context)] : []),
-          ...(input.glob ? ["--include", input.glob] : []),
+          ...(input.glob ? ["--include", input.glob.split("/").pop() as string] : []),
+          "--",
           input.pattern,
           searchRoot,
         ]);
       }
 
+      let found: { text: string; capped: boolean };
       if (!proc) {
-        return {
-          content: t("tool.grep.no_search_binary"),
-          isError: true,
-        };
-      }
-
-      const onAbort = () => proc.kill();
-      ctx.signal.addEventListener("abort", onAbort);
-      try {
-        const { text: stdout, capped } = await readWithGlobalCap(proc.stdout, {
-          maxMatches: MAX_MATCHES,
-          filesOnly,
-        });
-        if (capped) {
-          try {
-            proc.kill();
-          } catch {
-            // already exited
+        // Windows has neither program on its PATH: Git's grep is only on the PATH of Git Bash.
+        const searched = await searchInProcess(searchRoot, { ...input, context, filesOnly }, ctx.signal);
+        if ("error" in searched) return { content: searched.error, isError: true };
+        found = searched;
+      } else {
+        const running = proc;
+        const onAbort = () => running.kill();
+        ctx.signal.addEventListener("abort", onAbort);
+        try {
+          found = await readWithGlobalCap(running.stdout, { maxMatches: MAX_MATCHES, filesOnly });
+          if (found.capped) {
+            try {
+              running.kill();
+            } catch {
+              // already exited
+            }
           }
+          await running.exited;
+          // Both rg and grep exit 1 for "no matches", a normal, non-error result here.
+          // A capped run was killed on purpose, so its exit code is not an error.
+          if (!found.capped && running.exitCode !== 0 && running.exitCode !== 1) {
+            const stderr = await new Response(running.stderr).text();
+            return { content: stderr || `search exited with code ${running.exitCode}`, isError: true };
+          }
+        } finally {
+          ctx.signal.removeEventListener("abort", onAbort);
         }
-        await proc.exited;
-
-        // Both rg and grep exit 1 for "no matches", a normal, non-error result here.
-        // A capped run was killed on purpose, so its exit code is not an error.
-        if (!capped && proc.exitCode !== 0 && proc.exitCode !== 1) {
-          const stderr = await new Response(proc.stderr).text();
-          return { content: stderr || `search exited with code ${proc.exitCode}`, isError: true };
-        }
-
-        const trimmed = stdout
-          .trim()
-          .split("\n")
-          .map((line) =>
-            line.length > MAX_LINE_CHARS
-              ? `${line.slice(0, MAX_LINE_CHARS)}… [${line.length - MAX_LINE_CHARS} more characters on this line]`
-              : line,
-          )
-          .join("\n");
-        if (trimmed === "") return { content: t("tool.grep.no_matches") };
-        const notice = capped
-          ? `\n${filesOnly ? t("tool.grep.truncated_files", { count: MAX_MATCHES }) : t("tool.grep.truncated", { count: MAX_MATCHES })}`
-          : "";
-        return { content: trimmed + notice };
-      } finally {
-        ctx.signal.removeEventListener("abort", onAbort);
       }
+
+      const trimmed = found.text
+        .trim()
+        .split("\n")
+        .map((line) =>
+          line.length > MAX_LINE_CHARS
+            ? `${line.slice(0, MAX_LINE_CHARS)}… [${line.length - MAX_LINE_CHARS} more characters on this line]`
+            : line,
+        )
+        .join("\n");
+      if (trimmed === "") return { content: t("tool.grep.no_matches") };
+      const notice = found.capped
+        ? `\n${filesOnly ? t("tool.grep.truncated_files", { count: MAX_MATCHES }) : t("tool.grep.truncated", { count: MAX_MATCHES })}`
+        : "";
+      return { content: trimmed + notice };
     },
   };
   return spec;

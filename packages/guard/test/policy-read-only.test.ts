@@ -168,6 +168,15 @@ test("a read-only command runs without a prompt unless an ask or deny rule names
   expect(decide({ bash: { "*": "ask", "git *": "allow" } }, "ls")).toBe("ask");
   expect(decide({ bash: "ask" }, "ls")).toBe("ask");
   expect(decide({ read: { "**": "allow", "secret.txt": "deny" } }, "cat secret.txt")).toBe("deny");
+  // Each part an allow rule names or only reads, as in Claude Code: models put a `cd` before an allowed command.
+  const tests = { bash: { "bun test*": "allow" as const } };
+  expect(decide(tests, "cd packages/tools && bun test x.test.ts")).toBe("allow");
+  expect(decide(tests, "bun test a.test.ts | tail -5")).toBe("allow");
+  expect(decide(tests, "cd .. && bun test x.test.ts")).toBe("ask");
+  expect(decide(tests, "bun test && npm publish")).toBe("ask");
+  expect(decide(tests, "cd src && bun test $(rm x)")).toBe("ask");
+  expect(decide({ bash: { "bun test*": "allow", "cd *": "ask" } }, "cd src && bun test")).toBe("ask");
+  expect(decide({ bash: { "git commit*": "allow" } }, "cd sub && git commit -m x")).toBe("ask");
 });
 
 test("the ask of a command says why the command is not read-only", async () => {

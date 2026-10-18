@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A compound command runs when each part is allowed or only reads**, as in Claude Code: under
+  `Bash(bun test*)`, `cd packages/tools && bun test x.test.ts` asked before, since no rule names the whole line
+  (two refused calls in a live session). A part that a rule asks for or denies still asks, and git after a `cd`
+  still asks, as git there can run the hooks of another folder.
 - **`grep` names each file relative to the workspace**, as `read` takes it, and no longer by its absolute path:
   in a live session the path was most of each line, and the same two searches came back at about half the size
   (45.8K to 21.8K and 46.2K to 24.9K characters). A file as the search root gets its name on each line too.

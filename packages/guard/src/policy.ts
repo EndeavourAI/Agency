@@ -1119,13 +1119,22 @@ export class PermissionsGate implements ToolPolicy {
     return decision;
   }
 
-  /** A read-only command (`isReadOnlyCommand`) with no part that an ask or deny pattern names, as in Claude Code. */
+  /**
+   * As in Claude Code: a command whose every part an allow rule names or only reads, and no ask or deny pattern
+   * names (`cd src && bun test` under `Bash(bun test*)`). git after a `cd` can run the hooks of another folder.
+   */
   private readOnlyShell(request: ToolCallPolicyRequest): boolean {
     if (request.command === undefined || !isCommandPatternTool(request.tool)) return false;
-    if (!isReadOnlyCommand(request.command, this.options.workspaceRoot)) return false;
-    return splitCommand(request.command).parts.every((part) => {
+    const { parts, dynamic } = splitCommand(request.command);
+    if (dynamic || parts.length === 0) return false;
+    const programs = parts.map((part) => shellWords(part)[0]?.toLowerCase());
+    if (programs.includes("cd") && programs.includes("git")) return false;
+    return parts.every((part) => {
       const verdict = this.engine.evaluateWithMatch({ tool: request.tool, command: part });
-      return verdict.decision === "allow" || verdict.matched?.commandPattern === undefined;
+      if (verdict.decision === "allow") return true;
+      return (
+        verdict.matched?.commandPattern === undefined && isReadOnlyCommand(part, this.options.workspaceRoot)
+      );
     });
   }
 

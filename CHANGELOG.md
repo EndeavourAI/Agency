@@ -493,7 +493,7 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 - **The sandbox proxy refuses a host that resolves to a private address** (security), as the proxy of Claude
   Code does: an allowed name whose DNS gives 127.0.0.1, a private network or 169.254.169.254 (cloud metadata)
   reached this machine or the metadata of the cloud. The proxy now connects to the address it checked, and a
-  host with a byte that no host name has (`evil .github.com`) never matches a pattern. `localhost` and an
+  host with a byte that no host name has (`evil\0.github.com`) never matches a pattern. `localhost` and an
   address in `allowedDomains` itself still pass.
 - **`fetch` does not follow a redirect to another host** (security): it checked the host of the first URL only,
   so an allowed host could redirect to any other, `localhost` and the cloud metadata included. A redirect on

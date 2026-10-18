@@ -8,6 +8,13 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`agency testmap` maps each test to the source lines it runs, and the "untested edits" note then names only the
+  tests that ran a changed line** (bun projects): it runs each tracked test file alone under `bun test --coverage`
+  and keeps the map in the cache. On 43 stored runs of the benchmark edit task (`plural()` in `render.ts`, used in
+  `grep.ts` and `glob.ts`), the import graph named 33 tests and the map 7 in 38 runs, with `builtins-render.test.ts`,
+  the test that such an edit broke in a live run, among them in 40. Lines that every test of a file runs, as an
+  import does at load, do not count. With no map, a changed file the map lacks, or only such lines, the note names
+  the importers as before. Building the map for this repository took 344 s.
 - **In a `code` script, `glob` and `grep` return what they built, not their text**: `glob` an array of paths,
   `grep` an array of `{ path, line, text }`, or of paths with `filesOnly`; a search with `context`, and any other
   tool, still returns one string. In live runs on Linux, 37 of 52 scripts failed, most because they iterated the

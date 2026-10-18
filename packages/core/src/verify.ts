@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { Message } from "@agency/schema";
+import { coveringTests, readTestMap, type TestMap } from "./testmap.ts";
 
 const EDIT_TOOLS = new Set(["edit", "write", "notebook_edit"]);
 const TEST_COMMAND =
@@ -30,11 +31,15 @@ function trackedTests(root: string): string[] {
 }
 
 /**
- * The tests that import a file that `turn` changed (or that it changed itself) and that no test command of the turn
- * ran: direct importers first, then those two imports away. Imports by a relative path of JS and TS only.
- * ponytail: two import hops, JS/TS only; a Python or Go test of a changed file goes unnamed.
+ * The tests that no test command of the turn ran and that ran a line it changed, by the coverage map of `agency
+ * testmap`. With no map, or a changed file that it lacks: the tests that import a changed file, one or two hops away.
+ * ponytail: the graph reads relative JS/TS imports only; a Python or Go test of a changed file goes unnamed.
  */
-export function untestedEdits(turn: Message[], root: string): string[] {
+export function untestedEdits(
+  turn: Message[],
+  root: string,
+  map: TestMap | undefined = readTestMap(root),
+): string[] {
   const calls = new Map<string, { name: string; input: Record<string, unknown> }>();
   const edited = new Set<string>();
   const commands: string[] = [];
@@ -82,6 +87,15 @@ export function untestedEdits(turn: Message[], root: string): string[] {
       return command.includes(name) || !TEST_FILE_ARG.test(command);
     });
   const all = trackedTests(root);
+  // Live: 28 tests import render.ts, and few of them run the lines of a change in it.
+  const covering = map === undefined ? undefined : coveringTests(map, root, [...edited]);
+  if (covering !== undefined) {
+    const named = new Set(covering);
+    return [
+      ...all.filter((test) => edited.has(test) && !ran(test)),
+      ...all.filter((test) => named.has(test) && !edited.has(test) && !ran(test)),
+    ];
+  }
   // A file whose own test ran is tested: live, a list of 28 far tests had a model search four replies for the ones
   // that mattered after it had run the test of the file that it changed.
   for (const test of all.filter(ran)) for (const file of importsOf(test)) sources.delete(file);

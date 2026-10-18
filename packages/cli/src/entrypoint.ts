@@ -151,6 +151,8 @@ Commands:
   onboard                  First-run setup: connect, model, trust
   trust                    Trust this workspace: load its AGENTS.md, CLAUDE.md and rules
   debug                    Write a redacted debug bundle for issue reports
+  testmap                  Run each test file alone with coverage, so that a turn which changed
+                           files is told only the tests that run the changed lines (bun)
   update [--rollback]      Update binary from GitHub Releases (ed25519 + SHA-256 verified)
   serve                    Run daemon in foreground (logging to stdout)
 
@@ -2160,6 +2162,15 @@ Subcommands:
         out,
       });
       return result.completed ? 0 : 1;
+    }
+    case "testmap": {
+      const { buildTestMap, testMapFile } = await import("@agency/core");
+      const root = workspaceRootOf(parsed, deps);
+      const map = await buildTestMap(root, (test, index, total) => err(`[${index + 1}/${total}] ${test}`));
+      out(
+        `${map.tests.length} tests, ${Object.keys(map.files).length} source files at ${map.commit.slice(0, 7)}: ${testMapFile(root)}`,
+      );
+      return 0;
     }
     case "debug": {
       const { path } = debugCommand({ workspaceRoot: workspaceRootOf(parsed, deps), version: VERSION });

@@ -9,6 +9,7 @@ import type { ProviderAdapter, ProviderRequest, StreamEvent } from "@agency/prov
 import { Scheduler } from "@agency/providers";
 import type { Message } from "@agency/schema";
 import { runTurn } from "../src/loop.ts";
+import { buildTestMap, parseLcov } from "../src/testmap.ts";
 import { untestedEdits, untestedNote } from "../src/verify.ts";
 
 const dirs: string[] = [];
@@ -70,6 +71,48 @@ test("names the tests that import a file the turn changed and that no command of
     result("b5"),
   ];
   expect(untestedEdits(own, root)).toEqual([]);
+});
+
+test("with a coverage map, only the tests that ran a changed line are named", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "agency-verify-map-")));
+  dirs.push(root);
+  mkdirSync(join(root, "src"));
+  mkdirSync(join(root, "test"));
+  const source = "export function one() {\n  return 1;\n}\n\nexport function two() {\n  return 2;\n}\n";
+  writeFileSync(join(root, "src", "math.ts"), source);
+  const testOf = (name: string, value: number) =>
+    `import { expect, test } from "bun:test";\nimport { ${name} } from "../src/math.ts";\ntest("${name}", () => expect(${name}()).toBe(${value}));\n`;
+  writeFileSync(join(root, "test", "one.test.ts"), testOf("one", 1));
+  writeFileSync(join(root, "test", "two.test.ts"), testOf("two", 2));
+  for (const args of [
+    ["init", "-q"],
+    ["add", "."],
+    ["-c", "user.email=a@b", "-c", "user.name=a", "commit", "-qm", "x"],
+  ])
+    execFileSync("git", args, { cwd: root });
+  // Both tests import math.ts: the import graph names both, the map only the test that runs `two`.
+  const changed = source.replace("return 2;", "return 3;");
+  const edited = [call("e1", "edit", { path: "src/math.ts" }), result("e1")];
+  writeFileSync(join(root, "src", "math.ts"), changed);
+  expect(untestedEdits(edited, root).sort()).toEqual(["test/one.test.ts", "test/two.test.ts"]);
+  writeFileSync(join(root, "src", "math.ts"), source);
+  const map = await buildTestMap(root);
+  expect(map.tests.sort()).toEqual(["test/one.test.ts", "test/two.test.ts"]);
+  writeFileSync(join(root, "src", "math.ts"), changed);
+  expect(untestedEdits(edited, root)).toEqual(["test/two.test.ts"]);
+  // A changed file that the map lacks falls back to the graph.
+  writeFileSync(join(root, "src", "new.ts"), "export const n = 1;\n");
+  const added = [...edited, call("w1", "write", { path: "src/new.ts" }), result("w1")];
+  expect(untestedEdits(added, root, map).sort()).toEqual(["test/one.test.ts", "test/two.test.ts"]);
+}, 60_000);
+
+test("an lcov report gives the lines that ran, by path with forward slashes", () => {
+  const report =
+    "SF:src\\math.ts\nDA:1,3\nDA:2,0\nDA:5,1\nend_of_record\nSF:src/b.ts\nDA:1,0\nend_of_record\n";
+  expect([...parseLcov(report)]).toEqual([
+    ["src/math.ts", [1, 5]],
+    ["src/b.ts", []],
+  ]);
 });
 
 test("the note names five tests and the folders of the rest", () => {

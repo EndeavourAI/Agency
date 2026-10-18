@@ -546,6 +546,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Fixed
 
+- **A script of the `code` tool that awaits `tools` hangs no more**: the tools object answered every name, `then`
+  too, so `await tools` took it for a promise and waited for a call that never answered. In a live run on Linux
+  each of six scripts began `const { read } = await tools;` and was stopped at the 120-second limit, and the
+  session ran out its 20 minutes.
 - **A model lost track of the folder of the shell**: after `cd packages/tools && ...` the shell stays there, but
   `read`, `edit` and the other file tools take paths from the project root, and a model then edited `src/a.ts` for
   `packages/tools/src/a.ts` (seen in a live session). A command that moves the shell now says where it went and

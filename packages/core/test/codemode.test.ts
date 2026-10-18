@@ -72,6 +72,12 @@ describe("code tool", () => {
     expect(result).toEqual({ content: "ECHO ONE\nreturn: 8", isError: false });
   });
 
+  test("a script that awaits the tools object goes on, and is not taken for a call of a tool named then", async () => {
+    // Live: each script of a model began `const { read } = await tools;` and hung until the 120 s limit.
+    const result = await run('const { echo } = await tools;\nreturn await echo({ text: "one" });');
+    expect(result).toEqual({ content: "return: echo one", isError: false });
+  }, 30_000);
+
   test("an inner call meets the permission gate: a denied tool does not run, and the script gets the error", async () => {
     removed = 0;
     const result = await run(

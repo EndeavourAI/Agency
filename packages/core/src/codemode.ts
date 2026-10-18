@@ -169,14 +169,17 @@ export async function runCodeChild(): Promise<never> {
   const tools = new Proxy(
     {},
     {
-      get:
-        (_target, name) =>
-        (input: unknown): Promise<string> =>
-          new Promise((resolve, reject) => {
-            nextId += 1;
-            pending.set(nextId, { resolve, reject });
-            write({ call: nextId, name: String(name), input: input ?? {} });
-          }),
+      // Live: scripts began `const { read } = await tools;`: with a `then`, await took the object for a promise and
+      // waited for a call that never answered, until the time limit.
+      get: (_target, name) =>
+        name === "then" || typeof name === "symbol"
+          ? undefined
+          : (input: unknown): Promise<string> =>
+              new Promise((resolve, reject) => {
+                nextId += 1;
+                pending.set(nextId, { resolve, reject });
+                write({ call: nextId, name: String(name), input: input ?? {} });
+              }),
     },
   );
   const run = async (code: string): Promise<void> => {

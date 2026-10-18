@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { HttpClient } from "@agency/net";
 import type { ProviderAdapter, StreamEvent } from "@agency/providers";
 import { connectToDaemon, type DaemonClient } from "@agency/rpc";
@@ -79,7 +79,7 @@ function singleBashAdapter(command: string): ProviderAdapter {
 }
 
 describe("B1 per-session isolation", () => {
-  test("two concurrent turns cd-ing to different dirs observe their own cwd", async () => {
+  test("two concurrent turns cd-ing to different dirs each start their next command in the root", async () => {
     const root = tempRepo();
     mkdirSync(join(root, "a"), { recursive: true });
     mkdirSync(join(root, "b"), { recursive: true });
@@ -130,14 +130,11 @@ describe("B1 per-session isolation", () => {
     const normalizePwd = (s: string): string => s.replace(/\r\n?/g, "\n");
     const pwdANorm = normalizePwd(pwdA);
     const pwdBNorm = normalizePwd(pwdB);
-    const dirAPattern = /[\\/]a(\n|$)/;
-    const dirBPattern = /[\\/]b(\n|$)/;
-    expect(pwdANorm).toMatch(dirAPattern);
-    expect(pwdBNorm).toMatch(dirBPattern);
-    expect(pwdANorm).not.toMatch(dirBPattern);
-    expect(pwdBNorm).not.toMatch(dirAPattern);
-    expect(pwdANorm).not.toContain("[cwd kept");
-    expect(pwdBNorm).not.toContain("[cwd kept");
+    // A cd lasts for its own command: neither session ends up in a folder, its own or the other's.
+    for (const pwd of [pwdANorm, pwdBNorm]) {
+      expect(pwd).not.toMatch(/[\\/][ab](\n|$)/);
+      expect(pwd.toLowerCase()).toContain(basename(root).toLowerCase());
+    }
   }, 30_000);
 
   test("a narrowed-capability turn is denied a tool the parent can use", async () => {

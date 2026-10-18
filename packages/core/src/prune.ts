@@ -8,6 +8,18 @@ const BATCH_TOKENS = 20_000;
 /** What an image of a result counts as: about the tokens of a 1000-pixel image. */
 const IMAGE_CHARS = 6400;
 
+/**
+ * True when a read result holds the text it asked for: not a note that points at an earlier result, and not cut by
+ * the read tool. Only such a read makes an earlier one out of date.
+ */
+function showsWholeText(content: string): boolean {
+  return (
+    !content.startsWith("[Unchanged") &&
+    !content.includes("[The file has ") &&
+    !content.includes("[truncated at ")
+  );
+}
+
 /** A read names a file and a slice; a read with no slice shows the whole file. */
 function readTarget(input: Record<string, unknown>): { path: string; slice: string } {
   const path = String(input.path ?? "")
@@ -26,7 +38,7 @@ function readTarget(input: Record<string, unknown>): { path: string; slice: stri
  */
 export function pruneStaleResults(messages: Message[]): Message[] {
   const names = new Map<string, string>();
-  const reads = new Map<string, { path: string; slice: string; at: number }>();
+  const reads = new Map<string, { path: string; slice: string; at: number; shows?: boolean }>();
   const candidates: Array<{
     message: number;
     block: number;
@@ -42,6 +54,8 @@ export function pruneStaleResults(messages: Message[]): Message[] {
         if (block.name === "read") reads.set(block.id, { ...readTarget(block.input), at: calls });
       }
       if (block.type !== "tool_result" || !RERUNNABLE.test(names.get(block.toolCallId) ?? "")) return;
+      const own = reads.get(block.toolCallId);
+      if (own !== undefined) own.shows = !block.isError && showsWholeText(block.content);
       const chars = block.content.length + (block.images?.length ?? 0) * IMAGE_CHARS;
       const read = block.isError ? undefined : reads.get(block.toolCallId);
       if (chars > MIN_CHARS)
@@ -60,7 +74,12 @@ export function pruneStaleResults(messages: Message[]): Message[] {
     const own = candidate.read;
     if (own === undefined) continue;
     for (const later of reads.values()) {
-      if (later.at > own.at && later.path === own.path && (later.slice === "" || later.slice === own.slice))
+      if (
+        later.shows === true &&
+        later.at > own.at &&
+        later.path === own.path &&
+        (later.slice === "" || later.slice === own.slice)
+      )
         candidate.due = Math.min(candidate.due, later.at - 1);
     }
   }

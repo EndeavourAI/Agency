@@ -113,3 +113,21 @@ test("a read that a later read of the same file shows again goes in the next bat
   const files = reads(Array.from({ length: 10 }, (_, i) => ({ path: `f${i}.ts` })));
   expect(notes(pruneStaleResults(files))).toEqual([]);
 });
+
+test("a later read that only points at the earlier text, or that was cut or failed, does not make it out of date", () => {
+  const history: Message[] = [{ role: "user", content: [{ type: "text", text: "go" }] }];
+  const step = (id: string, path: string, content: string, isError = false) => {
+    history.push({ role: "assistant", content: [{ type: "tool_call", id, name: "read", input: { path } }] });
+    history.push({ role: "user", content: [{ type: "tool_result", toolCallId: id, content, isError }] });
+  };
+  for (const [i, path] of ["a.ts", "b.ts", "c.ts"].entries())
+    step(`r${i}`, path, `${path}:`.padEnd(30_000, "x"));
+  step("r3", "a.ts", "[Unchanged: the same text as the earlier read result of a.ts, which is still above.]");
+  step(
+    "r4",
+    "b.ts",
+    "line 1\n[The file has 9000 lines: these are lines 1 to 2000. Read with offset 2001 for the rest.]",
+  );
+  step("r5", "c.ts", "ENOENT: no such file", true);
+  expect(notes(pruneStaleResults(history))).toEqual([]);
+});

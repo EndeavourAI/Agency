@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SessionStore, type ToolSpec, TraceRecorder } from "@agency/core";
-import { createFileTrustStore } from "@agency/guard";
+import { codeRunnerReadPaths, SessionStore, type ToolSpec, TraceRecorder } from "@agency/core";
+import { createFileTrustStore, scriptSandboxAvailable } from "@agency/guard";
 import type { HttpClient } from "@agency/net";
 import type { ModelInfo, ProviderAdapter, StreamEvent } from "@agency/providers";
 import { connectToDaemon, type DaemonClient } from "@agency/rpc";
@@ -19,6 +19,10 @@ import {
   resolveSystemPrompt,
   sessionEnvironmentStore,
 } from "../src/daemon.ts";
+
+/** On Linux and macOS the daemon offers the code tool by default, when the script sandbox starts. */
+const codeByDefault =
+  ["linux", "darwin"].includes(process.platform) && (await scriptSandboxAvailable(codeRunnerReadPaths()));
 
 const noopHttp: HttpClient = { fetch: async () => new Response() };
 
@@ -673,7 +677,12 @@ describe("createAgentDaemon", () => {
       handler: async () => ({ content: "" }),
     });
     const mcpTool = { ...spec("docs_search"), origin: "mcp" as const };
-    const { client } = await startFakeDaemon({ adapterFor, tools: [spec("read"), spec("grep"), mcpTool] });
+    // No code tool, the default on Linux and macOS: the lists are those of the test on each platform.
+    const { client } = await startFakeDaemon({
+      adapterFor,
+      tools: [spec("read"), spec("grep"), mcpTool],
+      configDir: writeConfigDir({ codeMode: false }),
+    });
     const turn = (turnId: string, extra: Record<string, unknown>) =>
       client.call("run_turn", {
         turnId,
@@ -690,6 +699,55 @@ describe("createAgentDaemon", () => {
 
     expect(offered).toEqual([["docs_search", "grep", "read"], ["docs_search", "read"], ["docs_search"]]);
   }, 60_000);
+
+  test.skipIf(!codeByDefault)(
+    "on Linux and macOS the isolated code tool is offered by default, and a script runs with no ask",
+    async () => {
+      const requests: Array<{ tools: string[]; results: string[] }> = [];
+      const { client } = await startFakeDaemon({
+        adapterFor: (): ProviderAdapter => ({
+          family: "fake",
+          async *stream(request): AsyncIterable<StreamEvent> {
+            requests.push({
+              tools: (request.tools ?? []).map((tool) => tool.name),
+              results: request.messages.flatMap((m) =>
+                m.content.flatMap((b) => (b.type === "tool_result" ? [String(b.content)] : [])),
+              ),
+            });
+            if (requests.length === 1) {
+              yield { type: "tool_call_start", id: "c1", name: "code" };
+              yield { type: "tool_call_delta", id: "c1", inputJsonDelta: '{"code":"return 6 * 7"}' };
+              yield { type: "tool_call_end", id: "c1" };
+              yield {
+                type: "message_stop",
+                stopReason: "tool_use",
+                usage: { inputTokens: 1, outputTokens: 1 },
+              };
+              return;
+            }
+            yield { type: "text_delta", text: "ok" };
+            yield {
+              type: "message_stop",
+              stopReason: "end_turn",
+              usage: { inputTokens: 1, outputTokens: 1 },
+            };
+          },
+        }),
+        tools: [],
+      });
+      await client.call("run_turn", {
+        turnId: "t-code-default",
+        provider: "anthropic",
+        model: "test-model",
+        apiKey: "k",
+        systemPrompt: "sys",
+        session: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      });
+      expect(requests[0]?.tools).toContain("code");
+      expect(requests[1]?.results).toEqual(["return: 42"]);
+    },
+    60_000,
+  );
 
   test("a key that a tool result holds does not reach the model or the result of the turn", async () => {
     const envKey = "env-key-value-9d2c";
@@ -778,7 +836,7 @@ describe("createAgentDaemon", () => {
       const { client } = await startFakeDaemon({
         adapterFor,
         tools: mcpTools,
-        configDir: writeConfigDir({ mcpDeferTools: mode }),
+        configDir: writeConfigDir({ mcpDeferTools: mode, codeMode: false }),
       });
       const turn = (turnId: string) =>
         client.call("run_turn", {

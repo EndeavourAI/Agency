@@ -582,8 +582,10 @@ export async function executeTurn(
               ];
         // `true` needs the script sandbox. `"host"` runs the script with the authority of a shell command, so it is
         // only for the software backend: a sandbox for commands must not have a tool that goes around it.
+        // On by default where the script sandbox needs no change to the disk: on Windows it sets folder rules.
+        const codeMode = config.codeMode ?? (process.platform === "linux" || process.platform === "darwin");
         const isolatedRunner =
-          config.codeMode === true && (await scriptSandboxAvailable(codeRunnerReadPaths()))
+          codeMode === true && (await scriptSandboxAvailable(codeRunnerReadPaths()))
             ? buildScriptSandboxArgv(codeRunner(), codeRunnerReadPaths())
             : undefined;
         if (config.codeMode === true && !isolatedRunner && !codeModeWarned) {
@@ -592,12 +594,22 @@ export async function executeTurn(
             "codeMode is true, but this machine has no sandbox for scripts: the code tool is not offered",
           );
         }
-        const hostCode = config.codeMode === "host" && (config.sandbox?.backend ?? "software") === "software";
+        const hostCode = codeMode === "host" && (config.sandbox?.backend ?? "software") === "software";
         const codeTools = (gate: {
           toolOffered(tool: string, riskTier?: "dangerous"): boolean;
         }): CoreToolSpec[] => {
           if (!gate.toolOffered(CODE_TOOL, "dangerous")) return [];
-          if (isolatedRunner) return [codeTool(() => scriptSandboxEnv(), isolatedRunner)];
+          // An isolated script acts only through tools that the gate checks call by call: it needs no ask of its
+          // own. It can write through them, so it runs alone.
+          if (isolatedRunner) {
+            return [
+              {
+                ...codeTool(() => scriptSandboxEnv(), isolatedRunner),
+                riskTier: "safe",
+                readOnly: () => false,
+              },
+            ];
+          }
           return hostCode ? [codeTool(() => modelCommandEnv())] : [];
         };
         // A built-in tool that `--tools` leaves out is denied, so it is not offered; this wins over an allow rule.

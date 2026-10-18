@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The `code` tool is on by default on Linux and macOS** (`codeMode` unset): the model can make many tool calls
+  from one script, with one round trip to the model. The script runs in the script sandbox (no network, no
+  writes, none of your files) and acts only through the other tools, each of which the permission gate checks
+  as a direct call, so the script itself asks for no approval (`permissions.code` still sets one). A script runs
+  alone, never beside another call. Tested in WSL 2 with bubblewrap. On Windows it stays opt-in, as its sandbox
+  sets folder rules on the disk; set `codeMode: false` to turn it off.
 - **The system prompt asks for independent tool calls in one reply**, with the reason: they run at the same
   time, and each extra reply is a full round trip. A trace of a real session showed a model making 32 replies
   of one read each (about 32 output tokens, 3 seconds per reply).

@@ -101,6 +101,28 @@ describe("tool overlap", () => {
     expect(peak).toBe(1);
   });
 
+  test("a safe tool whose calls can write runs alone, as the isolated code tool does", async () => {
+    let running = 0;
+    let peak = 0;
+    const code = tool("code", { riskTier: "safe", readOnly: () => false }, async () => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise((r) => setTimeout(r, 20));
+      running -= 1;
+      return { content: "ok" };
+    });
+    const a = adapter([
+      async function* () {
+        yield* call("a", "code");
+        yield* call("b", "code");
+        yield { type: "message_stop", stopReason: "tool_use", usage };
+      },
+      done,
+    ]);
+    await run(a, [code]);
+    expect(peak).toBe(1);
+  });
+
   test("a read-only call starts while the reply still streams", async () => {
     let began!: () => void;
     const started = new Promise<void>((r) => {

@@ -902,7 +902,8 @@ function parallelSafe(
 ): boolean {
   if (malformed !== undefined) return true;
   if (spec === undefined) return true;
-  return spec.riskTier === "safe" || readOnlyCall(spec, input);
+  // A tool that says which calls only read decides by that, even when it asks for no approval.
+  return spec.readOnly === undefined ? spec.riskTier === "safe" : readOnlyCall(spec, input);
 }
 
 function readOnlyCall(spec: ToolSpec, input: Record<string, unknown>): boolean {

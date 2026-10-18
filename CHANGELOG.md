@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`read` takes `paths`, a list of files to read whole in one call**, as Gemini CLI's `read_many_files` does:
+  in live research runs that made one call a reply, a model read unrelated files one reply each (`truncate.ts`,
+  `bash.ts`, `read.ts`, `grep.ts` in four replies), and each reply sent the whole history again. The turn loop
+  writes such a call in the reply as one read a path before anything runs, so each path passes the permission
+  rules, the sandbox, the dedupe and the pruning of a read, and no cached prefix changes. A script in code mode
+  gets an error for `paths` and calls `read` once a file, for the same reason.
 - **An absolute path inside the project is kept relative in the history that the model sees**: a model copies
   its own earlier calls, and in the stored research sessions the one whose first call wrote the absolute project
   root wrote it in every later call (up to 38 a session). The tool still gets the path as sent, and the reply is

@@ -83,6 +83,7 @@ export const en = {
   // A6: tool RESULT strings route through t(); model-facing descriptions stay English.
   "tool.read.too_large":
     "file is {bytes} bytes, larger than the {limit}-byte read limit; use grep to search it, or read it in slices with offset/limit",
+  "tool.read.one_path": "read needs path: in a script, call read once for each file",
   "tool.read.same_name": "[No file at that path. The project has files of that name: {paths}]",
   "tool.write.wrote": "wrote {bytes} bytes to {path}",
   "tool.write.unread_overwrite":

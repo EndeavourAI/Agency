@@ -34,6 +34,16 @@ describe("createReadTool", () => {
     expect(result.isError).toBeFalsy();
   });
 
+  test("offers paths for several files, but runs only one path a call", async () => {
+    const { deps } = tempDeps();
+    const tool = createReadTool(deps);
+    expect(Object.keys(tool.inputSchema.properties as object)).toContain("paths");
+    // The turn loop splits `paths` into one read a path, so each passes the path rules; a script call is refused.
+    const result = await tool.handler({ paths: ["a.ts", "b.ts"] } as never, { signal });
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("once for each file");
+  });
+
   test("a missing file names the tracked files of the same name", async () => {
     const { deps, root } = tempDeps();
     mkdirSync(join(root, "test", "builtins"), { recursive: true });

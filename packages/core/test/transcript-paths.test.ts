@@ -36,7 +36,7 @@ function replies(
   };
 }
 
-async function run(steps: Array<Array<[string, Record<string, unknown>]>>) {
+async function run(steps: Array<Array<[string, Record<string, unknown>]>>, deny?: string) {
   const seen: ProviderRequest[] = [];
   const inputs: Array<Record<string, unknown>> = [];
   const tool = (name: string, readOnly: boolean): ToolSpec => ({
@@ -59,6 +59,9 @@ async function run(steps: Array<Array<[string, Record<string, unknown>]>>) {
     cwd,
     session: [{ role: "user", content: [{ type: "text", text: "look around" }] }],
     tools: [tool("read", true)],
+    ...(deny === undefined
+      ? {}
+      : { toolPolicy: { check: async (request) => (request.path === deny ? "deny" : "allow") } }),
   });
   return { seen, inputs };
 }
@@ -77,4 +80,19 @@ test("an absolute path inside the project reaches the model's history relative, 
     .filter((b) => b.type === "tool_call")
     .at(-1);
   expect(last?.type === "tool_call" && last.input).toEqual({ path: outside });
+});
+
+test("a read of several paths runs as one read a path, each under the rules of a read", async () => {
+  const { seen, inputs } = await run([[["read", { paths: ["a.ts", "secret.env", "b.ts"] }]]], "secret.env");
+
+  // Live: runs that made one call a reply read unrelated files one reply each (truncate.ts, bash.ts, read.ts, grep.ts).
+  expect(inputs).toEqual([{ path: "a.ts" }, { path: "b.ts" }]);
+  const sent = seen[1]?.messages.flatMap((m) => m.content) ?? [];
+  expect(sent.filter((b) => b.type === "tool_call").map((b) => b.type === "tool_call" && b.input)).toEqual([
+    { path: "a.ts" },
+    { path: "secret.env" },
+    { path: "b.ts" },
+  ]);
+  const results = sent.filter((b) => b.type === "tool_result");
+  expect(results.map((b) => b.type === "tool_result" && b.isError === true)).toEqual([false, true, false]);
 });

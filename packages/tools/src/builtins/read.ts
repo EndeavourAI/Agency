@@ -132,15 +132,20 @@ export function createReadTool(deps: ToolDeps, options?: ReadToolOptions): ToolS
     description:
       "Reads the contents of a file at the given path. A whole file comes as it is; a part, or a file too large " +
       "to send whole, has each line after its number (not part of the file: leave it out of edit text). For a " +
-      "part, pass offset (1-based line to start from) and limit (lines per read); files over 1MB must be read in parts.",
+      "part, pass offset (1-based line to start from) and limit (lines per read); files over 1MB must be read in parts. " +
+      "To read several whole files at once, pass paths (a list) instead of path.",
     inputSchema: {
       type: "object",
       properties: {
         path: { type: "string", description: "Path to the file, absolute or relative to the project root." },
         offset: { type: "integer", description: "1-based line to start reading from. Default 1." },
         limit: { type: "integer", description: "Maximum number of lines to return. Default: all." },
+        paths: {
+          type: "array",
+          items: { type: "string" },
+          description: "Several files to read whole, in one call.",
+        },
       },
-      required: ["path"],
     },
     riskTier: "safe",
     readOnly: () => true,
@@ -153,6 +158,8 @@ export function createReadTool(deps: ToolDeps, options?: ReadToolOptions): ToolS
     },
 
     async handler(input, ctx) {
+      // The turn loop runs `paths` as one read a path, so that each passes the path rules; a script must do the same.
+      if (typeof input.path !== "string") return { content: t("tool.read.one_path"), isError: true };
       const resolved = await deps.sandbox.resolvePathGated(input.path, {
         tool: "read",
         ask: ctx.requestApproval,

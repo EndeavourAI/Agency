@@ -35,7 +35,26 @@ describe("createGrepTool", () => {
     if (isMissingBinary(result.content)) return;
 
     expect(result.content).toContain("const target = 42;");
-    expect(result.content).toContain(":2:");
+    expect(result.content).toContain("\n2:const");
+  });
+
+  test("names each file once, above its match lines, as rg --heading prints them", async () => {
+    const { deps, root } = setup();
+    mkdirSync(join(root, "src"));
+    writeFileSync(join(root, "src", "a.ts"), "hit one\nmiss\nhit two\n");
+    writeFileSync(join(root, "src", "b.ts"), "miss\nhit three\n");
+
+    const tool = createGrepTool(deps);
+    const result = await tool.handler({ pattern: "hit" }, { signal });
+    if (isMissingBinary(result.content)) return;
+
+    // Live: broad greps sent 21K characters, and the path repeated on each line was a large part of them.
+    expect(result.content).toContain("src/a.ts\n1:hit one\n3:hit two");
+    expect(result.content).toContain("src/b.ts\n2:hit three");
+    expect(result.content).not.toContain("src/a.ts:");
+    expect(
+      tool.renderResult!({ content: result.content, isError: false, input: { pattern: "hit" } }),
+    ).toStartWith("grep hit: 3 matches");
   });
 
   test("reports no matches without treating it as an error", async () => {
@@ -85,12 +104,12 @@ describe("createGrepTool", () => {
       "function prune()",
     );
     // Each path is relative to the workspace, which read takes, also for a folder or a file as the root.
-    expect(result.content.split("\n")[0]).toMatch(/^src[\\/]a\.ts:1:const MAX_ITEMS/);
+    expect(result.content).toMatch(/^src[\\/]a\.ts\n1:const MAX_ITEMS/);
     for (const path of ["src", "src/a.ts"]) {
       const scoped = await tool.handler({ pattern: "prune", path }, { signal });
       expect([path, scoped.content]).toEqual([
         path,
-        expect.stringMatching(/^src[\\/]a\.ts:2:function prune/m),
+        expect.stringMatching(/^src[\\/]a\.ts\n2:function prune/m),
       ]);
     }
   });
@@ -121,7 +140,7 @@ describe("createGrepTool", () => {
         { signal },
       );
       expect(result.content).toBe(
-        [`src/a.ts:2:const MAX_ITEMS = 200;`, `src/a.ts:4:function prune() {}`].join("\n"),
+        ["src/a.ts", "2:const MAX_ITEMS = 200;", "4:function prune() {}"].join("\n"),
       );
       const around = await tool.handler({ pattern: "three", context: 1, type: "ts" }, { signal });
       expect(around.content.split("\n").map((line) => line.slice("src/a.ts".length))).toEqual([

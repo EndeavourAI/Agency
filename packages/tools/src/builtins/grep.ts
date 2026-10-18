@@ -13,6 +13,22 @@ const MAX_LINE_CHARS = 1_000;
 /** rg and grep -rn both print matches as `path:line:content`; context lines use `-` separators. */
 const MATCH_LINE = /^(.+):(\d+):/;
 
+/** `path:12:text` lines as `rg --heading` prints them: each path once, then its `12:text` lines. */
+function grouped(lines: string[]): string[] {
+  const out: string[] = [];
+  let file: string | undefined;
+  for (const line of lines) {
+    const match = /^(.+?):\d+:/.exec(line);
+    if (!match?.[1]) {
+      out.push(line);
+      continue;
+    }
+    if (match[1] !== file) out.push((file = match[1]));
+    out.push(line.slice(match[1].length + 1));
+  }
+  return out;
+}
+
 function trySpawn(args: string[], cwd: string) {
   try {
     return Bun.spawn(args, { cwd, windowsHide: true, stdout: "pipe", stderr: "pipe" });
@@ -208,7 +224,7 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
     name: "grep",
     description:
       "Searches file contents for a regex pattern (ripgrep syntax; `a|b` matches either), returning " +
-      "matching lines with line numbers under a global 200-match cap. Skips .gitignore'd, hidden and " +
+      "matching lines with line numbers, each file's path once above its lines, under a global 200-match cap. Skips .gitignore'd, hidden and " +
       "binary files. Optional: caseInsensitive, context (lines shown around each match), filesOnly " +
       "(list file paths only), type (e.g. 'ts', 'rust') restricts by file type.",
     inputSchema: {
@@ -233,7 +249,7 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
       if (result.isError) return `${label} failed: ${summarize(result.content)}`;
       const trimmed = result.content.trim();
       if (trimmed === "" || trimmed === "no matches") return `${label}: no matches`;
-      const matches = lineCount(result.content);
+      const matches = result.content.match(/^\d+:/gm)?.length ?? lineCount(result.content);
       return `${label}: ${matches} ${matches === 1 ? "match" : "matches"} (${clip(result.content)})`;
     },
 
@@ -324,7 +340,7 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
         }
       }
 
-      const trimmed = found.text
+      const lines = found.text
         .trim()
         .split("\n")
         // `.` as the root prints `./a.ts`.
@@ -333,8 +349,9 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
           line.length > MAX_LINE_CHARS
             ? `${line.slice(0, MAX_LINE_CHARS)}… [${line.length - MAX_LINE_CHARS} more characters on this line]`
             : line,
-        )
-        .join("\n");
+        );
+      // Context lines keep the path on each line: `path-12-text` has no unambiguous end of the path.
+      const trimmed = (filesOnly || context !== undefined ? lines : grouped(lines)).join("\n");
       if (trimmed === "") return { content: t("tool.grep.no_matches") };
       const notice = found.capped
         ? `\n${filesOnly ? t("tool.grep.truncated_files", { count: MAX_MATCHES }) : t("tool.grep.truncated", { count: MAX_MATCHES })}`

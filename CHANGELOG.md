@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`grep` names each file once, above its match lines** (`12:text`), as `rg --heading` and OpenCode's grep print
+  them, instead of the path on every line. On four broad greps that live research sessions sent, the result fell
+  from 47K to 33K characters (−29%) with every match kept. A search with `context` keeps the path on each line.
 - **`glob` lists 100 files at most, not 500**, and says to give a more specific path or pattern, as the Glob
   tools of Claude Code and OpenCode do: in 3 of 4 live research sessions the first call was a glob of the whole
   repository, 19K characters that every later request of the session sent again.

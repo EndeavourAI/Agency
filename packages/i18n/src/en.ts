@@ -116,6 +116,7 @@ export const en = {
     "[the next command starts in the project root again: a cd lasts for its own command only, so write `cd dir && command`]",
   "tool.grep.no_matches": "no matches",
   "tool.grep.truncated": "[truncated at {count} matches]",
+  "tool.grep.truncated_more": "[truncated at {count} matches; the other files with matches:]",
   "tool.grep.truncated_files": "[truncated at {count} files]",
   "tool.glob.no_matches": "no files matched",
   "tool.glob.truncated":

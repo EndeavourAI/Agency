@@ -34,9 +34,21 @@ describe("grep: global cap and flags (A6)", () => {
     const result = await tool.handler({ pattern: "hit" }, { signal });
     if (isMissingBinary(result.content)) return;
 
-    expect(result.content).toContain("[truncated at 200 matches]");
-    const matchLines = result.content.split("\n").filter((line) => /^(.+):\d+:/.test(line)).length;
-    expect(matchLines).toBeLessThanOrEqual(201);
+    // Past the cap: the first 100 matches, then each other file that matches, which a model reads next.
+    const [matches, others] = result.content.split(
+      "\n[truncated at 100 matches; the other files with matches:]\n",
+    );
+    const lines = matches?.split("\n") ?? [];
+    expect(lines.filter((line) => /^\d+:/.test(line))).toHaveLength(100);
+    const shown = lines.filter((line) => line.endsWith(".txt"));
+    // rg walks in parallel: which files come first varies, but each file is named once.
+    expect([...shown, ...(others?.split("\n") ?? [])].sort()).toEqual([
+      "f0.txt",
+      "f1.txt",
+      "f2.txt",
+      "f3.txt",
+      "f4.txt",
+    ]);
   }, 30_000);
 
   test("caseInsensitive and context flags flow through", async () => {

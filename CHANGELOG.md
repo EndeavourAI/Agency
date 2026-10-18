@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A `grep` past its 200-match cap shows the first 100 matches and then the path of each other file that
+  matches**, from a second search with `filesOnly`, instead of 200 match lines that stop partway through the
+  files. Claude Code's Grep lists files by default for the same reason. In 112 stored research sessions, 112 of 714
+  greps hit the cap and held half of all grep text, and the next call was a read in 92 of them. Replayed with
+  `git grep` on the benchmark tree, 106 of those greps get 34% smaller, and of 1,030 reads of a matching file in
+  the next 5 replies, the result now names all 1,030 against 778 before.
 - **A `grep` that hits one or two files, with six matches at most, also shows the code around each match**: the
   numbered lines from the declaration that holds the match (up to 20 lines above it) to the next declaration, 60
   lines a match and 120 in all, as a slice read gives them. In 112 stored research sessions, 141 slice reads

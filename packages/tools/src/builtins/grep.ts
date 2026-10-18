@@ -8,6 +8,8 @@ import { clip, lineCount, str, summarize } from "../render.ts";
 import { DECLARATION } from "./read.ts";
 
 const MAX_MATCHES = 200;
+// Live: 112 of 714 greps hit the cap and held half of all grep text, and the next reads went to files past it.
+const CAPPED_SHOWN = 100;
 /** A longer line keeps its start: one match in a minified file would fill the whole result. */
 const MAX_LINE_CHARS = 1_000;
 
@@ -394,7 +396,7 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
         }
       }
 
-      const lines = found.text
+      let lines = found.text
         .trim()
         .split("\n")
         // `.` as the root prints `./a.ts`.
@@ -404,6 +406,19 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
             ? `${line.slice(0, MAX_LINE_CHARS)}… [${line.length - MAX_LINE_CHARS} more characters on this line]`
             : line,
         );
+      // A capped search shows the first matches and then the path of each other file that matches, as one list.
+      let others = "";
+      if (found.capped && !filesOnly && context === undefined) {
+        let count = 0;
+        lines = lines.filter((line) => !MATCH_LINE.test(line) || ++count <= CAPPED_SHOWN);
+        const listed = await spec.handler({ ...input, filesOnly: true }, ctx);
+        const shown = new Set(lines.map((line) => /^(.+?):\d+:/.exec(line)?.[1]));
+        const rest = listed.isError ? [] : listed.content.split("\n").filter((path) => !shown.has(path));
+        others =
+          rest.length === 0
+            ? `\n${t("tool.grep.truncated", { count: CAPPED_SHOWN })}`
+            : `\n${t("tool.grep.truncated_more", { count: CAPPED_SHOWN })}\n${rest.join("\n")}`;
+      }
       // Context lines keep the path on each line: `path-12-text` has no unambiguous end of the path.
       const trimmed = (filesOnly || context !== undefined ? lines : grouped(lines)).join("\n");
       // A line of context has no clear end of its path, so a search with context gives a script the text.
@@ -421,9 +436,12 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
                     : [];
                 });
       if (trimmed === "") return { content: t("tool.grep.no_matches"), ...(value ? { value } : {}) };
-      const notice = found.capped
-        ? `\n${filesOnly ? t("tool.grep.truncated_files", { count: MAX_MATCHES }) : t("tool.grep.truncated", { count: MAX_MATCHES })}`
-        : "";
+      const notice =
+        others !== ""
+          ? others
+          : found.capped
+            ? `\n${filesOnly ? t("tool.grep.truncated_files", { count: MAX_MATCHES }) : t("tool.grep.truncated", { count: MAX_MATCHES })}`
+            : "";
       const around =
         filesOnly || context !== undefined || found.capped || !Array.isArray(value)
           ? ""

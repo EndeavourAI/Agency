@@ -23,6 +23,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   that the turn changed itself, when no test command of the turn named them or ran a whole suite. The note names
   five and the folders of the rest. In a live edit session a model changed `grep.ts`, ran only the test that it
   wrote, and ended with `builtins-render.test.ts` broken, which imports `grep.ts` through `builtin-set.ts`.
+  A changed file counts as tested when a test that imports it directly ran: a list of 28 far tests had a model
+  search for four replies after it had run the test of the file that it changed.
 - **A refused shell search names the tools that need no permission**: when a rule refuses a `bash` call that
   searches or shows files (`grep`, `find`, `cat`, `sed -n` and similar, also after `cd dir &&`), the refusal says
   that `grep`, `glob` and `read` do it with no ask. Most of 75 refused shell calls in stored sessions were such

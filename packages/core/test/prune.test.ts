@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import type { Message } from "@agency/schema";
-import { dedupeReads, pruneStaleResults } from "../src/prune.ts";
+import { type CacheSeen, dedupeReads, pruneRule, pruneStaleResults, seeCache } from "../src/prune.ts";
+
+const AGE_10: Parameters<typeof pruneStaleResults>[1] = { age: 10, batchTokens: 20_000 };
 
 /** A history of `calls` model calls, each a call of `tool` with a result of `size` characters. */
 function history(calls: number, tool: string, size: number): Message[] {
@@ -30,12 +32,12 @@ const notes = (messages: Message[]) =>
 test("old results of re-runnable tools become a note, in batches, and the same history gives the same request", () => {
   // 10k characters each: a batch passes 20k tokens at 9 results that are over 10 calls old.
   const long = history(30, "bash", 10_000);
-  const pruned = pruneStaleResults(long);
+  const pruned = pruneStaleResults(long, AGE_10);
   // Two batches are due by call 30: c0-c8 at call 20 and c9-c17 at call 29.
   expect(notes(pruned)).toEqual(Array.from({ length: 18 }, (_, i) => `c${i}`));
-  expect(JSON.stringify(pruneStaleResults(long))).toBe(JSON.stringify(pruned));
+  expect(JSON.stringify(pruneStaleResults(long, AGE_10))).toBe(JSON.stringify(pruned));
   // The request after one more call starts with the messages of the request before: the prompt cache holds.
-  const after = pruneStaleResults(history(31, "bash", 10_000));
+  const after = pruneStaleResults(history(31, "bash", 10_000), AGE_10);
   expect(JSON.stringify(after.slice(0, pruned.length))).toBe(JSON.stringify(pruned));
   expect(pruned[2]?.content[0]).toMatchObject({
     content:
@@ -45,11 +47,11 @@ test("old results of re-runnable tools become a note, in batches, and the same h
 
 test("a short history, short results and the results of other tools stay whole", () => {
   const short = history(10, "bash", 10_000);
-  expect(pruneStaleResults(short)).toBe(short);
+  expect(pruneStaleResults(short, AGE_10)).toBe(short);
   const small = history(40, "read", 1_500);
-  expect(pruneStaleResults(small)).toBe(small);
+  expect(pruneStaleResults(small, AGE_10)).toBe(small);
   const agents = history(40, "spawn", 10_000);
-  expect(pruneStaleResults(agents)).toBe(agents);
+  expect(pruneStaleResults(agents, AGE_10)).toBe(agents);
 });
 
 test("a read the model can still see comes back as a note; once that result is pruned, a read gives the text again", () => {
@@ -103,15 +105,15 @@ test("a read that a later read of the same file shows again goes in the next bat
   ];
   // Ten whole reads of a.ts as it changes: by the tenth, the nine before are out of date and pass a batch.
   const whole = reads(Array.from({ length: 10 }, () => ({ path: "a.ts" })));
-  expect(notes(pruneStaleResults(whole))).toEqual(Array.from({ length: 9 }, (_, i) => `r${i}`));
+  expect(notes(pruneStaleResults(whole, AGE_10))).toEqual(Array.from({ length: 9 }, (_, i) => `r${i}`));
   // A slice does not show the whole file again, and another file is another file.
   const other = reads([
     ...Array.from({ length: 10 }, () => ({ path: "a.ts" })),
     { path: "a.ts", offset: 10, limit: 20 },
   ]);
-  expect(notes(pruneStaleResults(other))).toEqual(Array.from({ length: 9 }, (_, i) => `r${i}`));
+  expect(notes(pruneStaleResults(other, AGE_10))).toEqual(Array.from({ length: 9 }, (_, i) => `r${i}`));
   const files = reads(Array.from({ length: 10 }, (_, i) => ({ path: `f${i}.ts` })));
-  expect(notes(pruneStaleResults(files))).toEqual([]);
+  expect(notes(pruneStaleResults(files, AGE_10))).toEqual([]);
 });
 
 test("a later read that only points at the earlier text, or that was cut or failed, does not make it out of date", () => {
@@ -129,5 +131,24 @@ test("a later read that only points at the earlier text, or that was cut or fail
     "line 1\n[The file has 9000 lines: these are lines 1 to 2000. Read with offset 2001 for the rest.]",
   );
   step("r5", "c.ts", "ENOENT: no such file", true);
-  expect(notes(pruneStaleResults(history))).toEqual([]);
+  expect(notes(pruneStaleResults(history, AGE_10))).toEqual([]);
+});
+
+test("the rule follows what the first three requests cached, then stays", () => {
+  const seen = (usages: Array<Parameters<typeof seeCache>[1]>): CacheSeen => {
+    const cache: CacheSeen = { requests: 0, input: 0, cached: 0, written: 0 };
+    for (const usage of usages) seeCache(cache, usage);
+    return cache;
+  };
+  const none = { inputTokens: 10_000 };
+  const read = { inputTokens: 10_000, cachedInputTokens: 8_000 };
+  const written = { inputTokens: 10_000, cachedInputTokens: 8_000, cacheWriteInputTokens: 2_000 };
+  // Until the third request, the rule that prunes least.
+  expect(pruneRule(seen([none, none]))).toEqual({ age: 6, batchTokens: 40_000 });
+  expect(pruneRule(seen([none, none, none]))).toEqual({ age: 6, batchTokens: 0 });
+  expect(pruneRule(seen([read, read, read]))).toEqual({ age: 6, batchTokens: 10_000 });
+  expect(pruneRule(seen([written, written, written]))).toEqual({ age: 6, batchTokens: 40_000 });
+  // A cache that held under half the input is weak; later requests do not change a fixed rule.
+  expect(pruneRule(seen([none, none, read]))).toEqual({ age: 6, batchTokens: 0 });
+  expect(pruneRule(seen([read, read, read, none, none, none]))).toEqual({ age: 6, batchTokens: 10_000 });
 });

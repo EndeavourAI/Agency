@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HttpClient } from "@agency/net";
-import type { ProviderAdapter, ProviderRequest, StreamEvent } from "@agency/providers";
+import type { ProviderAdapter, ProviderRequest, StreamEvent, Usage } from "@agency/providers";
 import { type AgentDaemon, createAgentDaemon } from "../src/daemon.ts";
 
 const daemons: AgentDaemon[] = [];
@@ -33,7 +33,11 @@ const tempDir = (prefix: string) => {
 type Call = { name: string; input: Record<string, unknown> };
 
 /** Plays the calls of each turn in order, one per request, then ends the turn; records every request. */
-function recorder(turns: Call[][], seen: ProviderRequest[]): ProviderAdapter {
+function recorder(
+  turns: Call[][],
+  seen: ProviderRequest[],
+  usage: Usage = { inputTokens: 1, outputTokens: 1 },
+): ProviderAdapter {
   let step = 0;
   return {
     family: "fake",
@@ -49,12 +53,12 @@ function recorder(turns: Call[][], seen: ProviderRequest[]): ProviderAdapter {
         yield { type: "tool_call_start", id, name: call.name };
         yield { type: "tool_call_delta", id, inputJsonDelta: JSON.stringify(call.input) };
         yield { type: "tool_call_end", id };
-        yield { type: "message_stop", stopReason: "tool_use", usage: { inputTokens: 1, outputTokens: 1 } };
+        yield { type: "message_stop", stopReason: "tool_use", usage };
         return;
       }
       turns.shift();
       yield { type: "text_delta", text: "done" };
-      yield { type: "message_stop", stopReason: "end_turn", usage: { inputTokens: 1, outputTokens: 1 } };
+      yield { type: "message_stop", stopReason: "end_turn", usage };
     },
   };
 }
@@ -158,4 +162,75 @@ test("plan mode goes with the prompt, so a switch keeps the system prompt and it
   expect(JSON.stringify(seen[2]?.messages.slice(0, seen[1]?.messages.length))).toBe(
     JSON.stringify(seen[1]?.messages),
   );
+}, 60_000);
+
+/** Reads f0..f7 in one turn, one a request, then thanks in a second turn; returns every request. */
+async function readsThenThanks(usage: Usage): Promise<ProviderRequest[]> {
+  const ws = tempDir("agency-prefix-ws-");
+  for (let i = 0; i < 8; i++)
+    writeFileSync(
+      join(ws, `f${i}.ts`),
+      `// ${i}
+${"x".repeat(12_000)}
+`,
+    );
+  const seen: ProviderRequest[] = [];
+  const turns: Call[][] = [
+    Array.from({ length: 8 }, (_, i) => ({ name: "read", input: { path: `f${i}.ts` } })),
+    [],
+  ];
+  const daemon = await createAgentDaemon({
+    workspaceRoot: ws,
+    instanceFile: join(ws, ".agency", "instance.json"),
+    sessionsDir: tempDir("agency-prefix-sess-"),
+    approvalsDir: tempDir("agency-prefix-appr-"),
+    configDir: tempDir("agency-prefix-cfg-"),
+    adapterFor: () => recorder(turns, seen, usage),
+    http: { fetch: async () => new Response() } satisfies HttpClient,
+  });
+  daemons.push(daemon);
+  for (const userText of ["read them", "thanks"]) {
+    const res = await fetch(`http://127.0.0.1:${daemon.httpPort}/rpc`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${daemon.server.token}` },
+      body: JSON.stringify({
+        id: 1,
+        method: "session_send",
+        params: { sessionId: "s", provider: "anthropic", model: "m", userText, permissionMode: "allow-all" },
+      }),
+    });
+    expect(((await res.json()) as { error?: unknown }).error).toBeUndefined();
+  }
+  return seen;
+}
+
+const removed = (request: ProviderRequest | undefined) =>
+  (request?.messages ?? []).flatMap((m) =>
+    m.content.flatMap((b) =>
+      b.type === "tool_result" && b.content.includes("was removed") ? [b.toolCallId] : [],
+    ),
+  ).length;
+
+test("with no cache, old results go at age 6 one by one, and the next turn keeps them out", async () => {
+  const seen = await readsThenThanks({ inputTokens: 1000, outputTokens: 1 });
+  // A result counts its age from the reply after its call: by the ninth request the first read is 7 calls old.
+  expect(removed(seen[8])).toBe(1);
+  expect(removed(seen[9])).toBe(2);
+}, 60_000);
+
+test("with a cache that holds, the same session sends each request as an append to the one before", async () => {
+  const seen = await readsThenThanks({
+    inputTokens: 1000,
+    cachedInputTokens: 900,
+    cacheWriteInputTokens: 100,
+    outputTokens: 1,
+  });
+  expect(seen.map(removed)).toEqual(seen.map(() => 0));
+  for (const [i, request] of seen.entries()) {
+    const prev = seen[i - 1];
+    if (prev)
+      expect(JSON.stringify(request.messages.slice(0, prev.messages.length))).toBe(
+        JSON.stringify(prev.messages),
+      );
+  }
 }, 60_000);

@@ -703,6 +703,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
   const sessionInboxes = new Map<string, import("@agency/schema").Message[]>();
   const steerableSessions = new Set<string>();
   const setupDone = new Set<string>();
+  const cacheSeen: DaemonContext["cacheSeen"] = new Map();
 
   // Session-scoped "always allow" grants: one manager per session id, persisted
   // to disk so grants survive daemon restart.
@@ -780,6 +781,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
     sessionInboxes,
     steerableSessions,
     setupDone,
+    cacheSeen,
     gate,
     gateForAgent,
     isReadOnlyAgent,

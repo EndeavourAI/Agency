@@ -8,6 +8,14 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Old tool results are pruned at 6 model calls, in batches sized by the cache that the session's provider
+  shows**: the first three requests of a session fix the rule. With no cache, or one that held under half the
+  input, each result goes at age 6; a cache that only reads keeps 10K-token batches; a cache that also reports
+  writes (Anthropic) keeps 40K. Before, every session waited 10 calls and a 20K batch, so a 14-request session
+  never pruned. A replay of 108 stored research sessions with the same actions gives −30% input with no cache,
+  −6% cost with a cache read at 0.25×, and −6% at Anthropic's 0.1× read and 1.25× write; re-reads that a pruned
+  result may cause are not in the replay. The rule lasts across the session's turns, so a later turn does not
+  bring a pruned result back.
 - **An absolute path inside the project is kept relative in the history that the model sees**: a model copies
   its own earlier calls, and in the stored research sessions the one whose first call wrote the absolute project
   root wrote it in every later call (up to 38 a session). The tool still gets the path as sent, and the reply is

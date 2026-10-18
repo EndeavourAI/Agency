@@ -3,8 +3,44 @@ import type { ContentBlock, Message } from "@agency/schema";
 /** Tools whose call the model can send again for the same result. */
 const RERUNNABLE = /^(read|bash|grep|glob|fetch|websearch|lsp_\w+)$/;
 const MIN_CHARS = 2000;
-const AGE = 10;
-const BATCH_TOKENS = 20_000;
+
+/** A result is due `age` model calls after it came; due results go once they pass `batchTokens`. */
+export interface PruneRule {
+  age: number;
+  batchTokens: number;
+}
+
+/** What a session's first requests cached. Its rule is fixed at the third, so later requests keep one prefix. */
+export interface CacheSeen {
+  requests: number;
+  input: number;
+  cached: number;
+  written: number;
+  rule?: PruneRule;
+}
+
+// Replay of 108 stored research sessions against age 10/20K: input -30% with no batch; with a cache priced at
+// 0.25x, -6% at 10K; at Anthropic's 0.1x read and 1.25x write, -6% at 40K, where smaller batches cost more.
+const NO_CACHE: PruneRule = { age: 6, batchTokens: 0 };
+const READ_CACHE: PruneRule = { age: 6, batchTokens: 10_000 };
+const WRITTEN_CACHE: PruneRule = { age: 6, batchTokens: 40_000 };
+
+/** Counts one request's usage until the rule is fixed: a cache that holds half the input keeps batches. */
+export function seeCache(
+  seen: CacheSeen,
+  usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens?: number },
+): void {
+  if (seen.rule !== undefined) return;
+  seen.requests += 1;
+  seen.input += usage.inputTokens;
+  seen.cached += usage.cachedInputTokens ?? 0;
+  seen.written += usage.cacheWriteInputTokens ?? 0;
+  if (seen.requests < 3) return;
+  seen.rule = seen.cached * 2 < seen.input ? NO_CACHE : seen.written > 0 ? WRITTEN_CACHE : READ_CACHE;
+}
+
+/** Before the rule is fixed, the one that prunes least. */
+export const pruneRule = (seen: CacheSeen): PruneRule => seen.rule ?? WRITTEN_CACHE;
 /** What an image of a result counts as: about the tokens of a 1000-pixel image. */
 const IMAGE_CHARS = 6400;
 
@@ -26,13 +62,13 @@ function readTarget(input: Record<string, unknown>): { path: string; slice: stri
 }
 
 /**
- * The history with the results of re-runnable tools over 10 model calls old put as a short note, as Densilo cuts
- * what an agent sends again. Measured on a long session: 25% fewer input tokens and 19% lower cost with the cache.
+ * The history with the results of re-runnable tools over `rule.age` model calls old put as a short note, as Densilo
+ * cuts what an agent sends again. Measured on a long session: 25% fewer input tokens and 19% lower cost with the cache.
  * A read that a later read of the same file shows again (the whole file, or the same slice) is due at once: its
- * text is out of date. They go in batches of 20k tokens, decided by a replay of the history, so a history gives
- * the same requests every time and the prompt cache holds between two batches.
+ * text is out of date. They go in batches of `rule.batchTokens`, decided by a replay of the history, so a history
+ * gives the same requests every time and the prompt cache holds between two batches.
  */
-export function pruneStaleResults(messages: Message[]): Message[] {
+export function pruneStaleResults(messages: Message[], rule: PruneRule): Message[] {
   const names = new Map<string, string>();
   const reads = new Map<string, { path: string; slice: string; at: number; shows?: boolean }>();
   const candidates: Array<{
@@ -58,7 +94,7 @@ export function pruneStaleResults(messages: Message[]): Message[] {
         candidates.push({
           message: index,
           block: blockIndex,
-          due: calls + AGE,
+          due: calls + rule.age,
           chars,
           ...(read ? { read } : {}),
         });
@@ -89,7 +125,7 @@ export function pruneStaleResults(messages: Message[]): Message[] {
       waiting.push(candidate);
       next += 1;
     }
-    if (waiting.reduce((sum, candidate) => sum + candidate.chars, 0) / 4 > BATCH_TOKENS) {
+    if (waiting.reduce((sum, candidate) => sum + candidate.chars, 0) / 4 > rule.batchTokens) {
       for (const candidate of waiting) pruned.add(`${candidate.message}:${candidate.block}`);
       waiting = [];
     }

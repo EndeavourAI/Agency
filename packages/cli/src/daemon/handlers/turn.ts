@@ -111,6 +111,12 @@ function userTextOf(session: RunTurnParams["session"]): string {
   return typeof block?.text === "string" ? block.text : "";
 }
 
+function sessionCache(caches: DaemonContext["cacheSeen"], sessionId: string) {
+  const seen = caches.get(sessionId) ?? { requests: 0, input: 0, cached: 0, written: 0 };
+  caches.set(sessionId, seen);
+  return seen;
+}
+
 /** Runs the prompt hooks of the config. Their text goes to the session inbox: the loop stores it with the turn. */
 async function runPromptHooks(
   ctx: DaemonContext,
@@ -774,6 +780,7 @@ export async function executeTurn(
                 : {}),
               ...(config.compactionLimit ? { compactionLimit: config.compactionLimit } : {}),
               ...(config.keepToolResults ? { keepToolResults: true } : {}),
+              cacheSeen: sessionCache(ctx.cacheSeen, sessionId),
               ...(template && template.allowedTools ? { grantedTools: template.allowedTools } : {}),
               signal: controller.signal,
               taskDepth: (params as unknown as { taskDepth?: number }).taskDepth ?? 0,

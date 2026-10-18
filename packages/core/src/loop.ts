@@ -35,7 +35,7 @@ import { CODE_TOOL } from "./codemode.ts";
 import { permissionsFromRules } from "./config/claude-permissions.ts";
 import { type AgencyEvents, HookBlock, HookStop } from "./events.ts";
 import { namedFiles } from "./prefetch.ts";
-import { dedupeReads, pruneStaleResults } from "./prune.ts";
+import { type CacheSeen, dedupeReads, pruneRule, pruneStaleResults, seeCache } from "./prune.ts";
 import {
   compactMessages,
   countMessageTokens,
@@ -203,6 +203,8 @@ export interface RunTurnOptions {
   compactionLimit?: number;
   /** `keepToolResults` of the config: old results of re-runnable tools stay whole in each request. */
   keepToolResults?: boolean;
+  /** The session's cache so far, so its prune rule lasts across turns. Absent: the turn counts its own. */
+  cacheSeen?: CacheSeen;
   /** Rules of Claude Code that the turn starts with pre-approved: the `allowed-tools` of a skill that `/name` ran. */
   grantedTools?: string[];
   /** The model takes image input: images that a tool returned go to it. Absent means no. */
@@ -323,6 +325,7 @@ export async function runTurn(
   let verifyNoted = false;
   let serialReads = 0;
   let serialNoted = false;
+  const cacheSeen = options.cacheSeen ?? { requests: 0, input: 0, cached: 0, written: 0 };
   const turnStart = messages.length;
   const tracer = options.traceRecorder;
   const turnSpanId = tracer
@@ -417,7 +420,9 @@ export async function runTurn(
         system: options.systemPrompt,
         ...(options.systemSegments !== undefined ? { systemSegments: options.systemSegments } : {}),
         // A copy: the loop changes `messages` in place, and the request is kept for a later compaction.
-        messages: [...(options.keepToolResults ? messages : pruneStaleResults(messages))],
+        messages: [
+          ...(options.keepToolResults ? messages : pruneStaleResults(messages, pruneRule(cacheSeen))),
+        ],
         tools: toolDefs(),
         maxTokens: options.maxTokensPerRequest ?? 8192,
         thinkingLevel: options.thinkingLevel,
@@ -603,6 +608,7 @@ export async function runTurn(
         await append({ role: "assistant", content: relativePaths(turn.content, options.cwd) });
       spoke = turn.content.some((block) => block.type === "text" && block.text.trim() !== "");
       cumulativeUsage = addUsage(cumulativeUsage, turn.usage);
+      seeCache(cacheSeen, turn.usage);
       requestTokens = turn.usage.inputTokens + turn.usage.outputTokens;
       // A compaction that left the request at the trigger size cannot help: the next ones would each cost a summary.
       if (folded && requestTokens >= triggerTokens(compactionThreshold)) proactiveFolds = false;
@@ -836,7 +842,7 @@ export async function runTurn(
           content: `${last.content}\n\n[harness: ${notes.join(" ")}]`,
         };
       }
-      const visible = options.keepToolResults ? messages : pruneStaleResults(messages);
+      const visible = options.keepToolResults ? messages : pruneStaleResults(messages, pruneRule(cacheSeen));
       await append({ role: "user", content: dedupeReads(results, toolCalls, visible) });
     } catch (error) {
       if (tracer && modelSpanId) {

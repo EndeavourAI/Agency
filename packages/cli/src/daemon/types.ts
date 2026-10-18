@@ -711,6 +711,8 @@ export interface DaemonContext {
   steerableSessions: Set<string>;
   /** Sessions whose `setupScript` ran: it runs once for each session. */
   setupDone: Set<string>;
+  /** What each session's requests cached: the prune rule it picks lasts across that session's turns. */
+  cacheSeen: Map<string, NonNullable<import("@agency/core").RunTurnOptions["cacheSeen"]>>;
   gate: PermissionsGate;
   gateForAgent: (handle: string) => PermissionsGate;
   isReadOnlyAgent: (handle: string) => boolean;

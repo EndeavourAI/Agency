@@ -70,6 +70,8 @@ describe("Scheduler retry behavior", () => {
     const started = Date.now();
     expect(await attemptsFor(ErrorCode.RATE_LIMIT)).toBeGreaterThan(7);
     expect(Date.now() - started).toBeGreaterThanOrEqual(190);
+    // Live: a DNS failure that lasted about a minute outlasted four attempts (7 s) and lost 2 of 31 sessions.
+    expect(await attemptsFor(ErrorCode.NETWORK)).toBeGreaterThan(7);
   });
 
   test("honors a server-provided retryAfterMs instead of the computed backoff", async () => {

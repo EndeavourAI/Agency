@@ -10,7 +10,7 @@ export interface SchedulerOptions {
   maxAttempts?: number;
   baseDelayMs?: number;
   maxDelayMs?: number;
-  /** How long a rate limit is retried when `maxAttempts` is unset. Default 5 minutes. */
+  /** How long a rate limit or a network failure is retried when `maxAttempts` is unset. Default 5 minutes. */
   rateLimitWindowMs?: number;
 }
 
@@ -241,9 +241,10 @@ export class Scheduler {
         return await fn();
       } catch (error) {
         if (!(error instanceof AgencyError) || error.retryClass !== "retryable") throw error;
-        const rateLimit = error.code === ErrorCode.RATE_LIMIT;
-        if (attempt >= (rateLimit ? this.rateLimitAttempts : this.maxAttempts)) throw error;
-        if (rateLimit && Date.now() - started >= this.rateLimitWindowMs) throw error;
+        // Live: a DNS failure of about a minute outlasted four attempts (7 s), as rate limits outlasted seven.
+        const windowed = error.code === ErrorCode.RATE_LIMIT || error.code === ErrorCode.NETWORK;
+        if (attempt >= (windowed ? this.rateLimitAttempts : this.maxAttempts)) throw error;
+        if (windowed && Date.now() - started >= this.rateLimitWindowMs) throw error;
 
         const retryAfterMs = extractRetryAfterMs(error);
         // Security bound: a hostile or misconfigured Retry-After must not hang a

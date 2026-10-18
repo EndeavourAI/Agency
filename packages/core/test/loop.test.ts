@@ -1052,9 +1052,10 @@ describe("runTurn", () => {
       },
     });
 
-    expect(errors).toEqual(["connection reset"]);
+    // The reply is asked for twice more before the turn gives up with the cause.
+    expect(errors).toEqual(["connection reset", "connection reset", "connection reset"]);
     expect(result.error).toEqual({ code: "network", message: "connection reset" });
-  });
+  }, 15_000);
 
   test.each([
     ["before any content", false],

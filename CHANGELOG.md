@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A network failure is retried for up to 5 minutes, and a reply that the network cuts is asked for again**
+  (twice, after 1 s and 2 s): before, four attempts (about 7 seconds) and none for a cut reply. In one burst of
+  network trouble, 5 of 31 live sessions were lost: 2 to a DNS failure (`ENOTFOUND`) and 3 to "The socket
+  connection was closed unexpectedly" in the middle of a reply.
 - **The `bash` tool names the commands that the permission rules allow**, when rules allow some by pattern (up
   to ten, as `--allowed-tools "Bash(bun test*)"` gives): in 3 of 6 live debug sessions under that rule the first
   test command was `npx bun test …`, refused, and only the next call wrote `bun test …`.

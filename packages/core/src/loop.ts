@@ -576,6 +576,21 @@ export async function runTurn(
         });
         turn = await collectWithFallback();
       }
+      // Live: "The socket connection was closed unexpectedly" ended 3 of 31 sessions in the middle of a reply.
+      for (
+        let attempt = 1;
+        attempt <= STREAM_RETRIES && turn.error?.code === ErrorCode.NETWORK && !options.signal?.aborted;
+        attempt++
+      ) {
+        turn.discard();
+        options.onEvent?.({
+          type: "retry",
+          attempt,
+          message: `${turn.error.message}: asking for the reply again`,
+        });
+        await new Promise((resolve) => setTimeout(resolve, attempt * STREAM_RETRY_MS));
+        turn = await collectWithFallback();
+      }
 
       discardStarted = turn.discard;
       if (turn.stopReason === "max_tokens" && outputContinuations < MAX_OUTPUT_CONTINUATIONS) {
@@ -898,6 +913,9 @@ const STREAM_IDLE_MS = 5 * 60_000;
 
 /** How many times in a row the model is asked to go on after a reply that was cut at the output limit. */
 const MAX_OUTPUT_CONTINUATIONS = 3;
+/** A reply that the network cuts is asked for again, after 1 s and then 2 s. */
+const STREAM_RETRIES = 2;
+const STREAM_RETRY_MS = 1_000;
 export const OUTPUT_CUT_NOTE =
   "Your reply was cut at the output limit. Continue from the exact point where it stopped. Do not repeat text.";
 const CUT_CALL_NOTE =

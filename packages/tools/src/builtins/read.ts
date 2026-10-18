@@ -29,56 +29,46 @@ export interface ReadToolOptions {
   readState?: ReadState;
 }
 
-function positiveIntOr(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : fallback;
+function positiveInt(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : undefined;
 }
 
-function limitOrAll(input: unknown): number | undefined {
-  return typeof input === "number" && Number.isInteger(input) && input >= 1 ? input : undefined;
+type ReadInput = { path: string; offset?: number; limit?: number } & Record<string, unknown>;
+
+function rangeOf(input: ReadInput): { offset: number; limit: number | undefined } {
+  return { offset: positiveInt(input.offset) ?? 1, limit: positiveInt(input.limit) };
 }
 
 /** The loop cuts a result at 2000 lines or 50 KB: a read stops first, at a whole line, and says where the rest starts. */
 const HEAD_LINES = 2000;
 const HEAD_BYTES = 45_000;
 
-function headOf(content: string): { content: string } {
+/** Each line with its number, as Claude Code reads: with none, models read again with `sed -n` to cite or find one. */
+function numbered(content: string, offset: number, limit: number | undefined): string {
   const lines = content.split("\n");
-  let kept = 0;
-  for (let used = 0; kept < lines.length && kept < HEAD_LINES; kept++) {
-    used += Buffer.byteLength(lines[kept] as string, "utf8") + 1;
-    if (used > HEAD_BYTES) break;
-  }
-  // One line over the limit (a minified file) is the loop's to cut.
-  if (kept === 0 || kept >= lines.length) return { content };
-  return {
-    content: `${lines.slice(0, kept).join("\n")}\n[The file has ${lines.length} lines: these are lines 1 to ${kept}. Read with offset ${kept + 1} for the rest, or grep for what you need.]`,
-  };
-}
-
-function numberedSlice(content: string, offset: number, limit: number | undefined): string {
-  const lines = content.split("\n");
-  const selected = lines.slice(offset - 1, limit === undefined ? undefined : offset - 1 + limit);
-  const numbered: string[] = [];
+  if (lines.at(-1) === "") lines.pop();
+  const end = Math.min(lines.length, limit === undefined ? lines.length : offset - 1 + limit);
+  const out: string[] = [];
   let used = 0;
-  for (const [index, line] of selected.entries()) {
-    const rendered = `${String(offset + index).padStart(6)}  ${line}`;
-    const bytes = Buffer.byteLength(rendered, "utf8");
-    if (used + bytes > MAX_READ_BYTES) break;
-    used += bytes;
-    numbered.push(rendered);
+  for (let index = offset - 1; index < end && out.length < HEAD_LINES; index++) {
+    const rendered = `${String(index + 1).padStart(6)}  ${lines[index]}`;
+    used += Buffer.byteLength(rendered, "utf8") + 1;
+    // One line over the limit (a minified file) is the loop's to cut.
+    if (used > HEAD_BYTES && out.length > 0) break;
+    out.push(rendered);
   }
-  const truncated = used < Buffer.byteLength(selected.join("\n"), "utf8");
-  const suffix = truncated ? `\n${t("tool.read.slice_truncated", { bytes: MAX_READ_BYTES })}` : "";
-  return numbered.join("\n") + suffix;
+  const last = offset - 1 + out.length;
+  if (last >= end) return out.join("\n");
+  return `${out.join("\n")}\n[The file has ${lines.length} lines: these are lines ${offset} to ${last}. Read with offset ${last + 1} for the rest, or grep for what you need.]`;
 }
 
 export function createReadTool(deps: ToolDeps, options?: ReadToolOptions): ToolSpec {
-  const spec: ToolSpec<{ path: string; offset?: number; limit?: number }> = {
+  const spec: ToolSpec<ReadInput> = {
     name: "read",
     description:
-      "Reads the contents of a file at the given path. Files over 1MB must be read in slices: " +
-      "pass offset (1-based line to start from) and limit (lines per read); sliced output carries " +
-      "line numbers so edits can anchor on them.",
+      "Reads the contents of a file at the given path, each line after its number (not part of the file: " +
+      "leave it out of edit text). For a part, pass offset (1-based line to start from) and limit (lines " +
+      "per read); files over 1MB must be read in parts.",
     inputSchema: {
       type: "object",
       properties: {
@@ -107,8 +97,7 @@ export function createReadTool(deps: ToolDeps, options?: ReadToolOptions): ToolS
       options?.readState?.mark(resolved);
 
       const stat = statSync(resolved);
-      const offset = positiveIntOr(input.offset, 1);
-      const limit = limitOrAll(input.limit);
+      const { offset, limit } = rangeOf(input);
       const slicing = offset !== 1 || limit !== undefined;
 
       if (stat.size > MAX_READ_BYTES && !slicing) {
@@ -140,8 +129,7 @@ export function createReadTool(deps: ToolDeps, options?: ReadToolOptions): ToolS
           return { content };
         }
       }
-      if (!slicing) return headOf(content);
-      return { content: numberedSlice(content, offset, limit) };
+      return { content: numbered(content, offset, limit) };
     },
   };
   return spec;

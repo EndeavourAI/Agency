@@ -26,8 +26,8 @@ function readOf(name: string, text: string) {
 test("a read of a long file stops where the loop would cut it, and says where the rest starts", async () => {
   const text = Array.from({ length: 5000 }, (_, i) => `line ${i + 1}`).join("\n");
   const { content } = await readOf("long.txt", text);
-  expect(content.startsWith("line 1\nline 2\n")).toBe(true);
-  expect(content).toContain("line 2000\n");
+  expect(content.startsWith("     1  line 1\n     2  line 2\n")).toBe(true);
+  expect(content).toContain("  2000  line 2000\n");
   expect(content).not.toContain("line 2001");
   expect(content).toContain("The file has 5000 lines: these are lines 1 to 2000. Read with offset 2001");
 });
@@ -40,6 +40,5 @@ test("lines that are long make the read stop before 50 KB", async () => {
 });
 
 test("a file under both limits comes whole, with no note", async () => {
-  const text = "a\nb\n";
-  expect((await readOf("short.txt", text)).content).toBe(text);
+  expect((await readOf("short.txt", "a\nb\n")).content).toBe("     1  a\n     2  b");
 });

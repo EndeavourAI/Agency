@@ -21,14 +21,15 @@ function tempDeps(): { deps: ToolDeps; root: string } {
 const signal = new AbortController().signal;
 
 describe("createReadTool", () => {
-  test("reads a file's exact content", async () => {
+  test("reads a whole file with the number of each line, as a slice gives it", async () => {
     const { deps, root } = tempDeps();
-    writeFileSync(join(root, "a.ts"), "export const x = 1;\n");
+    writeFileSync(join(root, "a.ts"), "export const x = 1;\n\nexport const y = 2;\n");
 
     const tool = createReadTool(deps);
     const result = await tool.handler({ path: "a.ts" }, { signal });
 
-    expect(result.content).toBe("export const x = 1;\n");
+    // Live: with no numbers, models read the file again with `sed -n` or a slice to cite or find a line.
+    expect(result.content).toBe("     1  export const x = 1;\n     2  \n     3  export const y = 2;");
     expect(result.isError).toBeFalsy();
   });
 

@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`read` gives each line after its number, for a whole file too**, as the Read tool of Claude Code does: with
+  no numbers, models read a file whole and then again in slices or with `sed -n` to cite a line or to find where
+  to edit (44 `cat`/`sed -n` calls and 60 second reads of a file in 207 reads, over the stored sessions). `edit`
+  takes text that a model copied with those numbers, as the file has it: each line has the prefix of a read and
+  the numbers count up one by one, which text of a file almost never does.
 - **Each `bash` command starts in the project root**, as each command of Codex names its folder: a `cd` lasts
   for its own command only, and a command with a `cd` that moved says so. In live sessions the folder that a
   `cd` kept was lost: a model ran `cd packages/tools && bun test` from inside `packages/tools` (`No such file or

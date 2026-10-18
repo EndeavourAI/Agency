@@ -13,11 +13,7 @@ const IMAGE_CHARS = 6400;
  * the read tool. Only such a read makes an earlier one out of date.
  */
 function showsWholeText(content: string): boolean {
-  return (
-    !content.startsWith("[Unchanged") &&
-    !content.includes("[The file has ") &&
-    !content.includes("[truncated at ")
-  );
+  return !content.startsWith("[Unchanged") && !content.includes("[The file has ");
 }
 
 /** A read names a file and a slice; a read with no slice shows the whole file. */

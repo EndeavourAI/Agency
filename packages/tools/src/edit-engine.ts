@@ -329,6 +329,25 @@ export function restorePairedIndent(oldText: string, newText: string): string {
     .join("\n");
 }
 
+const READ_NUMBER = /^ *(\d+) {2}/;
+
+/**
+ * Text copied from a read with its numbers: each line has the prefix of a read, and the numbers count up one by one,
+ * which file text of its own almost never does. Undefined when the text is not such a copy.
+ */
+function withoutReadNumbers(text: string): string | undefined {
+  const lines = text.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  let first: number | undefined;
+  for (const [index, line] of lines.entries()) {
+    const number = READ_NUMBER.exec(line)?.[1];
+    if (number === undefined) return undefined;
+    first ??= Number(number);
+    if (Number(number) !== first + index) return undefined;
+  }
+  return lines.length === 0 ? undefined : text.replace(/^ *\d+ {2}/gm, "");
+}
+
 export interface HunkAutocorrect {
   hunk: EditHunk;
   corrected: boolean;
@@ -340,6 +359,13 @@ export function autocorrectHunk(hunk: EditHunk): HunkAutocorrect {
   const notes: string[] = [];
   let oldText = hunk.oldText;
   let newText = hunk.newText;
+  const unnumbered = withoutReadNumbers(oldText);
+  if (unnumbered !== undefined) {
+    oldText = unnumbered;
+    // New lines that the model added have no number of their own.
+    newText = newText.replace(/^ *\d+ {2}/gm, "");
+    notes.push("removed the line numbers of a read from oldText");
+  }
   const oldStripped = stripTrailingSlop(oldText);
   if (oldStripped.stripped.length > 0) {
     oldText = oldStripped.text;

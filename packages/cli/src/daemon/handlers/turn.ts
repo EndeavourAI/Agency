@@ -582,8 +582,8 @@ export async function executeTurn(
               ];
         // `true` needs the script sandbox. `"host"` runs the script with the authority of a shell command, so it is
         // only for the software backend: a sandbox for commands must not have a tool that goes around it.
-        // On by default where the script sandbox needs no change to the disk: on Windows it sets folder rules.
-        const codeMode = config.codeMode ?? (process.platform === "linux" || process.platform === "darwin");
+        // Off by default: in live runs most scripts failed (a result is a string, not an array) and cost more replies.
+        const codeMode = config.codeMode ?? false;
         const isolatedRunner =
           codeMode === true && (await scriptSandboxAvailable(codeRunnerReadPaths()))
             ? buildScriptSandboxArgv(codeRunner(), codeRunnerReadPaths())

@@ -20,8 +20,8 @@ import {
   sessionEnvironmentStore,
 } from "../src/daemon.ts";
 
-/** On Linux and macOS the daemon offers the code tool by default, when the script sandbox starts. */
-const codeByDefault =
+/** The code tool needs `codeMode: true` and a script sandbox that starts. */
+const codeSandbox =
   ["linux", "darwin"].includes(process.platform) && (await scriptSandboxAvailable(codeRunnerReadPaths()));
 
 const noopHttp: HttpClient = { fetch: async () => new Response() };
@@ -677,11 +677,11 @@ describe("createAgentDaemon", () => {
       handler: async () => ({ content: "" }),
     });
     const mcpTool = { ...spec("docs_search"), origin: "mcp" as const };
-    // No code tool, the default on Linux and macOS: the lists are those of the test on each platform.
+    // No codeMode in the config: no code tool on any platform.
     const { client } = await startFakeDaemon({
       adapterFor,
       tools: [spec("read"), spec("grep"), mcpTool],
-      configDir: writeConfigDir({ codeMode: false }),
+      configDir: writeConfigDir({}),
     });
     const turn = (turnId: string, extra: Record<string, unknown>) =>
       client.call("run_turn", {
@@ -700,8 +700,8 @@ describe("createAgentDaemon", () => {
     expect(offered).toEqual([["docs_search", "grep", "read"], ["docs_search", "read"], ["docs_search"]]);
   }, 60_000);
 
-  test.skipIf(!codeByDefault)(
-    "on Linux and macOS the isolated code tool is offered by default, and a script runs with no ask",
+  test.skipIf(!codeSandbox)(
+    "with codeMode true the isolated code tool is offered, and a script runs with no ask",
     async () => {
       const requests: Array<{ tools: string[]; results: string[] }> = [];
       const { client } = await startFakeDaemon({
@@ -734,6 +734,7 @@ describe("createAgentDaemon", () => {
           },
         }),
         tools: [],
+        configDir: writeConfigDir({ codeMode: true }),
       });
       await client.call("run_turn", {
         turnId: "t-code-default",

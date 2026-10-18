@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The `code` tool is off by default on Linux and macOS too** (set `codeMode: true` to offer it): in live runs on
+  Linux, one free model never called it in 5 sessions, and another wrote 52 scripts, of which 37 failed, most of them
+  because they used the text of a tool result as an array. A fan-out task took 13 to 21 replies with the tool and 6
+  with no tool.
 - **A network failure is retried for up to 5 minutes, and a reply that the network cuts is asked for again**
   (twice, after 1 s and 2 s): before, four attempts (about 7 seconds) and none for a cut reply. In one burst of
   network trouble, 5 of 31 live sessions were lost: 2 to a DNS failure (`ENOTFOUND`) and 3 to "The socket

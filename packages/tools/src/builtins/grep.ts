@@ -23,7 +23,10 @@ function grouped(lines: string[]): string[] {
       out.push(line);
       continue;
     }
-    if (match[1] !== file) out.push((file = match[1]));
+    if (match[1] !== file) {
+      file = match[1];
+      out.push(file);
+    }
     out.push(line.slice(match[1].length + 1));
   }
   return out;

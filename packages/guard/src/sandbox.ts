@@ -1,5 +1,5 @@
-import { lstatSync, realpathSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { AgencyError, ErrorCode } from "@agency/schema";
 import type { RequestApproval } from "./approval.ts";
 import type { Decision } from "./policy.ts";
@@ -46,6 +46,20 @@ export const PROTECTED_PATHS = {
   ],
   writable: [".agency/worktrees"],
 } as const;
+
+/** The folder of the team worktrees: `-p --worktree` runs a trusted workspace in each, which loads its own files. */
+export const WORKTREES = ".agency/worktrees";
+
+/** The read-only paths of `PROTECTED_PATHS` in each worktree of the workspace that exists now. */
+export function worktreeProtectedPaths(root: string): string[] {
+  let names: string[] = [];
+  try {
+    names = readdirSync(join(root, WORKTREES), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {}
+  return names.flatMap((name) => PROTECTED_PATHS.readOnly.map((path) => `${WORKTREES}/${name}/${path}`));
+}
 
 /**
  * Decides the verdict for a path that resolves OUTSIDE the sandbox root:

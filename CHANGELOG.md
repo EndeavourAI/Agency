@@ -461,6 +461,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Fixed
 
+- **A team worktree held the same way out of the sandbox** (security): `.agency/worktrees` is writable, and
+  `-p --worktree <name>` runs that folder as a trusted workspace, so a sandboxed command could write its
+  `.mcp.json` or `.claude/settings.json` and have it run with your rights. In each worktree the same files are now
+  read-only to a command and ask before `edit` or `write` changes them (tested with bubblewrap in WSL 2 and the token
+  of Windows); Seatbelt holds them for worktrees made later too.
 - **The desktop showed a context larger than the window** ("812K of 262K tokens"): for a turn saved before each
   turn kept its context size, the panel showed the input of all the requests of that turn added up. It now says
   that the size shows after the next turn.

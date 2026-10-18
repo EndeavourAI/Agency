@@ -73,6 +73,7 @@ test("plans, team worktrees and other files keep the rules of the mode", async (
   for (const path of [
     ".agency/plans/a.md",
     ".agency/worktrees/w1/src/a.ts",
+    ".agency/worktrees/w1/.agency/plans/a.md",
     "src/a.ts",
     ".github/hooks.md",
   ]) {
@@ -86,4 +87,13 @@ test("plans, team worktrees and other files keep the rules of the mode", async (
     write: "deny",
   });
   expect(denied).toEqual({ result: "deny", asked: [] });
+});
+
+test("in a team worktree, the files that its own workspace runs go to the user too", async () => {
+  for (const path of [".agency/worktrees/w1/.mcp.json", ".agency/worktrees/w1/.claude/settings.json"]) {
+    expect(await verdict("allow-all", { tool: "write", path })).toEqual({
+      result: "allow",
+      asked: [`protected:${path}`],
+    });
+  }
 });

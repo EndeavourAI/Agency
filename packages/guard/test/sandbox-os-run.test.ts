@@ -52,6 +52,23 @@ describe.skipIf(!runs)("OS sandbox: real commands", () => {
     if (process.platform === "linux") expect(made.stderr).toContain("agency sandbox: removed .mcp.json");
   });
 
+  test("in a team worktree too, a command cannot change or make the files that its workspace runs", async () => {
+    const ws = dir(tmpdir());
+    const tree = join(ws, ".agency", "worktrees", "w1");
+    await Bun.write(join(tree, ".claude", "settings.json"), "{}");
+    await Bun.write(join(tree, "src", "a.ts"), "");
+    const sandbox = new OsSandboxBackend(ws);
+    expect(await sandbox.isAvailable()).toBe(true);
+    const run = await sandbox.exec(
+      ["sh", "-c", "echo x > src/a.ts; echo x > .claude/settings.json; echo '{}' > .mcp.json; echo done"],
+      { cwd: tree },
+    );
+    expect(run.stdout).toContain("done");
+    expect(await Bun.file(join(tree, "src", "a.ts")).text()).toBe("x\n");
+    expect(await Bun.file(join(tree, ".claude", "settings.json")).text()).toBe("{}");
+    expect(existsSync(join(tree, ".mcp.json"))).toBe(false);
+  });
+
   test.skipIf(process.platform !== "linux" || !existsSync("/run/dbus/system_bus_socket"))(
     "a command cannot reach the system bus or the runtime folder of the user, which run programs outside it",
     async () => {

@@ -1238,6 +1238,12 @@ export class PermissionsGate implements ToolPolicy {
       const rel = relativeWorkspacePath(this.options.workspaceRoot, target);
       const key = process.platform === "win32" ? rel.toLowerCase() : rel;
       const under = (dir: string) => key === dir || key.startsWith(`${dir}/`);
+      // In a worktree, the files of that workspace count as those of this one.
+      const inner = /^\.agency\/worktrees\/[^/]+\/(.+)$/.exec(key)?.[1];
+      const inWorktree = (dir: string) =>
+        inner !== undefined && (inner === dir || inner.startsWith(`${dir}/`));
+      if (inner !== undefined && !inWorktree(".agency/plans") && PROTECTED_PATHS.readOnly.some(inWorktree))
+        return rel;
       if ([...PROTECTED_PATHS.writable, ".agency/plans"].some(under)) continue;
       if (PROTECTED_PATHS.readOnly.some(under)) return rel;
     }

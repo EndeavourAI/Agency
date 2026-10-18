@@ -10,6 +10,8 @@ import {
   PROTECTED_PATHS,
   type SandboxBackend,
   SandboxBoundary,
+  WORKTREES,
+  worktreeProtectedPaths,
 } from "./sandbox.ts";
 import {
   APPCONTAINER_MODE,
@@ -64,6 +66,7 @@ export function buildBwrapArgs(
   hidden: string[] = [],
   proxySocket?: string,
   masked: string[] = [],
+  worktreeReadOnly: string[] = [],
 ): string[] {
   const bind = (flag: string, paths: readonly string[]): string[] =>
     paths.flatMap((path) => [flag, `${root}/${path}`, `${root}/${path}`]);
@@ -86,6 +89,8 @@ export function buildBwrapArgs(
     ...bind("--bind-try", PROTECTED_PATHS.pinned),
     ...bind("--ro-bind-try", PROTECTED_PATHS.readOnly),
     ...bind("--bind-try", PROTECTED_PATHS.writable),
+    // After the worktrees are made writable: in each, the files that its own workspace runs stay read-only.
+    ...bind("--ro-bind-try", worktreeReadOnly),
     ...(proxySocket === undefined
       ? []
       : [
@@ -109,6 +114,9 @@ export function buildBwrapArgs(
 
 const quote = (path: string): string => `"${path.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 
+/** A path as a literal part of a Seatbelt regex. */
+const regexOf = (path: string): string => path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /**
  * Seatbelt profile with the same rules as the bubblewrap argv. The last rule that matches wins. With `proxyPort`
  * the command reaches only the proxy on that port.
@@ -130,6 +138,8 @@ export function buildSeatbeltProfile(
     `(allow file-write* (subpath ${quote(root)}) (subpath ${quote(tmpDir)}) (subpath "/private/tmp") (subpath "/private/var/folders") (literal "/dev/null") (regex #"^/dev/tty"))`,
     `(deny file-write* ${rules("literal", PROTECTED_PATHS.pinned)} ${rules("subpath", PROTECTED_PATHS.readOnly)})`,
     `(allow file-write* ${rules("subpath", PROTECTED_PATHS.writable)})`,
+    // A regex holds for a worktree that is made later too.
+    `(deny file-write* (regex #"^${regexOf(root)}/${regexOf(WORKTREES)}/[^/]+/(${PROTECTED_PATHS.readOnly.map(regexOf).join("|")})(/|$)"))`,
     ...(allowNetwork ? [] : ["(deny network*)"]),
     ...(allowNetwork || proxyPort === undefined
       ? []
@@ -323,6 +333,7 @@ export class OsSandboxBackend implements SandboxBackend {
           [...this.hidden(), ...existing(runtimeDirs())],
           allowNetwork ? undefined : this.proxy?.socket,
           existing(HOST_SOCKETS),
+          worktreeProtectedPaths(this.root),
         ),
         ...argv,
       ];
@@ -454,7 +465,9 @@ export class OsSandboxBackend implements SandboxBackend {
     const absent =
       this.platform === "darwin"
         ? []
-        : PROTECTED_PATHS.readOnly.filter((path) => !existsSync(join(this.root, path)));
+        : [...PROTECTED_PATHS.readOnly, ...worktreeProtectedPaths(this.root)].filter(
+            (path) => !existsSync(join(this.root, path)),
+          );
     const sweep = (): string[] => {
       const made = absent.filter((path) => existsSync(join(this.root, path)));
       for (const path of made) rmSync(join(this.root, path), { recursive: true, force: true });

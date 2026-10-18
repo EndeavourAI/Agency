@@ -1,4 +1,6 @@
-import { readFileSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync, type Stats, statSync } from "node:fs";
+import { basename } from "node:path";
 import { requirePathScope } from "@agency/guard";
 import { t } from "@agency/i18n";
 import { type ImageBlock, PDF_MIME } from "@agency/schema";
@@ -22,6 +24,24 @@ export function imageMimeFor(path: string): string | undefined {
   const dot = path.lastIndexOf(".");
   if (dot === -1) return undefined;
   return IMAGE_MIME_BY_EXTENSION[path.slice(dot).toLowerCase()];
+}
+
+/** Up to five files of the git index (and untracked, not ignored) that have this name, relative to root. */
+function sameName(root: string, name: string): string[] {
+  try {
+    const out = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5_000,
+    });
+    return out
+      .split("\0")
+      .filter((file) => basename(file) === name)
+      .slice(0, 5);
+  } catch {
+    return [];
+  }
 }
 
 export interface ReadToolOptions {
@@ -140,7 +160,21 @@ export function createReadTool(deps: ToolDeps, options?: ReadToolOptions): ToolS
       requirePathScope(deps.identity, deps.capabilities, resolved);
       options?.readState?.mark(resolved);
 
-      const stat = statSync(resolved);
+      let stat: Stats;
+      try {
+        stat = statSync(resolved);
+      } catch (error) {
+        // Live, 19 of 26 failed reads named a file that the project has in another folder.
+        const near =
+          (error as NodeJS.ErrnoException).code === "ENOENT"
+            ? sameName(deps.sandbox.resolvePath("."), basename(resolved))
+            : [];
+        if (near.length === 0) throw error;
+        return {
+          content: `${(error as Error).message}\n${t("tool.read.same_name", { paths: near.join(", ") })}`,
+          isError: true,
+        };
+      }
       const { offset, limit } = rangeOf(input);
       const slicing = offset !== 1 || limit !== undefined;
 

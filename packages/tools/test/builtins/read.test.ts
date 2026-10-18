@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FULL_CAPABILITIES, SandboxBoundary } from "@agency/guard";
@@ -31,6 +32,24 @@ describe("createReadTool", () => {
     // Numbered whole reads were tried live: research input rose in three of three paired runs.
     expect(result.content).toBe("export const x = 1;\n\nexport const y = 2;\n");
     expect(result.isError).toBeFalsy();
+  });
+
+  test("a missing file names the tracked files of the same name", async () => {
+    const { deps, root } = tempDeps();
+    mkdirSync(join(root, "test", "builtins"), { recursive: true });
+    writeFileSync(join(root, "test", "builtins", "read.test.ts"), "x\n");
+    writeFileSync(join(root, "other.ts"), "y\n");
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+
+    const tool = createReadTool(deps);
+    const result = await tool.handler({ path: "test/read.test.ts" }, { signal });
+
+    // Live: 19 of 26 failed reads named a file that the project has in another folder.
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("ENOENT");
+    expect(result.content).toContain("test/builtins/read.test.ts");
+    expect(result.content).not.toContain("other.ts");
   });
 
   test("takes a line range in the names that models send for it", async () => {

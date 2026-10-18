@@ -8,6 +8,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The `code` tool says that a call returns one string, a list one item a line**: in a live run on Linux two
+  scripts iterated the text of `glob` as if it were an array, read the file `p`, and failed.
 - **A refused command names the command patterns that the rules allow** (up to ten): under
   `--allowed-tools "Bash(bun test*)"`, a model refused for `npx bun test …` tried two more `npx` forms before it
   wrote `bun test …` (4 of 5 failed calls of the live debug sessions).

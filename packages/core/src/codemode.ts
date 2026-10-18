@@ -48,7 +48,8 @@ export function codeTool(env: () => Record<string, string>, runner: string[] = c
     name: CODE_TOOL,
     description:
       "Runs JavaScript: the body of an async function. Your other tools are functions: " +
-      "`await tools.<name>(input)` takes the same input object as a direct call and returns the output text. " +
+      "`await tools.<name>(input)` takes the same input object as a direct call and returns its output as one string, " +
+      "as the direct call shows it: a list (glob, grep) has an item on each line, so split it on newlines. " +
       "A failed call throws. Use Promise.all for calls that do not depend on each other. " +
       "You get back only what you print with console.log and the return value, so print only what you need. " +
       "Use it for three or more calls in a row, for a call on each item of a result, or to filter a large output. " +

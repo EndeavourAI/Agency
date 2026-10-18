@@ -72,6 +72,12 @@ describe("code tool", () => {
     expect(result).toEqual({ content: "ECHO ONE\nreturn: 8", isError: false });
   });
 
+  test("the description says that a result is one string, a list one item a line", () => {
+    // Live: two scripts iterated the text of glob as if it were an array, and read the file `p`.
+    expect(codeTool(() => ({})).description).toContain("one string");
+    expect(codeTool(() => ({})).description).toContain("split it on newlines");
+  });
+
   test("a script that awaits the tools object goes on, and is not taken for a call of a tool named then", async () => {
     // Live: each script of a model began `const { read } = await tools;` and hung until the 120 s limit.
     const result = await run('const { echo } = await tools;\nreturn await echo({ text: "one" });');

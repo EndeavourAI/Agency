@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { statSync } from "node:fs";
+import { join, relative } from "node:path";
 import { requirePathScope } from "@agency/guard";
 import { t } from "@agency/i18n";
 import type { ToolDeps, ToolSpec } from "../contract.ts";
@@ -12,9 +13,9 @@ const MAX_LINE_CHARS = 1_000;
 /** rg and grep -rn both print matches as `path:line:content`; context lines use `-` separators. */
 const MATCH_LINE = /^(.+):(\d+):/;
 
-function trySpawn(args: string[]) {
+function trySpawn(args: string[], cwd: string) {
   try {
-    return Bun.spawn(args, { windowsHide: true, stdout: "pipe", stderr: "pipe" });
+    return Bun.spawn(args, { cwd, windowsHide: true, stdout: "pipe", stderr: "pipe" });
   } catch {
     return undefined;
   }
@@ -121,6 +122,8 @@ const TYPE_EXTENSIONS: Record<string, string> = {
  */
 async function searchInProcess(
   root: string,
+  /** The search root as the result names it: relative to the workspace. */
+  target: string,
   input: {
     pattern: string;
     glob?: string;
@@ -148,16 +151,19 @@ async function searchInProcess(
       : input.glob.includes("/")
         ? input.glob
         : `**/${input.glob}`;
-  const isIgnored = loadGitignore(root);
+  // A file as the root is searched alone, as rg does.
+  const single = statSync(root, { throwIfNoEntry: false })?.isFile() === true;
+  const isIgnored = single ? undefined : loadGitignore(root);
+  const paths = single ? [""] : new Bun.Glob(filter).scan({ cwd: root, onlyFiles: true });
   const out: string[] = [];
   let matches = 0;
-  for await (const rawPath of new Bun.Glob(filter).scan({ cwd: root, onlyFiles: true })) {
+  for await (const rawPath of paths) {
     if (signal.aborted) break;
     const path = rawPath.replace(/\\/g, "/");
     if (/(^|\/)node_modules\//.test(path) || isIgnored?.(path)) continue;
     let bytes: Uint8Array;
     try {
-      bytes = await Bun.file(join(root, path)).bytes();
+      bytes = await Bun.file(single ? root : join(root, path)).bytes();
     } catch {
       continue;
     }
@@ -165,7 +171,7 @@ async function searchInProcess(
     const lines = new TextDecoder().decode(bytes).split("\n");
     const hits = lines.flatMap((line, index) => (regex.test(line.replace(/\r$/, "")) ? [index] : []));
     if (hits.length === 0) continue;
-    const file = join(root, path);
+    const file = single ? target : target === "." ? path : `${target}/${path}`;
     if (input.filesOnly) {
       out.push(file);
       if (++matches > MAX_MATCHES) return { text: out.slice(0, -1).join("\n"), capped: true };
@@ -240,9 +246,12 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
           ? input.context
           : undefined;
       const filesOnly = input.filesOnly === true;
+      // Paths relative to the workspace, which `read` takes: an absolute one on each line was most of the result.
+      const workspace = deps.sandbox.resolvePath(".");
+      const target = relative(workspace, searchRoot).replace(/\\/g, "/") || ".";
       const rgArgs = [
         "rg",
-        ...(filesOnly ? ["--files-with-matches"] : ["--line-number", "--no-heading"]),
+        ...(filesOnly ? ["--files-with-matches"] : ["--line-number", "--no-heading", "--with-filename"]),
         "--color=never",
         ...(input.caseInsensitive ? ["-i"] : []),
         ...(context !== undefined && !filesOnly ? ["-C", String(context)] : []),
@@ -250,35 +259,43 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
         ...(input.glob ? ["--glob", input.glob] : []),
         "--",
         input.pattern,
-        searchRoot,
+        target,
       ];
 
-      let proc = trySpawn(rgArgs);
+      let proc = trySpawn(rgArgs, workspace);
 
       // grep -rn matches rg's `path:line:content` output and exit-1-on-no-matches semantics. It has no type filter.
       if (!proc && !input.type) {
         // As rg does: no binary files, no .git or node_modules. --include takes a file name, not rg's `**/*.ts`.
-        proc = trySpawn([
-          "grep",
-          filesOnly ? "-rl" : "-rn",
-          grepRegex(),
-          "-I",
-          "--exclude-dir=.git",
-          "--exclude-dir=node_modules",
-          "--color=never",
-          ...(input.caseInsensitive ? ["-i"] : []),
-          ...(context !== undefined && !filesOnly ? ["-C", String(context)] : []),
-          ...(input.glob ? ["--include", input.glob.split("/").pop() as string] : []),
-          "--",
-          input.pattern,
-          searchRoot,
-        ]);
+        proc = trySpawn(
+          [
+            "grep",
+            filesOnly ? "-rl" : "-rnH",
+            grepRegex(),
+            "-I",
+            "--exclude-dir=.git",
+            "--exclude-dir=node_modules",
+            "--color=never",
+            ...(input.caseInsensitive ? ["-i"] : []),
+            ...(context !== undefined && !filesOnly ? ["-C", String(context)] : []),
+            ...(input.glob ? ["--include", input.glob.split("/").pop() as string] : []),
+            "--",
+            input.pattern,
+            target,
+          ],
+          workspace,
+        );
       }
 
       let found: { text: string; capped: boolean };
       if (!proc) {
         // Windows has neither program on its PATH: Git's grep is only on the PATH of Git Bash.
-        const searched = await searchInProcess(searchRoot, { ...input, context, filesOnly }, ctx.signal);
+        const searched = await searchInProcess(
+          searchRoot,
+          target,
+          { ...input, context, filesOnly },
+          ctx.signal,
+        );
         if ("error" in searched) return { content: searched.error, isError: true };
         found = searched;
       } else {
@@ -309,6 +326,8 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
       const trimmed = found.text
         .trim()
         .split("\n")
+        // `.` as the root prints `./a.ts`.
+        .map((line) => line.replace(/^\.[\\/]/, ""))
         .map((line) =>
           line.length > MAX_LINE_CHARS
             ? `${line.slice(0, MAX_LINE_CHARS)}… [${line.length - MAX_LINE_CHARS} more characters on this line]`

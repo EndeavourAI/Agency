@@ -79,6 +79,15 @@ describe("createGrepTool", () => {
     expect(result.content).not.toContain("b.md");
     expect(result.content).not.toContain(".git");
     expect((await tool.handler({ pattern: "-flag" }, { signal })).content).toContain("-flag here");
+    // Each path is relative to the workspace, which read takes, also for a folder or a file as the root.
+    expect(result.content.split("\n")[0]).toMatch(/^src[\\/]a\.ts:1:const MAX_ITEMS/);
+    for (const path of ["src", "src/a.ts"]) {
+      const scoped = await tool.handler({ pattern: "prune", path }, { signal });
+      expect([path, scoped.content]).toEqual([
+        path,
+        expect.stringMatching(/^src[\\/]a\.ts:2:function prune/m),
+      ]);
+    }
   });
 
   test("rejects a search root outside the sandbox", async () => {
@@ -107,21 +116,16 @@ describe("createGrepTool", () => {
         { signal },
       );
       expect(result.content).toBe(
-        [
-          `${join(root, "src/a.ts")}:2:const MAX_ITEMS = 200;`,
-          `${join(root, "src/a.ts")}:4:function prune() {}`,
-        ].join("\n"),
+        [`src/a.ts:2:const MAX_ITEMS = 200;`, `src/a.ts:4:function prune() {}`].join("\n"),
       );
       const around = await tool.handler({ pattern: "three", context: 1, type: "ts" }, { signal });
-      expect(around.content.split("\n").map((line) => line.slice(join(root, "src/a.ts").length))).toEqual([
+      expect(around.content.split("\n").map((line) => line.slice("src/a.ts".length))).toEqual([
         "-2-const MAX_ITEMS = 200;",
         ":3:three",
         "-4-function prune() {}",
       ]);
       const files = await tool.handler({ pattern: "prune", filesOnly: true }, { signal });
-      expect(files.content.split("\n").sort()).toEqual(
-        [join(root, "src/a.ts"), join(root, "src/b.md")].sort(),
-      );
+      expect(files.content.split("\n").sort()).toEqual(["src/a.ts", "src/b.md"].sort());
       expect((await tool.handler({ pattern: "(" }, { signal })).isError).toBe(true);
     } finally {
       (Bun as unknown as { spawn: unknown }).spawn = original;

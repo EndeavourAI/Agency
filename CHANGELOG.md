@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`grep` names each file relative to the workspace**, as `read` takes it, and no longer by its absolute path:
+  in a live session the path was most of each line, and the same two searches came back at about half the size
+  (45.8K to 21.8K and 46.2K to 24.9K characters). A file as the search root gets its name on each line too.
 - **The `code` tool is on by default on Linux and macOS** (`codeMode` unset): the model can make many tool calls
   from one script, with one round trip to the model. The script runs in the script sandbox (no network, no
   writes, none of your files) and acts only through the other tools, each of which the permission gate checks

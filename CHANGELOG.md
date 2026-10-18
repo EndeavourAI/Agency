@@ -489,6 +489,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Fixed
 
+- **A model lost track of the folder of the shell**: after `cd packages/tools && ...` the shell stays there, but
+  `read`, `edit` and the other file tools take paths from the project root, and a model then edited `src/a.ts` for
+  `packages/tools/src/a.ts` (seen in a live session). A command that moves the shell now says where it went and
+  that the file tools keep the project root. On Windows `/tmp/...`, which `pwd` of Git Bash prints for a folder in
+  TEMP, now reads as that folder.
 - **A Windows path written as `/C:/...` resolved to `C:\C:\...`**: models write the path of a file URL, and each
   such read, grep or glob failed (eight calls in one live session). It now reads as `C:/...`, as `/c/...` of Git
   Bash already did.

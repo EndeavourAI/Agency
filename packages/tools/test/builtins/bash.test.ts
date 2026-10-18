@@ -85,11 +85,15 @@ describe("createBashTool", () => {
     const { tool, state, root } = setup();
     mkdirSync(join(root, "subdir"));
 
-    await tool.handler({ command: "cd subdir" }, { signal });
+    const moved = await tool.handler({ command: "cd subdir" }, { signal });
     expect(state.cwd.toLowerCase()).toContain("subdir");
+    // The move is named once, with the root that the file tools keep: models took the shell's folder for theirs.
+    expect(moved.content).toContain("[the shell is now in subdir");
+    expect(moved.content).toContain("still take paths from the project root");
 
     const result = await tool.handler({ command: pwdCommand }, { signal });
     expect(result.content.toLowerCase()).toContain("subdir");
+    expect(result.content).not.toContain("[the shell is now in");
   }, 15_000);
 
   test("the exit and cwd marker lines are stripped from returned output", async () => {

@@ -1,3 +1,4 @@
+import { relative } from "node:path";
 import { isReadOnlyCommand } from "@agency/guard";
 import { t } from "@agency/i18n";
 import { AgencyError, ErrorCode } from "@agency/schema";
@@ -280,8 +281,15 @@ export function createBashTool(
         let cwdNotice: string | undefined;
         if (!outcome.aborted) {
           try {
-            deps.sandbox.resolvePath(cwd);
+            const before = deps.sandbox.resolvePath(state.cwd);
+            const after = deps.sandbox.resolvePath(cwd);
             state.cwd = cwd;
+            // The file tools take paths from the project root, not from where the shell went: a model that does
+            // not see the move edits `src/a.ts` for `packages/x/src/a.ts`.
+            if (after !== before) {
+              const where = relative(deps.sandbox.resolvePath("."), after).replace(/\\/g, "/") || ".";
+              cwdNotice = `\n${t("tool.bash.cwd_moved", { cwd: where })}`;
+            }
           } catch {
             cwdNotice = `\n${t("tool.bash.cwd_kept", { cwd })}`;
           }

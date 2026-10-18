@@ -12,7 +12,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   schemas with every request: 0 of 5,583 tool calls in the stored sessions went to them, while the deferred
   `process_output` was found and called when it was needed. An agent whose role is `researcher` keeps `fetch` and
   `websearch` in its list, `spawn` stays listed when agent files give it types, and a direct call to a deferred tool
-  still runs. Dispatched agents get the same rule. The tool list of a plain session fell from 7.4K to 5.3K
+  still runs. Child agents (dispatch, spawn) get the same rule and now also find the other deferred built-in tools
+  (`browser`, the process tools) with `tool_search`, as the main session does. The tool list of a plain session fell from 7.4K to 5.3K
   characters, about 530 tokens of every request.
 - **The environment block goes in the first user message, not in the system prompt**, as Codex sends its
   environment context as a user message. The system prompt and the tools no longer hold the project root, the

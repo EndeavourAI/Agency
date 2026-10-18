@@ -49,6 +49,36 @@ function rangeOf(input: ReadInput): { offset: number; limit: number | undefined 
 const HEAD_LINES = 2000;
 const HEAD_BYTES = 45_000;
 
+/** A whole file larger than this comes as its outline: in research sessions 20 KB to 45 KB reads were most of the input. */
+const OUTLINE_CHARS = 20_000;
+const OUTLINE_MAX = 200;
+/** Declaration lines: JS/TS, Python, Rust, Go, methods two spaces in, Markdown headings. */
+const DECLARATION = [
+  /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\*?\s+[\w$]/,
+  /^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+[\w$]/,
+  /^(?:export\s+)?(?:declare\s+)?(?:interface|type|enum|namespace)\s+[\w$]/,
+  /^(?:export\s+)?(?:const|let|var)\s+[\w$]/,
+  /^ {2}(?:(?:public|private|protected|static|async|readonly|override|get|set)\s+)*(?!(?:if|for|while|switch|catch|return)\b)[\w$#]+\s*(?:<[^>]*>)?\(.*\)[^;=]*\{\s*$/,
+  /^\s*(?:async\s+)?def\s+\w|^\s*class\s+\w/,
+  /^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:fn|struct|enum|trait|impl|mod)\b/,
+  /^func\s|^type\s+\w/,
+  /^#{1,6}\s/,
+];
+
+/** The line of each declaration, as the skeleton of a file that Agentless shows a model to find where to look. */
+function outlineOf(content: string): string | undefined {
+  const lines = content.split("\n");
+  const kept: string[] = [];
+  for (const [index, line] of lines.entries()) {
+    if (!DECLARATION.some((pattern) => pattern.test(line))) continue;
+    if (kept.length === OUTLINE_MAX) return undefined;
+    kept.push(`${String(index + 1).padStart(6)}  ${line.length > 160 ? `${line.slice(0, 160)}…` : line}`);
+  }
+  if (kept.length < 3) return undefined;
+  const size = Math.round(Buffer.byteLength(content, "utf8") / 1000);
+  return `${kept.join("\n")}\n[The file has ${lines.length} lines (${size} KB), too many to send whole: these are the lines of its declarations. To see the code, read with offset and limit (limit 2000 for the whole file), or grep.]`;
+}
+
 /** Each line with its number, as Claude Code reads: with none, models read again with `sed -n` to cite or find one. */
 function numbered(content: string, offset: number, limit: number | undefined): string {
   const lines = content.split("\n");
@@ -135,7 +165,8 @@ export function createReadTool(deps: ToolDeps, options?: ReadToolOptions): ToolS
           return { content };
         }
       }
-      return { content: numbered(content, offset, limit) };
+      const text = numbered(content, offset, limit);
+      return { content: (!slicing && text.length > OUTLINE_CHARS && outlineOf(content)) || text };
     },
   };
   return spec;

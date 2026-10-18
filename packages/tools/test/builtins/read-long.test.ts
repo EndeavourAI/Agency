@@ -11,7 +11,7 @@ afterEach(() => {
 });
 const signal = new AbortController().signal;
 
-function readOf(name: string, text: string) {
+function readOf(name: string, text: string, range: { offset?: number; limit?: number } = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "agency-read-long-")));
   dirs.push(root);
   writeFileSync(join(root, name), text);
@@ -20,8 +20,46 @@ function readOf(name: string, text: string) {
     capabilities: FULL_CAPABILITIES,
     sandbox: new SandboxBoundary(root),
   });
-  return tool.handler({ path: name }, { signal });
+  return tool.handler({ path: name, ...range }, { signal });
 }
+
+test("a whole read of a large source file gives its outline, and a range gives the lines", async () => {
+  const body = Array.from({ length: 40 }, (_, i) => `  const v${i} = compute(${i}); // ${"pad ".repeat(20)}`);
+  const text = [
+    'import { a } from "./a.ts";',
+    "",
+    "export interface Options {",
+    ...body,
+    "}",
+    "export async function runTurn(options: Options) {",
+    ...body,
+    ...body,
+    "}",
+    "class Store {",
+    "  async load() {}",
+    ...body,
+    "}",
+    "function helper() {",
+    ...body,
+    "}",
+  ].join("\n");
+  const { content } = await readOf("big.ts", text);
+  // Live: whole reads of 20 to 45 KB files were most of the input of a research session, sent again in each request.
+  expect(content).toContain("    45  export async function runTurn(options: Options) {");
+  expect(content).toContain("   127  class Store {");
+  expect(content).toContain("helper()");
+  expect(content).not.toContain("compute(3)");
+  expect(content).toMatch(/\[The file has 211 lines .* read with offset and limit/);
+  expect(Buffer.byteLength(content)).toBeLessThan(3_000);
+  const { content: whole } = await readOf("big.ts", text, { offset: 1, limit: 2000 });
+  expect(whole).toContain("compute(3)");
+});
+
+test("a large file with no outline to give comes as its head", async () => {
+  const text = Array.from({ length: 5000 }, (_, i) => `line ${i + 1}`).join("\n");
+  const { content } = await readOf("long.txt", text);
+  expect(content).toContain("  1000  line 1000\n");
+});
 
 test("a read of a long file stops where the loop would cut it, and says where the rest starts", async () => {
   const text = Array.from({ length: 5000 }, (_, i) => `line ${i + 1}`).join("\n");

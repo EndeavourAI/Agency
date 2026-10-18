@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A refused command names the command patterns that the rules allow** (up to ten): under
+  `--allowed-tools "Bash(bun test*)"`, a model refused for `npx bun test …` tried two more `npx` forms before it
+  wrote `bun test …` (4 of 5 failed calls of the live debug sessions).
 - **A path from the project root with a leading slash is read in the project root** (`/packages/x/a.ts`) when
   the disk has neither that path nor its folder and the project has the file or its folder: in live research
   sessions models wrote such paths for `read`, `grep` and `glob`, and each named the root of the disk and was

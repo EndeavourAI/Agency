@@ -152,6 +152,20 @@ describe("PermissionsGate", () => {
     expect(gate.decisionFor({ tool: "read", path: "/c/repo/secrets/key.txt" })).toBe("deny");
   });
 
+  test("names the command patterns that the rules allow, for a refusal to name them", () => {
+    const gate = new PermissionsGate({
+      permissions: { bash: { "*": "ask", "bun test*": "allow", "git status": "allow", "rm *": "deny" } },
+      workspaceRoot: root,
+    });
+    expect(gate.allowedPatterns("bash")).toEqual(["bun test*", "git status"]);
+    expect(gate.withRules({ bash: { "bun x tsc*": "allow" } }).allowedPatterns("bash")).toContain(
+      "bun x tsc*",
+    );
+    expect(
+      new PermissionsGate({ permissions: { bash: "allow" }, workspaceRoot: root }).allowedPatterns("bash"),
+    ).toEqual([]);
+  });
+
   test("a bare deny filters the tool from the offered list", () => {
     const gate = new PermissionsGate({
       permissions: { fetch: "deny" },

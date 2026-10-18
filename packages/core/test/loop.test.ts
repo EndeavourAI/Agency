@@ -1510,6 +1510,39 @@ describe("A5: input validation and permissions gating", () => {
     expect(await refused("grep -rn x .", ["bash"])).not.toContain("need no permission");
   });
 
+  test("a refused command names the command patterns that the rules allow", async () => {
+    const spec: ToolSpec = {
+      name: "bash",
+      description: "runs a command",
+      inputSchema: { type: "object", properties: { command: { type: "string" } } },
+      riskTier: "dangerous",
+      handler: async () => ({ content: "ran" }),
+    };
+    const result = await runTurn(
+      toolThenDoneAdapter("bash", { command: "npx bun test a.test.ts" }),
+      new Scheduler(),
+      noopHttp,
+      {
+        identity: user,
+        capabilities: FULL_CAPABILITIES,
+        systemPrompt: "sys",
+        tools: [spec],
+        model: "m",
+        apiKey: "k",
+        session: [],
+        toolPolicy: {
+          check: async () => "deny" as const,
+          allowedPatterns: () => ["bun test*", "git status"],
+        },
+      },
+    );
+    const block = result.messages[1]?.content[0];
+    // Live: refused under `bun test*`, a model tried `npx bun test` three ways before it wrote `bun test`.
+    expect(block?.type === "tool_result" ? block.content : "").toContain(
+      "The rules allow these bash commands: `bun test*`, `git status`.",
+    );
+  });
+
   test("an ask decision routes through requestApproval; once runs, reject refuses", async () => {
     const spec: ToolSpec = {
       name: "bash",

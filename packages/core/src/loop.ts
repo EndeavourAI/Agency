@@ -1290,10 +1290,21 @@ async function executeOne(
         const target = subject.command ?? subject.path;
         // Live: most of 75 refused shell calls were searches and file views that the safe tools do with no ask.
         const instead = SEARCH_TOOLS.filter((name) => resolveToolSpec(options.tools, name) !== undefined);
-        const hint =
+        const search =
           resolved.name === "bash" && SHELL_SEARCH.test(subject.command ?? "") && instead.includes("grep")
             ? ` The ${instead.join(", ").replace(/, (\w+)$/, " and $1")} tools need no permission: search with them, and see lines of a file with read and its offset and limit.`
             : "";
+        // Live: refused under `bun test*`, a model tried `npx bun test` three ways before it wrote `bun test`.
+        const allowed =
+          subject.command === undefined ? [] : (options.toolPolicy.allowedPatterns?.(resolved.name) ?? []);
+        const hint =
+          search +
+          (allowed.length === 0
+            ? ""
+            : ` The rules allow these ${resolved.name} commands: ${allowed
+                .slice(0, 10)
+                .map((pattern) => `\`${pattern}\``)
+                .join(", ")}.`);
         return {
           // Measured: with the bare first sentence a weaker model sent the same refused call 15 times on average.
           content:

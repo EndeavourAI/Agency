@@ -84,6 +84,8 @@ export interface ToolPolicy {
   ): Promise<"allow" | "deny">;
   /** The tool result for a refused call, when the refusal has a cause the model can act on. */
   denyReason?(request: ToolCallPolicyRequest): string | undefined;
+  /** The command or path patterns that allow `tool`, for a refusal to name what can run. */
+  allowedPatterns?(tool: string): string[];
 }
 
 /** Structural stand-in for the approval callback type (avoids an import cycle). */
@@ -1284,6 +1286,15 @@ export class PermissionsGate implements ToolPolicy {
       request.command !== undefined &&
       isReadOnlyCommand(request.command, this.options.workspaceRoot)
     );
+  }
+
+  /** The patterns that allow `tool` by name: live, a model refused under `bun test*` tried `npx bun test` three ways. */
+  allowedPatterns(tool: string): string[] {
+    const entry = this.permissions[tool];
+    if (entry === undefined || typeof entry === "string") return [];
+    return Object.entries(entry)
+      .filter(([pattern, decision]) => decision === "allow" && pattern !== "*")
+      .map(([pattern]) => pattern);
   }
 
   denyReason(request: ToolCallPolicyRequest): string | undefined {

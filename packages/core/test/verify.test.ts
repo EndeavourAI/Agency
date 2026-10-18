@@ -61,6 +61,15 @@ test("names the tests that import a file the turn changed and that no command of
     "test/other.test.ts",
     "test/set.test.ts",
   ]);
+  // A file whose own test ran is tested: live, a list of 28 far tests had a model search four replies for the ones
+  // that mattered after it had run the test of the file that it changed.
+  const own = [
+    call("e5", "edit", { path: "src/other.ts" }),
+    result("e5"),
+    call("b5", "bash", { command: "bun test test/other.test.ts" }),
+    result("b5"),
+  ];
+  expect(untestedEdits(own, root)).toEqual([]);
 });
 
 test("the note names five tests and the folders of the rest", () => {

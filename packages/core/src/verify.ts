@@ -74,18 +74,6 @@ export function untestedEdits(turn: Message[], root: string): string[] {
       );
     return found;
   };
-  // Live: the test that a changed grep.ts broke imported it through builtin-set.ts, two hops away.
-  const hops = (test: string): number => {
-    if (edited.has(test)) return 0;
-    const direct = importsOf(test);
-    if (direct.some((file) => sources.has(file))) return 1;
-    return direct.some((file) => importsOf(file).some((next) => sources.has(next))) ? 2 : 3;
-  };
-  const related = trackedTests(root)
-    .map((test) => ({ test, hops: hops(test) }))
-    .filter(({ hops }) => hops < 3)
-    .sort((a, b) => a.hops - b.hops)
-    .map(({ test }) => test);
   const tests = commands.filter((command) => TEST_COMMAND.test(command));
   const ran = (test: string): boolean =>
     tests.some((command) => {
@@ -93,7 +81,23 @@ export function untestedEdits(turn: Message[], root: string): string[] {
       // A run with no test file named runs a whole suite or folder: it counts for each test.
       return command.includes(name) || !TEST_FILE_ARG.test(command);
     });
-  return related.filter((test) => !ran(test));
+  const all = trackedTests(root);
+  // A file whose own test ran is tested: live, a list of 28 far tests had a model search four replies for the ones
+  // that mattered after it had run the test of the file that it changed.
+  for (const test of all.filter(ran)) for (const file of importsOf(test)) sources.delete(file);
+  // Live: the test that a changed grep.ts broke imported it through builtin-set.ts, two hops away.
+  const hops = (test: string): number => {
+    if (edited.has(test)) return 0;
+    const direct = importsOf(test);
+    if (direct.some((file) => sources.has(file))) return 1;
+    return direct.some((file) => importsOf(file).some((next) => sources.has(next))) ? 2 : 3;
+  };
+  return all
+    .filter((test) => !ran(test))
+    .map((test) => ({ test, hops: hops(test) }))
+    .filter(({ hops }) => hops < 3)
+    .sort((a, b) => a.hops - b.hops)
+    .map(({ test }) => test);
 }
 
 /** The note for the model: the first tests by name, the folders of the rest, as running a folder runs them all. */

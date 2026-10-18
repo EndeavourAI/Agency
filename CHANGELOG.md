@@ -11,7 +11,7 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 - **A `read` of a missing file names the project files of that name** (up to five, from the git index and the
   untracked files that are not ignored): in live sessions, 19 of 26 failed reads named a file that the project
   has in another folder (`packages/tools/test/read-long.test.ts` for `test/builtins/read-long.test.ts`), and the
-  model then spent a call to find it. OpenCode's `read` answers the same way.
+  model then spent a call to find it. OpenCode's `read` suggests similar names, from the same folder only.
 - **The `code` tool is off by default on Linux and macOS too** (set `codeMode: true` to offer it): in live runs on
   Linux, one free model never called it in 5 sessions, and another wrote 52 scripts, of which 37 failed, most of them
   because they used the text of a tool result as an array. A fan-out task took 13 to 21 replies with the tool and 6

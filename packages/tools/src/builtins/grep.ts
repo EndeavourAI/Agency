@@ -265,7 +265,8 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
       let proc = trySpawn(rgArgs, workspace);
 
       // grep -rn matches rg's `path:line:content` output and exit-1-on-no-matches semantics. It has no type filter.
-      if (!proc && !input.type) {
+      // Git's grep on Windows is an MSYS program: its start expands `*` and drops `\` in a pattern (`\+.*x` fails).
+      if (!proc && !input.type && process.platform !== "win32") {
         // As rg does: no binary files, no .git or node_modules. --include takes a file name, not rg's `**/*.ts`.
         proc = trySpawn(
           [

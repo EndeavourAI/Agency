@@ -498,7 +498,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   ran in basic regex mode, so a pattern with `|` found nothing (a live session lost five of its first six calls
   to that), and it searched `.git`: it now runs with `-P` (or `-E` on macOS), skips binary files, `.git` and
   `node_modules`, and takes rg's `**/*.ts` glob. The description named a `filesWithMatches` parameter that
-  does not exist: it is `filesOnly`.
+  does not exist: it is `filesOnly`. On Windows grep no longer falls back to Git's grep at all: as an MSYS program,
+  its start expands `*` and drops `\` in its arguments, so `\+.*lines` failed with "nothing to repeat".
 
 - **Smaller fixes from a review of the sandbox work**: the sandbox proxy no longer leaves a connection open when
   its client leaves during the DNS lookup, tries each checked address in turn (as a connect by name does), and

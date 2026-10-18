@@ -79,6 +79,9 @@ describe("createGrepTool", () => {
     expect(result.content).not.toContain("b.md");
     expect(result.content).not.toContain(".git");
     expect((await tool.handler({ pattern: "-flag" }, { signal })).content).toContain("-flag here");
+    // A `\` with a `*` in the pattern: Git's grep on Windows got `+.*` and failed with "nothing to repeat".
+    expect((await tool.handler({ pattern: "-\\w+.*here" }, { signal })).content).toContain("-flag here");
+    expect((await tool.handler({ pattern: "\\(\\).*\\{" }, { signal })).content).toContain("function prune()");
     // Each path is relative to the workspace, which read takes, also for a folder or a file as the root.
     expect(result.content.split("\n")[0]).toMatch(/^src[\\/]a\.ts:1:const MAX_ITEMS/);
     for (const path of ["src", "src/a.ts"]) {

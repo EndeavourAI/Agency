@@ -1,0 +1,7 @@
+{
+  "prompt": "The test suite in test/ fails. Find and fix the bugs in the inventory package so that all tests pass. Do not change the tests.",
+  "check": "python3 -m unittest test.test_inventory",
+  "solution": "sed -i.bak 's/int(float(price) \\* 100)/round(float(price) * 100)/' inventory/io.py && sed -i.bak 's/items\\[1:\\]/items/' inventory/report.py && rm inventory/*.bak",
+  "hideCheck": true,
+  "platforms": ["linux", "darwin"]
+}

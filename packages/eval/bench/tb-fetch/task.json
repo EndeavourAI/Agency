@@ -1,0 +1,7 @@
+{
+  "prompt": "Write fetch.py that uses only the Python standard library to print the HTTP status code of https://example.com. Run it and report the status code.",
+  "check": "test -f fetch.py && grep -q 200 \"$ANSWER\"",
+  "solution": "printf 'import urllib.request\\nprint(urllib.request.urlopen(\"https://example.com\").status)\\n' > fetch.py && echo 200 > \"$ANSWER\"",
+  "hideCheck": true,
+  "platforms": ["linux", "darwin"]
+}

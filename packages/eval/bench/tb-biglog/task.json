@@ -1,0 +1,8 @@
+{
+  "prompt": "access.log is a web server log. Find the IP address with the most responses of status 500 and write only that IP to answer.txt.",
+  "setup": "python3 gen_log.py && rm gen_log.py",
+  "check": "test \"$(tr -d '[:space:]' < answer.txt)\" = \"$(awk '$9 == 500 {print $1}' access.log | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')\"",
+  "solution": "awk '$9 == 500 {print $1}' access.log | sort | uniq -c | sort -rn | head -1 | awk '{print $2}' > answer.txt",
+  "hideCheck": true,
+  "platforms": ["linux", "darwin"]
+}

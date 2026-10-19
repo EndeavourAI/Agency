@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The live bench has eight terminal tasks and compares builds**: `packages/eval/bench` gains `tb-*` tasks in the
+  shape of Terminal-Bench (a fetch that needs the network, a server that must outlive the run, a stopped git
+  merge, a 300,000-line log, a two-bug package, a y/N prompt on stdin, a cleanup, a failing test) with checks that
+  run after the agent exits and are not shown to it. `--agency label=path` (repeatable) runs each task on several
+  builds in turn. A self-test checks, with no model, that each check fails at the start and passes on a known
+  answer. On Haiku 5.5 these tasks found most of the faults fixed in this release.
 - **Under allow-all, three equal tool calls in a row no longer end the turn**: the doom-loop stop asks the user,
   and in a headless run no one answers, so a task that polled a build three times with the same command was lost.
   allow-all now approves that ask, as it approves the sandbox's other asks; the step limit still ends a real loop.

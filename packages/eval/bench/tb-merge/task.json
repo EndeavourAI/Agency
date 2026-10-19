@@ -1,0 +1,8 @@
+{
+  "prompt": "A merge of the branch feature into main stopped on a conflict. Finish the merge: keep the timeout of the feature branch, the retries of main and https. Commit the merge.",
+  "setup": "git branch -m main && git checkout -qb feature && sed -i.bak 's/TIMEOUT = 30/TIMEOUT = 60/; s#\"http://\"#\"https://\"#' config.py && rm config.py.bak && git -c user.name=b -c user.email=b@b commit -qam feature && git checkout -q main && sed -i.bak 's/TIMEOUT = 30/TIMEOUT = 45/; s/RETRIES = 3/RETRIES = 5/' config.py && rm config.py.bak && git -c user.name=b -c user.email=b@b commit -qam main && git -c user.name=b -c user.email=b@b merge feature >/dev/null 2>&1 ; true",
+  "check": "git rev-parse -q --verify HEAD^2 >/dev/null && ! grep -qE '^(<<<<<<<|=======|>>>>>>>)' config.py && grep -q 'TIMEOUT = 60' config.py && grep -q 'RETRIES = 5' config.py && grep -q 'https://' config.py && git diff --quiet HEAD -- config.py",
+  "solution": "printf 'TIMEOUT = 60\\nRETRIES = 5\\n\\n\\ndef url(host):\\n    return \"https://\" + host\\n' > config.py && git add config.py && git -c user.name=b -c user.email=b@b commit -q --no-edit",
+  "hideCheck": true,
+  "platforms": ["linux", "darwin"]
+}

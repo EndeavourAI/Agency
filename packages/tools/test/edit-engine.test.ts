@@ -9,6 +9,20 @@ describe("applyEdit", () => {
     expect(result).toBe("function foo() {\n  return 2;\n}\n");
   });
 
+  test("a conflict marker that the file has is part of oldText, not slop to strip", () => {
+    // Live: a merge left `>>>>>>> feature` in the file three times, while the tool reported each edit as done.
+    const conflict = "<<<<<<< HEAD\nT = 45\n=======\nT = 60\n>>>>>>> feature\n\nx = 1\n";
+    const oldText = "<<<<<<< HEAD\nT = 45\n=======\nT = 60\n>>>>>>> feature\n";
+    expect(applyEdit(conflict, { oldText, newText: "T = 60\n" })).toBe("T = 60\n\nx = 1\n");
+    expect(applyEditsVerified(conflict, [{ oldText, newText: "T = 60\n" }]).content).toBe(
+      "T = 60\n\nx = 1\n",
+    );
+    // Slop that the file does not have still goes: the anchor matches without it.
+    expect(applyEdit("a = 1\nb = 2\n", { oldText: "a = 1\n// ...\n", newText: "a = 3\n" })).toBe(
+      "a = 3\nb = 2\n",
+    );
+  });
+
   test("takes text copied from a read with its line numbers, as the file has it", () => {
     const content = "function foo() {\n  return 1;\n}\n";
     const result = applyEdit(content, {

@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A tool call cut by the output limit does not run, even when its arguments could be repaired**: a cut between
+  two complete arguments (`{"path": "a.py", "oldText": "a", "newText": "b"`) was closed into valid JSON and ran
+  without what the cut took (a `replaceAll`, the rest of a call). It now gets the note that the limit cut it, as
+  a call whose JSON did not parse does. The "truncation poisoning" guard of Pi, in the harness survey of
+  arXiv 2609.00006.
 - **A client does not keep using a daemon of another Agency build**: the instance file names the build that
   started the daemon (where its code lives, and when that file changed). A client of another build asks it to
   leave (`daemon_retire`, new); with no other client and no turn it leaves and the client starts its own, while

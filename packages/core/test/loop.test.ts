@@ -777,6 +777,52 @@ describe("runTurn", () => {
     expect(toolResult).toMatchObject({ isError: true, content: expect.stringContaining("output limit") });
   });
 
+  test("a call that the output limit cut between two complete arguments does not run as repaired", async () => {
+    // The repair closes `{... "newText": "b"`, and the edit would run without the replaceAll that the cut took.
+    const ran: unknown[] = [];
+    const edit: CoreToolSpec = {
+      name: "edit",
+      description: "edit",
+      inputSchema: { type: "object", properties: { path: { type: "string" }, hunks: { type: "array" } } },
+      riskTier: "safe",
+      handler: async (input) => {
+        ran.push(input);
+        return { content: "edited" };
+      },
+    };
+    const adapter: ProviderAdapter = {
+      family: "fake",
+      async *stream(request): AsyncIterable<StreamEvent> {
+        if (request.messages.some((m) => m.content.some((b) => b.type === "tool_result"))) {
+          yield { type: "text_delta", text: "done" };
+          yield { type: "message_stop", stopReason: "end_turn", usage: { inputTokens: 1, outputTokens: 1 } };
+          return;
+        }
+        yield { type: "tool_call_start", id: "c1", name: "edit" };
+        yield {
+          type: "tool_call_delta",
+          id: "c1",
+          inputJsonDelta: '{"path": "a.py", "oldText": "a", "newText": "b"',
+        };
+        yield { type: "tool_call_end", id: "c1" };
+        yield { type: "message_stop", stopReason: "max_tokens", usage: { inputTokens: 1, outputTokens: 1 } };
+      },
+    };
+    const result = await runTurn(adapter, new Scheduler(), noopHttp, {
+      identity: user,
+      capabilities: FULL_CAPABILITIES,
+      systemPrompt: "sys",
+      tools: [edit],
+      model: "test-model",
+      apiKey: "key",
+      session: [{ role: "user", content: [{ type: "text", text: "edit it" }] }],
+    });
+
+    expect(ran).toEqual([]);
+    const toolResult = result.messages.flatMap((m) => m.content).find((b) => b.type === "tool_result");
+    expect(toolResult).toMatchObject({ isError: true, content: expect.stringContaining("output limit") });
+  });
+
   test("a reply that is cut before any text is not continued: there is nothing to go on from", async () => {
     // Measured with a reasoning model and a 40-token limit: each request used the limit for thinking only.
     let requests = 0;

@@ -643,7 +643,9 @@ export async function runTurn(
       // A reply cut at the output limit can hold complete calls. They run, and a call that the cut broke gets its parse error.
       if (stopReason === "max_tokens" && toolCalls.length > 0) {
         stopReason = "tool_use";
-        for (const id of turn.malformedCalls.keys()) turn.malformedCalls.set(id, CUT_CALL_NOTE);
+        // A call that parsed only after repair was cut too: it would run without the arguments the cut took.
+        for (const id of [...turn.malformedCalls.keys(), ...(turn.repairedCalls ?? [])])
+          turn.malformedCalls.set(id, CUT_CALL_NOTE);
       }
       salvageError = cut ? undefined : turn.error;
       options.onEvent?.({ type: "turn_complete", stopReason, usage: turn.usage, timing: turn.timing });
@@ -1551,6 +1553,8 @@ interface CollectedTurn {
   usage: Usage;
   /** Tool-call ids whose streamed arguments never parsed, mapped to the per-call error message. */
   malformedCalls: Map<string, string>;
+  /** Tool-call ids whose arguments parsed only after repair: in a reply cut at the output limit, the cut hit them. */
+  repairedCalls?: ReadonlySet<string>;
   error?: TurnError;
   timing: RequestTiming;
   /** Results of the leading read-only calls, which began while the rest of the reply streamed. */
@@ -1582,6 +1586,7 @@ async function collectTurn(
   const jsonByToolId = new Map<string, string>();
   const nameByToolId = new Map<string, string>();
   const malformedCalls = new Map<string, string>();
+  const repairedCalls = new Set<string>();
   let usage: Usage = { inputTokens: 0, outputTokens: 0 };
   let stopReason: StopReason = "end_turn";
   const startedAt = performance.now();
@@ -1661,6 +1666,7 @@ async function collectTurn(
               const repaired = repairToolJson(raw);
               if (repaired) {
                 input = repaired;
+                repairedCalls.add(event.id);
               } else {
                 malformedCalls.set(
                   event.id,
@@ -1712,6 +1718,7 @@ async function collectTurn(
     stopReason,
     usage,
     malformedCalls,
+    repairedCalls,
     timing,
     started,
     discard: () => early.abort(),

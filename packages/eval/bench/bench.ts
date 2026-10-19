@@ -2,8 +2,9 @@
  * Live cost bench: each task of this folder runs through `agency -p` with a real model, in a fresh copy and a fresh
  * AGENCY_HOME. It reports whether the check passes with the tests unchanged, the model calls, the tokens and the cost.
  * Usage: bun packages/eval/bench/bench.ts --model <provider/model> [--config layer.json] [--only a,b] [--runs n]
- *        [--agency label=path/to/entrypoint.ts|binary ...] [--out file]
- * Several --agency builds run each task in turn, so a before/after comparison shares the time of day.
+ *        [--agency label=path/to/entrypoint.ts|binary ...] [--layer label=layer.json ...] [--out file]
+ * Several --agency builds run each task in turn, so a before/after comparison shares the time of day. A --layer
+ * gives one build its own config: the same entrypoint twice, under two labels, compares two settings.
  */
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -30,8 +31,14 @@ const builds = (
 ).map((spec) => {
   const at = spec.indexOf("=");
   const path = spec.slice(at + 1);
+  const label = spec.slice(0, at);
+  const own = args("--layer").find((l) => l.startsWith(`${label}=`));
   // A compiled binary runs itself; an entrypoint runs under bun.
-  return { label: spec.slice(0, at), argv: path.endsWith(".ts") ? ["bun", path] : [path] };
+  return {
+    label,
+    argv: path.endsWith(".ts") ? ["bun", path] : [path],
+    layer: own ? readFileSync(own.slice(label.length + 1), "utf8") : layer,
+  };
 });
 
 const tasks = loadTasks(only);
@@ -59,7 +66,7 @@ for (const { name: task, spec } of tasks) {
       prepareWorkspace({ name: task, spec }, ws);
       mkdirSync(join(dir, "home", "config"), { recursive: true });
       mkdirSync(join(dir, "agents"));
-      writeFileSync(join(dir, "home", "config", "config.jsonc"), layer);
+      writeFileSync(join(dir, "home", "config", "config.jsonc"), build.layer);
       const before = testHashes(ws);
       const started = Date.now();
       const out = spawnSync(
@@ -128,7 +135,7 @@ for (const { name: task, spec } of tasks) {
   }
 }
 
-const summaries = builds.map(({ label }) => {
+const summaries = builds.map(({ label, layer }) => {
   const mine = rows.filter((r) => r.build === label);
   const sum = (key: "calls" | "input" | "cached" | "output" | "costUsd" | "seconds") =>
     mine.reduce((n, r) => n + r[key], 0);

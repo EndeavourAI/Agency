@@ -233,6 +233,41 @@ describe("runTurn", () => {
     expect((result.messages[1]!.content[0] as { content: string }).content).toBe("ran");
   });
 
+  test("a Claude Code Edit call runs edit and the history keeps it in this harness's names", async () => {
+    let ran: unknown;
+    const spec: ToolSpec = {
+      name: "edit",
+      description: "edits",
+      inputSchema: {
+        type: "object",
+        properties: { path: { type: "string" }, oldText: { type: "string" }, newText: { type: "string" } },
+        required: ["path"],
+      },
+      handler: async (input) => {
+        ran = input;
+        return { content: "edited" };
+      },
+    };
+    const result = await runTurn(
+      toolThenDoneAdapter("Edit", { file_path: "a.ts", old_string: "x", new_string: "y" }),
+      new Scheduler(),
+      noopHttp,
+      {
+        identity: user,
+        capabilities: FULL_CAPABILITIES,
+        systemPrompt: "sys",
+        tools: [spec],
+        model: "test-model",
+        apiKey: "key",
+        session: [],
+      },
+    );
+
+    expect(ran).toEqual({ path: "a.ts", oldText: "x", newText: "y" });
+    // prune, the verify gate and the permission rules read `path` from the history.
+    expect(result.messages[0]!.content[0]).toMatchObject({ name: "edit", input: { path: "a.ts" } });
+  });
+
   test("a tool handler that throws becomes a tool_result error, not an unhandled rejection", async () => {
     const spec: ToolSpec = {
       name: "flaky",

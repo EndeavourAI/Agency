@@ -8,6 +8,13 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Tool calls in the names of other harnesses run**: a model trained on Claude Code, Codex, Gemini CLI, OpenCode
+  or Kimi CLI sends that harness's tool and argument names (`Edit` with `file_path`/`old_string`, `read_file`,
+  `exec_command` with `cmd`, Codex's `shell` with an argv, `MultiEdit` with `edits`). Each call is mapped to the
+  names here when it arrives, so the history, the permission rules and the verify gate see one form. Arguments
+  that a model sent as the wrong type are converted from the schema: an array of edits sent as a JSON string
+  (Opus 4.6, GLM-5.1 and Haiku 5.5 do this), a number or a boolean as a string, one edit object where an array
+  goes, and an optional argument sent as null.
 - **The live bench has eight terminal tasks and compares builds**: `packages/eval/bench` gains `tb-*` tasks in the
   shape of Terminal-Bench (a fetch that needs the network, a server that must outlive the run, a stopped git
   merge, a 300,000-line log, a two-bug package, a y/N prompt on stdin, a cleanup, a failing test) with checks that

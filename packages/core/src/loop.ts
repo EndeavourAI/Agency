@@ -45,6 +45,7 @@ import {
 } from "./sessions/compaction.ts";
 import type { MessageOrigin } from "./sessions/entry.ts";
 import { modelSummarizer, type SentRequest, summarizeAtEnd } from "./sessions/summarize.ts";
+import { canonicalCall } from "./tool-dialect.ts";
 import type { TraceRecorder } from "./trace/recorder.ts";
 import { relativePaths } from "./transcript.ts";
 import { truncateToolResults } from "./truncate.ts";
@@ -451,6 +452,7 @@ export async function runTurn(
             options.onEvent,
             options.streamIdleMs ?? adapter.streamIdleMs,
             startCall,
+            (call) => canonicalCall(call, options.tools),
           ),
         {
           onRetry: (attempt, message, next) => {
@@ -1146,15 +1148,8 @@ function resolveToolSpec(tools: ToolSpec[], name: string): ToolSpec | undefined 
   // Tool-call repair: providers occasionally mangle tool-name casing; fall back to a
   // case-insensitive match. Mismatch repair for "${name}" is silent by design (no log dependency).
   const lower = name.toLowerCase();
-  const alias = TOOL_ALIASES[lower];
-  return (
-    tools.find((t) => t.name.toLowerCase() === lower) ??
-    (alias ? tools.find((t) => t.name === alias) : undefined)
-  );
+  return tools.find((t) => t.name.toLowerCase() === lower);
 }
-
-/** A name that another harness gives a tool here: models trained on Codex call its shell tool `shell`. */
-const TOOL_ALIASES: Record<string, string> = { shell: "bash" };
 
 const MUTATING_TOOLS: ReadonlySet<string> = new Set(["write", "edit", "notebook_edit", "bash"]);
 const SEARCH_TOOLS = ["grep", "glob", "read"];
@@ -1576,6 +1571,9 @@ async function collectTurn(
   onEvent: ((event: LoopEvent) => void) | undefined,
   idleMs = STREAM_IDLE_MS,
   startCall?: StartCall,
+  canonical: (
+    call: Extract<ContentBlock, { type: "tool_call" }>,
+  ) => Extract<ContentBlock, { type: "tool_call" }> = (call) => call,
 ): Promise<CollectedTurn> {
   const started = new Map<string, Promise<ToolResultLike>>();
   const early = new AbortController();
@@ -1678,14 +1676,14 @@ async function collectTurn(
           // The tool_start event fires once the streamed arguments are parsed
           // (not at tool_call_start): the TUI's renderCall needs the input, and
           // nothing else can run between here and the provider round-trip.
-          const call = {
+          const call = canonical({
             type: "tool_call" as const,
             id: event.id,
             name: nameByToolId.get(event.id) ?? "",
             input,
-          };
+          });
           content.push(call);
-          onEvent?.({ type: "tool_start", id: event.id, name: call.name, input });
+          onEvent?.({ type: "tool_start", id: event.id, name: call.name, input: call.input });
           if (leading && !malformedCalls.has(event.id)) {
             const running = startCall?.(call, earlySignal);
             if (running === undefined) leading = false;

@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The environment block names the files and folders at the project root** (up to 60, a folder with a trailing
+  slash; hidden ones and `node_modules` left out), as Gemini CLI and Cline give the model the folder structure at
+  the start. In 233 stored sessions since 2026-10-15, 34 searched in their first three replies for Python or
+  JavaScript files that the TypeScript project lacks (48 empty searches), and 20 opened by listing the root with
+  `ls`. The line is about 50 tokens for this repository and sits in the first user message, so the shared cached
+  prefix does not change.
 - **`read` and `grep` take the argument names that models bring from other harnesses**: `read` takes
   `start_offset`/`end_offset` and `start_index`/`end_index` as a line range, and `grep` takes `case_insensitive`
   and `-i`, `output_mode: "files_with_matches"` (or `outputMode: "filesWithMatches"`) and `extension`. Each was

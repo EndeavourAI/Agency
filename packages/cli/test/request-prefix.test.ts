@@ -241,6 +241,7 @@ test("sessions in two folders send one system prompt; the environment goes in th
   for (const userText of ["hi", "hello"]) {
     const ws = tempDir("agency-prefix-ws-");
     roots.push(ws);
+    writeFileSync(join(ws, "a.txt"), "");
     const turns: Call[][] = [[]];
     const daemon = await createAgentDaemon({
       workspaceRoot: ws,
@@ -269,6 +270,7 @@ test("sessions in two folders send one system prompt; the environment goes in th
   for (const [i, request] of seen.entries()) {
     const [prompt, env] = request.messages[0]?.content ?? [];
     expect(env?.type === "text" && env.text).toContain(`project root: ${roots[i]}`);
+    expect(env?.type === "text" && env.text).toContain("\nat the project root: a.txt\n");
     expect(prompt).toEqual({ type: "text", text: i === 0 ? "hi" : "hello" });
   }
 }, 60_000);

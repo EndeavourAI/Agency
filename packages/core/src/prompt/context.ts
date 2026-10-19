@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readdirSync } from "node:fs";
 import { release } from "node:os";
 
 export interface GitStatusInfo {
@@ -17,6 +18,8 @@ export interface EnvironmentInfo {
   /** Human-readable shell label (e.g. "PowerShell", "POSIX sh"): the dialect
    *  the model must write commands in. Absent when the caller doesn't know. */
   shell?: string;
+  /** Names at the project root, a folder with a trailing slash; hidden ones and node_modules left out. */
+  entries?: string[];
 }
 
 /** Returns trimmed stdout, or null when the command fails (no git, not a
@@ -93,6 +96,13 @@ export function gatherEnvironmentInfo(options: GatherEnvironmentOptions): Enviro
     ...(options.shell === undefined ? {} : { shell: options.shell }),
   };
 
+  try {
+    info.entries = readdirSync(options.cwd, { withFileTypes: true })
+      .filter((entry) => !entry.name.startsWith(".") && entry.name !== "node_modules")
+      .map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name))
+      .sort();
+  } catch {}
+
   const status = runGit(options.cwd, ["status", "--porcelain", "--branch"]);
   if (status !== null) {
     const parsed = parseGitStatus(status);
@@ -101,10 +111,18 @@ export function gatherEnvironmentInfo(options: GatherEnvironmentOptions): Enviro
   return info;
 }
 
+const ROOT_ENTRIES = 60;
+
 export function buildEnvironmentBlock(info: EnvironmentInfo): string {
   // The words of the path rule of the prompt: with `cwd: <path>`, models wrote that path out in most calls.
   const root = `project root: ${info.cwd} (the shell starts each command here; give tools paths relative to it)`;
   const lines = [`<environment>`, `os: ${info.platform}`, root, `date: ${info.date}`];
+  // Live: 34 of 233 sessions searched for Python or JavaScript files that the project lacks in their first replies.
+  if (info.entries?.length) {
+    const shown = info.entries.slice(0, ROOT_ENTRIES).join(", ");
+    const more = info.entries.length - ROOT_ENTRIES;
+    lines.push(`at the project root: ${shown}${more > 0 ? `, and ${more} more` : ""}`);
+  }
   if (info.shell !== undefined) lines.push(`shell: ${info.shell}`);
   if (info.git) {
     const state = info.git.detached ? ["detached"] : [];

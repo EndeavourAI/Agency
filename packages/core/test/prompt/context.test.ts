@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -94,6 +94,20 @@ describe("gatherEnvironmentInfo", () => {
     const info = gatherEnvironmentInfo({ cwd: "/not-a-repo", now, git: () => null });
     expect(info.git).toBeUndefined();
     expect(info.platform).toContain(process.platform);
+  });
+
+  test("names the files and folders at the project root, with no hidden ones", () => {
+    const root = tempDir();
+    for (const dir of ["src", ".git", "node_modules"]) mkdirSync(join(root, dir));
+    writeFileSync(join(root, "package.json"), "{}");
+    const info = gatherEnvironmentInfo({ cwd: root, now, git: () => null });
+    // Live: 34 of 233 sessions searched for Python or JavaScript files that the project lacks in their first replies.
+    expect(buildEnvironmentBlock(info)).toContain("\nat the project root: package.json, src/\n");
+
+    for (let index = 0; index < 70; index++)
+      writeFileSync(join(root, `f${String(index).padStart(2, "0")}`), "");
+    const many = buildEnvironmentBlock(gatherEnvironmentInfo({ cwd: root, now, git: () => null }));
+    expect(many).toContain("f59, and 12 more\n");
   });
 
   test("the real runner degrades to null outside a repo", () => {

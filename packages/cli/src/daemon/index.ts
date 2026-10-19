@@ -88,6 +88,7 @@ import {
   setShellEnv,
   type TeamMcpPool,
 } from "@agency/tools";
+import { daemonBuild } from "../build-id.ts";
 import { createConfigFingerprint } from "./config-fingerprint.ts";
 import { registerCommandHandlers } from "./handlers/commands.ts";
 import { registerCommandRunHandler } from "./handlers/commands-run.ts";
@@ -869,6 +870,12 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
 
   // An SSE subscriber of the HTTP gateway is a client too: a desktop window holds no TCP connection.
   const clients = { tcp: 0, sse: 0 };
+  // A client of another build asks: with no other client and no turn, this daemon leaves and that build starts its own.
+  handlers.daemon_retire = async () => {
+    const leaving = clients.tcp + clients.sse <= 1 && activeControllers.size === 0;
+    if (leaving) setTimeout(leave, 0);
+    return { leaving };
+  };
   const onClientCount = (): void => {
     clearTimeout(idleTimer);
     clearInterval(staleConfigTimer);
@@ -934,6 +941,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
     startedAt: new Date().toISOString(),
     version: PROTOCOL_VERSION,
     token: authToken,
+    build: daemonBuild(),
   });
 
   return {

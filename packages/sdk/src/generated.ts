@@ -31,6 +31,7 @@ export type RpcMethod =
   | "config_write"
   | "cost_report"
   | "daemon_restart"
+  | "daemon_retire"
   | "decisions_read"
   | "dispatch_compare"
   | "inbox_send"
@@ -322,6 +323,8 @@ export interface SurfaceClient {
   cost_report(params?: Record<string, unknown>): Promise<unknown>;
   /** Leave once no turn runs, so the next client starts a daemon with the new config. */
   daemon_restart(params?: Record<string, unknown>): Promise<unknown>;
+  /** Leave now if the caller is the only client and no turn runs; a client of another build asks, then starts its own. */
+  daemon_retire(params?: Record<string, unknown>): Promise<unknown>;
   /** Read the shared choice log entries. */
   decisions_read(params?: Record<string, unknown>): Promise<unknown>;
   /** Fan out one prompt to two agents and compare. */
@@ -444,6 +447,7 @@ export function createSurfaceClient(
     config_write: (params) => call("config_write", params ?? {}),
     cost_report: (params) => call("cost_report", params ?? {}),
     daemon_restart: (params) => call("daemon_restart", params ?? {}),
+    daemon_retire: (params) => call("daemon_retire", params ?? {}),
     decisions_read: (params) => call("decisions_read", params ?? {}),
     dispatch_compare: (params) => call("dispatch_compare", params ?? {}),
     inbox_send: (params) => call("inbox_send", params ?? {}),

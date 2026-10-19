@@ -29,6 +29,8 @@ export const METHOD_DOCS: Record<string, string> = {
   config_user: "The user config file alone, without provider keys: the layer that config_write edits.",
   config_write: "Persist one dotted config key to the user config file, comments kept; null removes it.",
   daemon_restart: "Leave once no turn runs, so the next client starts a daemon with the new config.",
+  daemon_retire:
+    "Leave now if the caller is the only client and no turn runs; a client of another build asks, then starts its own.",
   provider_connect: "Validate a provider API key and store it in the key store.",
   provider_disconnect: "Remove the stored key of a provider; a key from an environment variable stays.",
   skills_list:

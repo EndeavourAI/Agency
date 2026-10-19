@@ -23,6 +23,7 @@ import {
 } from "@agency/rpc";
 import type { ImageBlock, Message } from "@agency/schema";
 import { clientProjectPaths } from "@agency/tools";
+import { DEFAULT_DAEMON_ENTRY, daemonBuild, STANDALONE } from "./build-id.ts";
 import type { AgentDaemonOptions, RunTurnParams, RunTurnRpcResult, SystemPromptParts } from "./daemon.ts";
 import { runSessionTurn } from "./session-runner.ts";
 
@@ -54,11 +55,8 @@ export interface RunHeadlessOptions {
   daemonEntryPath?: string;
 }
 
-const DEFAULT_DAEMON_ENTRY = join(import.meta.dir, "daemon-entry.ts");
-
 /** Hidden entrypoint command: a compiled binary re-runs itself as the daemon. */
 export const DAEMON_COMMAND = "__daemon";
-const STANDALONE = /^(B:[\\/]~BUN|\/\$bunfs)[\\/]/.test(Bun.main);
 
 /** A user machine has no `bun` on PATH and no source files, so never spawn either by name. */
 function daemonArgv(entry?: string): string[] {
@@ -180,6 +178,8 @@ export async function connectHeadlessClient(
     workspaceRoot: options.workspaceRoot,
     instanceDir: options.instanceDir ?? defaultInstanceDir(),
     connect: options.connect,
+    // A test's own daemon entry has no build of this CLI to match.
+    ...(options.daemonEntryPath === undefined ? { build: daemonBuild() } : {}),
     spawnDaemon: (instanceFile) => {
       log(t("cli.daemon.spawning", { workspace: options.workspaceRoot }));
       Bun.spawn(

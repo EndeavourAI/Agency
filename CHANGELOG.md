@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A client does not keep using a daemon of another Agency build**: the instance file names the build that
+  started the daemon (where its code lives, and when that file changed). A client of another build asks it to
+  leave (`daemon_retire`, new); with no other client and no turn it leaves and the client starts its own, while
+  a busy one stays in use. Before, after an upgrade or with a second checkout, a client kept talking to the old
+  code until that daemon idled out.
 - **`agency -p` runs its daemon inside its own process**, as `claude -p` and `codex exec` run: it no longer spawns
   or reuses the shared daemon of the workspace, which cost 0.25 to 0.65 s of each cold run (WSL), stayed 10 minutes
   after it, and could be a daemon of an older build: in a live benchmark, every run of a new checkout talked to

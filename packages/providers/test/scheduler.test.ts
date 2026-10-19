@@ -72,6 +72,20 @@ describe("Scheduler retry behavior", () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(190);
     // Live: a DNS failure that lasted about a minute outlasted four attempts (7 s) and lost 2 of 31 sessions.
     expect(await attemptsFor(ErrorCode.NETWORK)).toBeGreaterThan(7);
+    // An overload (Anthropic's 529) lasts longer than four attempts (3.5 s): a benchmark task would end on it.
+    expect(await attemptsFor(ErrorCode.OVERLOAD)).toBeGreaterThan(7);
+    // With a fallback model ready, the turn moves to it after four attempts.
+    let quick = 0;
+    await new Scheduler({ baseDelayMs: 1, maxDelayMs: 2, rateLimitWindowMs: 200 })
+      .schedule(
+        async () => {
+          quick += 1;
+          throw new AgencyError(ErrorCode.OVERLOAD, "529", { source: "test" });
+        },
+        { quickOverload: true },
+      )
+      .catch(() => {});
+    expect(quick).toBe(4);
   });
 
   test("honors a server-provided retryAfterMs instead of the computed backoff", async () => {

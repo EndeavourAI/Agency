@@ -230,6 +230,8 @@ export interface RunTurnOptions {
   taskDepth?: number;
   /** allow-all: shell commands run with the user's rights, outside the sandbox of the OS. */
   hostShell?: boolean;
+  /** A fallback model is ready: an overload ends the request after a few attempts, not after minutes. */
+  quickOverload?: boolean;
   /** Task category for cheap-model routing (title, summary, background go cheap). */
   taskKind?: string;
   /** Cheap model id; when set with an eligible taskKind the turn routes cheap. */
@@ -454,6 +456,7 @@ export async function runTurn(
           onRetry: (attempt, message, next) => {
             options.onEvent?.({ type: "retry", attempt, message, next });
           },
+          quickOverload: options.quickOverload === true,
         },
       );
       lastSent = { request, cached: (turn.usage.cachedInputTokens ?? 0) > 0, at: Date.now() };

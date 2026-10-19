@@ -10,7 +10,7 @@ export interface SchedulerOptions {
   maxAttempts?: number;
   baseDelayMs?: number;
   maxDelayMs?: number;
-  /** How long a rate limit or a network failure is retried when `maxAttempts` is unset. Default 5 minutes. */
+  /** How long a rate limit, an overload or a network failure is retried when `maxAttempts` is unset. Default 5 minutes. */
   rateLimitWindowMs?: number;
 }
 
@@ -22,6 +22,8 @@ export interface ScheduleOptions {
    * would overwrite or fire for another's retries - pass the observer here.
    */
   onRetry?: (attempt: number, message: string, next?: number) => void;
+  /** A fallback model waits: an overload ends the call after `maxAttempts`, not after the window. */
+  quickOverload?: boolean;
 }
 
 /** One key slot: a plain id, or an id with a priority (lower runs first). */
@@ -128,7 +130,11 @@ export class Scheduler {
     await this.semaphore.acquire();
     try {
       await this.bucket?.consume();
-      return await this.runWithRetry(fn, options?.onRetry ?? this.onRetry?.bind(this));
+      return await this.runWithRetry(
+        fn,
+        options?.onRetry ?? this.onRetry?.bind(this),
+        options?.quickOverload === true,
+      );
     } finally {
       this.semaphore.release();
     }
@@ -232,7 +238,11 @@ export class Scheduler {
     }
   }
 
-  private async runWithRetry<T>(fn: () => Promise<T>, onRetry: ScheduleOptions["onRetry"]): Promise<T> {
+  private async runWithRetry<T>(
+    fn: () => Promise<T>,
+    onRetry: ScheduleOptions["onRetry"],
+    quickOverload = false,
+  ): Promise<T> {
     const started = Date.now();
     let attempt = 0;
     while (true) {
@@ -242,7 +252,11 @@ export class Scheduler {
       } catch (error) {
         if (!(error instanceof AgencyError) || error.retryClass !== "retryable") throw error;
         // Live: a DNS failure of about a minute outlasted four attempts (7 s), as rate limits outlasted seven.
-        const windowed = error.code === ErrorCode.RATE_LIMIT || error.code === ErrorCode.NETWORK;
+        // An overload (529) lasts as long: Claude Code retries it ten times, not four.
+        const windowed =
+          error.code === ErrorCode.RATE_LIMIT ||
+          error.code === ErrorCode.NETWORK ||
+          (error.code === ErrorCode.OVERLOAD && !quickOverload);
         if (attempt >= (windowed ? this.rateLimitAttempts : this.maxAttempts)) throw error;
         if (windowed && Date.now() - started >= this.rateLimitWindowMs) throw error;
 

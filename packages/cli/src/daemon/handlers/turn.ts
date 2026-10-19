@@ -760,6 +760,9 @@ export async function executeTurn(
               requestApproval,
               ...(reviewApproval ? { reviewApproval } : {}),
               hostShell: turnMode === "allow-all",
+              quickOverload:
+                fallbackRef !== undefined &&
+                (fallbackRef.provider !== params.provider || fallbackRef.model !== params.model),
               eventBus,
               redactToolResult: redactor.redactToolResult,
               drainMailbox: mailboxDrain,

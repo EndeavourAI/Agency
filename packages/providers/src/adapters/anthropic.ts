@@ -347,7 +347,14 @@ async function* streamRaw(request: ProviderRequest, http: HttpClient): AsyncIter
       }
       case "error": {
         const err = payload.error as { type?: string; message?: string };
-        throw new AgencyError(ErrorCode.TRANSIENT, err.message ?? "stream error", {
+        // An overload can come after the 200, in the stream: it gets the retries of a 529.
+        const code =
+          err.type === "overloaded_error"
+            ? ErrorCode.OVERLOAD
+            : err.type === "rate_limit_error"
+              ? ErrorCode.RATE_LIMIT
+              : ErrorCode.TRANSIENT;
+        throw new AgencyError(code, err.message ?? "stream error", {
           source: "anthropic",
           context: { errorType: err.type },
         });

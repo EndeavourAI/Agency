@@ -12,6 +12,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   four times in about 3.5 s: an overload outlasts that, and the turn ended with an error, so a long benchmark task
   was lost on one busy minute (Claude Code retries it ten times). With a fallback model, the turn still moves to
   it after four attempts.
+- **An `overloaded_error` or `rate_limit_error` in Anthropic's stream gets the retries of a 529 or a 429**: an error
+  that came after the 200 was always a transient error, with four attempts.
 - **A file that `edit` changed counts as read**, as the option of the tool said: a later `write` of it no longer
   warns that the file "was never read this session" (seen live after three edits of one file).
 - **`edit` keeps a conflict marker that the file has as part of `oldText`**: a trailing `>>>>>>> feature` was taken

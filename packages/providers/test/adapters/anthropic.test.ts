@@ -54,6 +54,21 @@ describe("anthropicAdapter", () => {
     ]);
   });
 
+  test("an overload in the stream is an overload, not a transient error", async () => {
+    const codeOf = async (type: string): Promise<string | undefined> => {
+      const text = `event: error\ndata: {"type":"error","error":{"type":"${type}","message":"busy"}}\n\n`;
+      try {
+        await collect(anthropicAdapter.stream(baseRequest, fakeHttp(sseResponse(text))));
+      } catch (error) {
+        return error instanceof AgencyError ? error.code : undefined;
+      }
+      return undefined;
+    };
+    expect(await codeOf("overloaded_error")).toBe(ErrorCode.OVERLOAD);
+    expect(await codeOf("rate_limit_error")).toBe(ErrorCode.RATE_LIMIT);
+    expect(await codeOf("api_error")).toBe(ErrorCode.TRANSIENT);
+  });
+
   test("takes the counts and the charge that a gateway reports at the end of the stream", async () => {
     // Recorded from the Messages endpoint of OpenRouter: message_start has zero counts, message_delta has the real ones.
     const cassette = await Bun.file(`${import.meta.dir}/../cassettes/openrouter-messages-stream.sse`).text();

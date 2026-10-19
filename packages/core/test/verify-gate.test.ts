@@ -31,6 +31,7 @@ test("a passing check after the last edit, a change of prose only, or a worker's
   const prose = new EventBus();
   attachVerifyGate(prose);
   after(prose, "edit", { path: "README.md" });
+  after(prose, "write", { path: "index.html" });
   expect(await stop(prose)).toEqual([]);
 
   const worker = new EventBus();

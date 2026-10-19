@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A change of a page or data file (`.html`, `.css`, `.csv`, `.svg`) gets no verify reminder**, as a change of prose
+  gets none: in both live runs of a server task on Linux, a written `index.html` sent the model back to look for
+  project checks that did not exist.
 - **Under allow-all, the `bash` tool no longer tells the model that commands have no network**: its note of the
   sandbox gives way to "Commands run with the user's rights and have the network". In a live headless run on
   Linux, the model read "no network", did not try to install pytest, and checked its fix by hand.

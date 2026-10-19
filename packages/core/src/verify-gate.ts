@@ -1,8 +1,8 @@
 import { type AgencyEvents, type EventBus, HookBlock } from "./events.ts";
 
 const EDIT_TOOLS = new Set(["edit", "write", "notebook_edit"]);
-/** A change of prose needs no check. */
-const DOC_FILE = /\.(md|mdx|txt|rst|adoc)$/i;
+/** A change of prose, a page or data needs no check: live, a written index.html was sent back twice for none. */
+const DOC_FILE = /\.(md|mdx|txt|rst|adoc|html?|css|csv|svg)$/i;
 /** A command that checks code: a test run, type check, linter or build. A false match only spares the reminder. */
 const CHECK_COMMAND =
   /\b(tests?|spec|pytest|jest|vitest|mocha|tsc|typecheck|type-check|lint|eslint|biome|ruff|flake8|mypy|pyright|clippy|check|build|compile|make|gradlew?|mvn|cargo|go\s+(?:test|vet|build)|dotnet|ctest|phpunit|rspec)\b/i;

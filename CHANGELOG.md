@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A passing run of a changed script counts as its check** for the verify reminder: `python3 fetch.py` or
+  `./run.sh` that exits 0 after an edit of that file. In both live headless runs on Linux, the model ran its new
+  script, saw the right output, and the reminder still sent it back for two or three more calls. Reading a file
+  (`cat`) is no run, and a file that no command ran still gets the reminder.
 - **A file tool asks for a path outside the workspace when the config sets no `external_directory` rule**, as
   Claude Code asks for a path outside its folder; before, it was refused in every mode. Under allow-all the ask
   passes, so `read`, `edit` and `write` reach `/etc` or a library's source; a headless run in another mode still

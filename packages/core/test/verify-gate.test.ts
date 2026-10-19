@@ -45,3 +45,24 @@ test("a passing check after the last edit, a change of prose only, or a worker's
   after(late, "edit", { path: "src/lib.rs" });
   expect(await stop(late)).toHaveLength(1);
 });
+
+test("a passing run of a changed script checks that script, and only that one", async () => {
+  // Live: twice a model ran `python3 fetch.py`, saw 200, and the reminder still sent it back for two more calls.
+  const ran = new EventBus();
+  attachVerifyGate(ran);
+  after(ran, "write", { path: "fetch.py" });
+  after(ran, "bash", { command: "python3 fetch.py > /tmp/status.txt && cat /tmp/status.txt" });
+  expect(await stop(ran)).toEqual([]);
+
+  const partly = new EventBus();
+  attachVerifyGate(partly);
+  after(partly, "write", { path: "scripts/run.sh" });
+  after(partly, "edit", { path: "src/lib.py" });
+  after(partly, "bash", { command: "./scripts/run.sh" });
+  after(partly, "bash", { command: "cat src/lib.py" });
+  after(partly, "bash", { command: "node src/lib.py" }, true);
+  const sent = await stop(partly);
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toContain("src/lib.py");
+  expect(sent[0]).not.toContain("run.sh");
+});

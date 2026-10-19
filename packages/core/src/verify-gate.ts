@@ -8,6 +8,14 @@ const CHECK_COMMAND =
   /\b(tests?|spec|pytest|jest|vitest|mocha|tsc|typecheck|type-check|lint|eslint|biome|ruff|flake8|mypy|pyright|clippy|check|build|compile|make|gradlew?|mvn|cargo|go\s+(?:test|vet|build)|dotnet|ctest|phpunit|rspec)\b/i;
 const LISTED_FILES = 5;
 
+/** A command that runs `path` as a program: `python3 fetch.py`, `./run.sh`. Reading it (`cat`) is no run. */
+function runsFile(command: string, path: string): boolean {
+  const name = (path.split(/[\\/]/).at(-1) ?? path).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `(?:\\b(?:python3?|node|bun|deno|ruby|perl|php|bash|sh|Rscript|go\\s+run)(?:\\s+-\\S+)*\\s+|\\./)\\S*?\\b${name}(?![\\w.])`,
+  ).test(command);
+}
+
 /** The reminder of a turn that changed code and ran no passing check after. */
 export function verifyReminder(files: readonly string[]): string {
   const shown = files.slice(0, LISTED_FILES).join(", ");
@@ -39,6 +47,10 @@ export function attachVerifyGate(bus: EventBus): () => void {
       CHECK_COMMAND.test(p.input.command)
     ) {
       changed.delete(p.turnId);
+    } else if (p.tool === "bash" && typeof p.input.command === "string") {
+      // Live: twice a model ran its changed script, saw the right output, and the reminder sent it back anyway.
+      const files = changed.get(p.turnId);
+      for (const file of files ?? []) if (runsFile(p.input.command, file)) files?.delete(file);
     }
   });
   const offStop = bus.on("turn.stop", (payload) => {

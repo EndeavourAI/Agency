@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Under allow-all, the `bash` tool no longer tells the model that commands have no network**: its note of the
+  sandbox gives way to "Commands run with the user's rights and have the network". In a live headless run on
+  Linux, the model read "no network", did not try to install pytest, and checked its fix by hand.
+- **A write to a harness file that no one approved is refused with its reason**: the refusal names the file
+  (`.agency/http.log`) and says the call can go again with another path. Before, it read as a refusal of the whole
+  command, and in a live headless run the model gave up starting the server that the task asked for.
 - **A passing run of a changed script counts as its check** for the verify reminder: `python3 fetch.py` or
   `./run.sh` that exits 0 after an edit of that file. In both live headless runs on Linux, the model ran its new
   script, saw the right output, and the reminder still sent it back for two or three more calls. Reading a file

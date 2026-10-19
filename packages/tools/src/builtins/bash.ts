@@ -29,6 +29,11 @@ const ABORT_DRAIN_MS = 1_000;
 /** A command with no timeout that runs longer moves to the background, so a server in the foreground cannot hold the turn. */
 const DETACH_MS = 120_000;
 
+export const BASH_SANDBOX_NOTE =
+  " Commands run in a sandbox with no network. Pass network: true only for a command that needs it (an install, a fetch): the user is asked first.";
+/** In place of the sandbox note under allow-all, where a command runs on the host. */
+export const BASH_HOST_NOTE = " Commands run with the user's rights and have the network.";
+
 /** How often a long-running foreground command emits a progress notice. */
 const PROGRESS_TICK_MS = 2_000;
 
@@ -180,9 +185,7 @@ export function createBashTool(
       "long-running processes (dev servers, watchers) instead of waiting for them to exit. Pass " +
       "timeout (milliseconds) to kill a command that may hang. A command with no timeout that runs " +
       `over ${Math.round(detachMs / 1000)} seconds moves to the background and keeps running.` +
-      (offline
-        ? " Commands run in a sandbox with no network. Pass network: true only for a command that needs it (an install, a fetch): the user is asked first."
-        : ""),
+      (offline ? BASH_SANDBOX_NOTE : ""),
     inputSchema: {
       type: "object",
       properties: {

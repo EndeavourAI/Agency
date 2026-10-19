@@ -29,7 +29,13 @@ import { clampEffortForModel, type KeychainBackend, keyEnvName, resolveApiKey } 
 import type { MethodHandler } from "@agency/rpc";
 import { AgencyError, ErrorCode } from "@agency/schema";
 import type { TurnTiming } from "@agency/telemetry";
-import { modelCommandEnv, resolveConfiguredShell, type SessionScope } from "@agency/tools";
+import {
+  BASH_HOST_NOTE,
+  BASH_SANDBOX_NOTE,
+  modelCommandEnv,
+  resolveConfiguredShell,
+  type SessionScope,
+} from "@agency/tools";
 import {
   assertPreflightCaps,
   estimatePreflightTurnCostUsd,
@@ -654,17 +660,17 @@ export async function executeTurn(
           );
           // Live: under `bun test*` a model ran `npx bun test` first, was refused, and only then wrote `bun test`.
           const allowedCommands = sessionGate.allowedPatterns("bash").slice(0, 10);
-          const offeredTools =
-            allowedCommands.length === 0
-              ? leadTools
-              : leadTools.map((t) =>
-                  t.name === "bash"
-                    ? {
-                        ...t,
-                        description: `${t.description} The permission rules let these commands run with no ask: ${allowedCommands.map((p) => `\`${p}\``).join(", ")}.`,
-                      }
-                    : t,
-                );
+          const offeredTools = leadTools.map((t) => {
+            if (t.name !== "bash") return t;
+            // Live: under allow-all a model read "no network" and did not try to install pytest.
+            let description =
+              turnMode === "allow-all"
+                ? t.description.replace(BASH_SANDBOX_NOTE, BASH_HOST_NOTE)
+                : t.description;
+            if (allowedCommands.length > 0)
+              description += ` The permission rules let these commands run with no ask: ${allowedCommands.map((p) => `\`${p}\``).join(", ")}.`;
+            return description === t.description ? t : { ...t, description };
+          });
           const effectiveTools = [
             ...deferTools(offeredTools, deferMode),
             ...codeTools(sessionGate),

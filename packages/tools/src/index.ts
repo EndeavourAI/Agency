@@ -1,5 +1,5 @@
 export * from "./builtin-set.ts";
-export { type BashState, createBashTool } from "./builtins/bash.ts";
+export { BASH_HOST_NOTE, BASH_SANDBOX_NOTE, type BashState, createBashTool } from "./builtins/bash.ts";
 export {
   type BoardBackend,
   type BoardFiler,

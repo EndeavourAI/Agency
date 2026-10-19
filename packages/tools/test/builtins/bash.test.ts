@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { FULL_CAPABILITIES, SandboxBoundary } from "@agency/guard";
 import { AgencyError, ErrorCode } from "@agency/schema";
-import { type BashState, createBashTool } from "../../src/builtins/bash.ts";
+import { BASH_SANDBOX_NOTE, type BashState, createBashTool } from "../../src/builtins/bash.ts";
 import type { ToolDeps } from "../../src/contract.ts";
 import { ProcessManager } from "../../src/process-manager.ts";
 import { resolveConfiguredShell, resolveShell } from "../../src/shell.ts";
@@ -221,6 +221,13 @@ describe("createBashTool", () => {
     const result = await refused.handler({ command: "echo outside", background: true }, { signal });
     expect(result.isError).toBe(true);
     expect(manager.list()).toHaveLength(1);
+  });
+
+  test("an offline sandbox puts the note that allow-all replaces into the description", () => {
+    // The daemon swaps this exact note under allow-all: a reworded note would keep "no network" there.
+    const offline = Object.assign(new SandboxBoundary(tmpdir()), { offline: true });
+    const deps: ToolDeps = { identity: { type: "user" }, capabilities: FULL_CAPABILITIES, sandbox: offline };
+    expect(createBashTool(deps, resolveShell(process.platform)).description).toContain(BASH_SANDBOX_NOTE);
   });
 
   test("under allow-all a command runs outside the OS sandbox, in the foreground and the background", async () => {

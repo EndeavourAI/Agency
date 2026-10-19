@@ -38,12 +38,15 @@ export function createTurnApproval(
       });
       eventBus.emit("event", { event: "permission.asked", payload: { tool: request.tool } });
     } catch {}
-    // allow-all passes the network limit of the sandbox and the workspace's edge, as Claude Code's bypass mode allows
-    // all: live, a headless run refused `pip install` under allow-all, and the task could not be done.
+    // allow-all passes the network limit of the sandbox, the workspace's edge and the doom-loop stop, as Claude Code's
+    // bypass mode allows all: live, a headless run refused `pip install` under allow-all, and the task could not be
+    // done. Three equal polls of a build are no loop, and the step limit still ends a real one.
     if (
       approvals.hasAlways(request) ||
       (params.permissionMode === "allow-all" &&
-        (request.source === "sandbox:network" || request.source === "external_directory"))
+        (request.source === "sandbox:network" ||
+          request.source === "external_directory" ||
+          request.tool === "doom-loop"))
     ) {
       reply("once", "answered");
       return "once";

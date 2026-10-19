@@ -40,3 +40,13 @@ test("allow-all lets a file tool past the edge of the workspace; other modes sti
   expect(await approval({ permissionMode: "allow-all", nonInteractive: true })(outside)).toBe("once");
   expect(await approval({ permissionMode: "allow-edits", nonInteractive: true })(outside)).toBe("reject");
 });
+
+test("allow-all lets the turn go on past the doom-loop stop; with no one to ask, other modes still stop", async () => {
+  // Three equal `tail build.log` calls while a build runs ended the whole headless turn.
+  const doom: ApprovalRequest = {
+    tool: "doom-loop",
+    title: "doom loop detected: bash repeated 3x consecutively.",
+  };
+  expect(await approval({ permissionMode: "allow-all", nonInteractive: true })(doom)).toBe("once");
+  expect(await approval({ permissionMode: "allow-edits", nonInteractive: true })(doom)).toBe("reject");
+});

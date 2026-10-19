@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Under allow-all, three equal tool calls in a row no longer end the turn**: the doom-loop stop asks the user,
+  and in a headless run no one answers, so a task that polled a build three times with the same command was lost.
+  allow-all now approves that ask, as it approves the sandbox's other asks; the step limit still ends a real loop.
+  Other modes still ask.
 - **A tool call cut by the output limit does not run, even when its arguments could be repaired**: a cut between
   two complete arguments (`{"path": "a.py", "oldText": "a", "newText": "b"`) was closed into valid JSON and ran
   without what the cut took (a `replaceAll`, the rest of a call). It now gets the note that the limit cut it, as

@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A turn reports its cost, priced request by request**, when the provider reports no charge (Anthropic): the
+  result's `usage.costUsd`, so `agency -p --format json` gives `total_cost_usd` as `claude -p` does, and the session's
+  usage entry takes that cost. In a live run of Claude Haiku 5.5 on Linux the JSON had no `total_cost_usd`, though the
+  session priced the turn at $0.0032. A long-prompt step now applies to each request: the session's price came from
+  the sum of the turn's requests, so 30 requests of 50K tokens would have been priced as one prompt over 100K.
 - **A prompt over a model's long-prompt step is priced at its higher rate**, in the turn's cost budget and in the
   session's cost: Claude Haiku 5.5 charges $0.10/$0.50 a million tokens up to 100K tokens of prompt and
   $0.50/$2.50 above, its cached tokens by the same factor. Before, Agency priced every request at the lower rate,

@@ -467,6 +467,37 @@ describe("runTurn", () => {
     // 0.15 × $0.50 + 0.001 × $2.50 = $0.0775 passes $0.05 at the first request; the flat rate would be $0.0155.
     expect(result.budgetExceeded).toBe(true);
     expect(result.messages.filter((message) => message.role === "assistant")).toHaveLength(1);
+    expect(result.usage.costUsd).toBeCloseTo(0.0775, 9);
+  });
+
+  test("a turn reports its cost request by request: two prompts under the step are not priced as their sum", async () => {
+    let call = 0;
+    const twice: ProviderAdapter = {
+      family: "fake",
+      async *stream(): AsyncIterable<StreamEvent> {
+        call += 1;
+        if (call === 1) {
+          yield { type: "tool_call_start", id: "call_1", name: "read" };
+          yield { type: "tool_call_end", id: "call_1" };
+        } else yield { type: "text_delta", text: "done" };
+        const stopReason = call === 1 ? "tool_use" : "end_turn";
+        yield { type: "message_stop", stopReason, usage: { inputTokens: 60_000, outputTokens: 1_000 } };
+      },
+    };
+    const result = await runTurn(twice, new Scheduler(), noopHttp, {
+      identity: user,
+      capabilities: FULL_CAPABILITIES,
+      systemPrompt: "sys",
+      tools: [
+        { name: "read", description: "reads", inputSchema: {}, handler: async () => ({ content: "x" }) },
+      ],
+      model: "test-model",
+      apiKey: "key",
+      session: [],
+      pricePerMTok: { input: 0.1, output: 0.5, longPrompt: { overTokens: 100_000, input: 0.5, output: 2.5 } },
+    });
+    // Live: the headless JSON had no total_cost_usd for an Anthropic model, whose API reports no charge.
+    expect(result.usage.costUsd).toBeCloseTo(2 * (0.006 + 0.0005), 9);
   });
 
   test("maxToolIterations caps a runaway tool-calling loop and says so", async () => {

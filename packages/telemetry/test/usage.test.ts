@@ -34,20 +34,6 @@ describe("usage accounting", () => {
     expect(turnCostUsd(usage)).toBe(0);
   });
 
-  test("turnCostUsd prices a prompt over a long-prompt step at the higher rate, cached tokens by the same factor", () => {
-    // Claude Haiku 5.5: $0.10/$0.50, cache read $0.01, and $0.50/$2.50 for a prompt over 100K tokens.
-    const haiku = {
-      inputPerMTok: 0.1,
-      outputPerMTok: 0.5,
-      cachedInputPerMTok: 0.01,
-      longPrompt: { overTokens: 100_000, inputPerMTok: 0.5, outputPerMTok: 2.5 },
-    };
-    expect(turnCostUsd({ inputTokens: 100_000, outputTokens: 1_000 }, haiku)).toBeCloseTo(0.01 + 0.0005, 9);
-    // 50K uncached at $0.50 + 100K cached at $0.05 + 1K output at $2.50
-    const long = { inputTokens: 150_000, outputTokens: 1_000, cachedInputTokens: 100_000 };
-    expect(turnCostUsd(long, haiku)).toBeCloseTo(0.025 + 0.005 + 0.0025, 9);
-  });
-
   test("turnCostUsd takes the charge that the provider reports over the price table", () => {
     const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000, costUsd: 0.25 };
     expect(turnCostUsd(usage, PRICING)).toBe(0.25);

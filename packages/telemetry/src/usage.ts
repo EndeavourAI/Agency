@@ -48,20 +48,17 @@ export function cacheHitRate(usage: Usage): number | undefined {
 export function turnCostUsd(usage: Usage, pricing?: ModelPricing): number {
   if (usage.costUsd !== undefined) return usage.costUsd;
   if (!pricing) return 0;
-  const step = pricing.longPrompt;
-  const long = step !== undefined && usage.inputTokens > step.overTokens;
-  const factor = long && pricing.inputPerMTok > 0 ? step.inputPerMTok / pricing.inputPerMTok : 1;
   const cached = usage.cachedInputTokens ?? 0;
   const written = usage.cacheWriteInputTokens ?? 0;
   const uncachedInput = Math.max(usage.inputTokens - cached - written, 0);
   const cachedRate = pricing.cachedInputPerMTok ?? pricing.inputPerMTok;
   const writeRate = pricing.cacheWritePerMTok ?? pricing.inputPerMTok;
+  // A turn's usage sums its requests: a long-prompt step applies per request, so the loop prices it and reports costUsd.
   return (
-    ((uncachedInput / 1_000_000) * pricing.inputPerMTok +
-      (cached / 1_000_000) * cachedRate +
-      (written / 1_000_000) * writeRate) *
-      factor +
-    (usage.outputTokens / 1_000_000) * (long ? step.outputPerMTok : pricing.outputPerMTok)
+    (uncachedInput / 1_000_000) * pricing.inputPerMTok +
+    (cached / 1_000_000) * cachedRate +
+    (written / 1_000_000) * writeRate +
+    (usage.outputTokens / 1_000_000) * pricing.outputPerMTok
   );
 }
 

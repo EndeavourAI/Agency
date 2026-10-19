@@ -475,6 +475,9 @@ export async function runTurn(
   let proactiveFolds = true;
   let costNoted = false;
   let lastSent: SentRequest | undefined;
+  // The cost of each request, as the price table gives it: a provider such as Anthropic reports no charge.
+  const pricedUsage = (): Usage =>
+    options.pricePerMTok === undefined ? cumulativeUsage : { ...cumulativeUsage, costUsd: spentCostUsd };
   const paySummary = (usage: Usage): void => {
     cumulativeUsage = addUsage(cumulativeUsage, usage);
     spentCostUsd += costOf(usage, options.pricePerMTok);
@@ -679,7 +682,7 @@ export async function runTurn(
         return {
           messages,
           stopReason,
-          usage: cumulativeUsage,
+          usage: pricedUsage(),
           budgetExceeded: true,
           ...(requestTokens > 0 ? { contextTokens: requestTokens } : {}),
         };
@@ -914,7 +917,7 @@ export async function runTurn(
   return {
     messages,
     stopReason,
-    usage: cumulativeUsage,
+    usage: pricedUsage(),
     budgetExceeded: false,
     ...(requestTokens > 0 ? { contextTokens: requestTokens } : {}),
     ...(turnError ? { error: turnError } : {}),

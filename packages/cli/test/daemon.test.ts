@@ -1380,7 +1380,9 @@ describe("createAgentDaemon", () => {
       })) as RunTurnRpcResult;
 
       expect(captured.maxTokens).toBe(12_345);
-      expect(result.usage).toEqual({ inputTokens: 1_000, outputTokens: 100, cachedInputTokens: 0 });
+      // 1,000 input at $3/M and 100 output at $15/M, from the catalog's price.
+      expect(result.usage).toMatchObject({ inputTokens: 1_000, outputTokens: 100, cachedInputTokens: 0 });
+      expect(result.usage.costUsd).toBeCloseTo(0.0045, 12);
     } finally {
       if (previous === undefined) delete process.env[dataEnvKey];
       else process.env[dataEnvKey] = previous;

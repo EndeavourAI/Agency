@@ -10,6 +10,8 @@ export interface ModelPricing {
   cachedInputPerMTok?: number;
   /** USD per million cache-write input tokens, at the provider write premium. */
   cacheWritePerMTok?: number;
+  /** The rates of a prompt over `overTokens` input tokens, where a model has such a step. */
+  longPrompt?: { overTokens: number; inputPerMTok: number; outputPerMTok: number };
 }
 
 export interface ModelCapabilities {
@@ -56,7 +58,7 @@ export interface ModelInfo {
  * family's live models endpoint.
  */
 export const BUILTIN_MODELS: ModelInfo[] = [
-  // Anthropic's price table of 2026-10-06; Haiku 5.5 costs $0.50/$2.50 for a prompt over 100K tokens.
+  // Anthropic's price table of 2026-10-06.
   {
     id: "claude-haiku-5-5",
     family: "anthropic",
@@ -64,7 +66,13 @@ export const BUILTIN_MODELS: ModelInfo[] = [
     providerName: "Anthropic",
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
-    pricing: { inputPerMTok: 0.1, outputPerMTok: 0.5, cachedInputPerMTok: 0.01, cacheWritePerMTok: 0.125 },
+    pricing: {
+      inputPerMTok: 0.1,
+      outputPerMTok: 0.5,
+      cachedInputPerMTok: 0.01,
+      cacheWritePerMTok: 0.125,
+      longPrompt: { overTokens: 100_000, inputPerMTok: 0.5, outputPerMTok: 2.5 },
+    },
     capabilities: { tools: true, vision: true, thinking: true },
     releaseDate: "2026-10-07",
   },

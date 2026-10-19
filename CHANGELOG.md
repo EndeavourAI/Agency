@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A prompt over a model's long-prompt step is priced at its higher rate**, in the turn's cost budget and in the
+  session's cost: Claude Haiku 5.5 charges $0.10/$0.50 a million tokens up to 100K tokens of prompt and
+  $0.50/$2.50 above, its cached tokens by the same factor. Before, Agency priced every request at the lower rate,
+  so a long Haiku session reported up to a fifth of its real cost and a cost limit let it run five times too far.
+  In the stored sessions, requests over 100K tokens were 1.8% of requests and 18.8% of input tokens; at Haiku's
+  step that share would be about half of the input bill.
 - **Agency knows the price and limits of the current Claude models, and reads models.dev prices in the right
   unit**: the built-in catalog gains Claude Haiku 5.5, Sonnet 5.5 and Opus 5.5 at Anthropic's prices (1M-token
   window, 128K output), and Opus 5 and Sonnet 5 get the current prices ($5/$25 and $2/$10, not $15/$75 and $3/$15).

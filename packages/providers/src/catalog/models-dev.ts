@@ -35,8 +35,8 @@ export function modelsDevUrl(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 // ---------------------------------------------------------------------------
-// Wire schemas (models.dev api.json). Costs here are USD per token; Agency's
-// ModelPricing is per MTok, so conversion multiplies by 1e6 at ingest.
+// Wire schemas (models.dev api.json). Costs here are USD per million tokens, as
+// Agency's ModelPricing is.
 // ---------------------------------------------------------------------------
 
 const ModelsDevCostSchema = z.object({

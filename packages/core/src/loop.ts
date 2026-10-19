@@ -113,6 +113,8 @@ export interface PricePerMTok {
   output: number;
   cachedInput?: number;
   cacheWrite?: number;
+  /** A prompt over `overTokens` is priced at these rates, its cached tokens by the same factor (Claude Haiku 5.5). */
+  longPrompt?: { overTokens: number; input: number; output: number };
 }
 
 /** One model request: request start to its first output (text, thinking or a tool call), then that output to the stream end. */
@@ -1791,14 +1793,17 @@ function totalTokens(usage: Usage): number {
 function costOf(usage: Usage, price?: PricePerMTok): number {
   if (usage.costUsd !== undefined) return usage.costUsd;
   if (!price) return 0;
+  const long = price.longPrompt !== undefined && usage.inputTokens > price.longPrompt.overTokens;
+  const factor = long && price.input > 0 ? (price.longPrompt?.input ?? price.input) / price.input : 1;
   const cached = usage.cachedInputTokens ?? 0;
   const written = usage.cacheWriteInputTokens ?? 0;
   const uncached = Math.max(usage.inputTokens - cached - written, 0);
   return (
-    (uncached / 1_000_000) * price.input +
-    (cached / 1_000_000) * (price.cachedInput ?? price.input) +
-    (written / 1_000_000) * (price.cacheWrite ?? price.input) +
-    (usage.outputTokens / 1_000_000) * price.output
+    ((uncached / 1_000_000) * price.input +
+      (cached / 1_000_000) * (price.cachedInput ?? price.input) +
+      (written / 1_000_000) * (price.cacheWrite ?? price.input)) *
+      factor +
+    (usage.outputTokens / 1_000_000) * (long ? (price.longPrompt?.output ?? price.output) : price.output)
   );
 }
 

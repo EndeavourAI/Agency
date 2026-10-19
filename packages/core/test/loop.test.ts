@@ -436,6 +436,39 @@ describe("runTurn", () => {
     expect(result.usage.costUsd).toBeCloseTo(0.04, 9);
   });
 
+  test("a prompt over the long-prompt step of a model is priced at its higher rate", async () => {
+    const long: ProviderAdapter = {
+      family: "fake",
+      async *stream(): AsyncIterable<StreamEvent> {
+        yield { type: "tool_call_start", id: "call_1", name: "read" };
+        yield { type: "tool_call_end", id: "call_1" };
+        yield {
+          type: "message_stop",
+          stopReason: "tool_use",
+          usage: { inputTokens: 150_000, outputTokens: 1_000 },
+        };
+      },
+    };
+    const result = await runTurn(long, new Scheduler(), noopHttp, {
+      identity: user,
+      capabilities: FULL_CAPABILITIES,
+      systemPrompt: "sys",
+      tools: [
+        { name: "read", description: "reads", inputSchema: {}, handler: async () => ({ content: "x" }) },
+      ],
+      model: "test-model",
+      apiKey: "key",
+      session: [],
+      // Claude Haiku 5.5: $0.10/$0.50 a million tokens, $0.50/$2.50 for a prompt over 100K.
+      pricePerMTok: { input: 0.1, output: 0.5, longPrompt: { overTokens: 100_000, input: 0.5, output: 2.5 } },
+      budget: { maxCostUsd: 0.05 },
+    });
+
+    // 0.15 × $0.50 + 0.001 × $2.50 = $0.0775 passes $0.05 at the first request; the flat rate would be $0.0155.
+    expect(result.budgetExceeded).toBe(true);
+    expect(result.messages.filter((message) => message.role === "assistant")).toHaveLength(1);
+  });
+
   test("maxToolIterations caps a runaway tool-calling loop and says so", async () => {
     let calls = 0;
     const spec: ToolSpec = {

@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`edit` keeps a conflict marker that the file has as part of `oldText`**: a trailing `>>>>>>> feature` was taken
+  as junk that a model adds and stripped before matching, so the edit removed the lines above it and left the
+  marker in the file. In a live merge task on Linux this happened three times in a row, five extra calls and an
+  amended commit. The junk is now stripped only when `oldText` as given is not in the file.
+- **An `edit` that would leave the file as it is is refused** with a note to read the lines again; before, it said
+  "edited" and the model went on as if it had changed something.
 - **A change of a page or data file (`.html`, `.css`, `.csv`, `.svg`) gets no verify reminder**, as a change of prose
   gets none: in both live runs of a server task on Linux, a written `index.html` sent the model back to look for
   project checks that did not exist.

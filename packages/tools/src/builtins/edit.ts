@@ -160,6 +160,10 @@ export function createEditTool(
           path: resolved,
           diagnostics: options?.diagnostics,
         });
+        // Live: an edit that changed nothing said "edited", and the model went on as if it had.
+        if (outcome.content === current) {
+          return { content: t("tool.edit.no_change", { path: input.path }), isError: true };
+        }
         snapshots.capture(resolved, current, ctx.turnId);
         writeFileSync(resolved, outcome.content, "utf8");
         await runFormatter(formatter, resolved);

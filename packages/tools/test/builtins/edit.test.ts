@@ -38,6 +38,18 @@ describe("createEditTool", () => {
     expect(readFileSync(join(root, "a.ts"), "utf8")).toBe("const x = 2;\n");
   });
 
+  test("an edit that would change nothing is refused, not reported as done", async () => {
+    const { deps, root, snapshots } = setup();
+    writeFileSync(join(root, "a.ts"), "const x = 1;\n");
+    const tool = createEditTool(deps, snapshots, {});
+    const result = await tool.handler(
+      { path: "a.ts", oldText: "const x = 1;", newText: "const x = 1;" },
+      { signal },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("nothing was written");
+  });
+
   test("rejects (not misapplies) when oldText has drifted, leaving the file untouched", async () => {
     const { deps, root, snapshots } = setup();
     writeFileSync(join(root, "a.ts"), "const x = 1;\n");

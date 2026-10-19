@@ -98,6 +98,8 @@ export const en = {
   "tool.edit.hunks_applied": "applied {count} hunk(s)",
   "tool.edit.bad_input": "edit rejected: pass either oldText+newText or a non-empty hunks array, not both",
   "tool.edit.empty_hunk": "edit rejected: hunk {index} has empty oldText",
+  "tool.edit.no_change":
+    "edit rejected: it would leave {path} as it is, so nothing was written. Read the lines again and send the oldText and newText that differ.",
   "tool.bash.background_started": "started background process {id} (pid {pid})",
   "tool.bash.background_refused":
     "background: true is not available with this sandbox backend: the command would run outside the sandbox. Run it in the foreground.",

@@ -39,6 +39,8 @@ export interface ToolContext {
   onProgress?: (message: string) => void;
   /** Variables that plugins add to the environment of a shell command (the `shell.env` event). */
   env?: Record<string, string>;
+  /** allow-all: a shell command runs with the user's rights, outside the sandbox of the OS. */
+  hostShell?: boolean;
 }
 
 export interface ToolResult {

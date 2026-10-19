@@ -231,6 +231,7 @@ export function createBashTool(
       }
 
       // The OS sandbox wraps a command that then runs on the host: the host path gives it the detach and the kill.
+      // Under allow-all it runs unwrapped, as in Claude Code's bypass mode: live, `/tmp` did not last between commands.
       const wrapHeld = (
         deps.sandbox as {
           wrapHeld?: (
@@ -247,7 +248,7 @@ export function createBashTool(
         if (wrapHeld === undefined && asContainerExecBackend(deps.sandbox) !== undefined) {
           return { content: t("tool.bash.background_refused"), isError: true as const };
         }
-        const held = wrapHeld?.call(deps.sandbox, argv, cwd, network);
+        const held = ctx.hostShell ? undefined : wrapHeld?.call(deps.sandbox, argv, cwd, network);
         let info: ReturnType<typeof processManager.spawn>;
         try {
           info = processManager.spawn(held?.argv ?? argv, {
@@ -320,7 +321,7 @@ export function createBashTool(
         return runContainerExec(container, argv, cwd, ctx, timeout, finish, network);
       }
 
-      const held = wrapHeld?.call(deps.sandbox, argv, cwd, network);
+      const held = ctx.hostShell ? undefined : wrapHeld?.call(deps.sandbox, argv, cwd, network);
       const proc = Bun.spawn(held?.argv ?? argv, {
         windowsHide: true,
         cwd,

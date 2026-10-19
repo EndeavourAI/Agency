@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Under `--permission-mode allow-all`, a `bash` command runs outside the sandbox of the operating system**, with
+  the user's rights, as in Claude Code's bypass mode and Codex's `--yolo`. Under bubblewrap or Seatbelt, allow-all
+  still left everything outside the workspace read-only (`apt install`, `/etc`, `/usr/local`) and gave each command
+  its own `/tmp`: in a live headless run on Linux, a file written to `/tmp` was gone in the next command. Other modes
+  keep the sandbox; a Docker sandbox that the config names stays.
 - **`-p` output keeps an answer that a harness note sent back**: when the untested-edits note made the model check its
   work, `result` (and text output) held only the reply to the note. In a live run on Linux, the model reported the
   status code 200, and `.result` said only "No project checks apply". The answers of the run now come first, then

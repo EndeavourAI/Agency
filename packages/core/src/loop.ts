@@ -65,6 +65,8 @@ export interface ToolSpec<Input = Record<string, unknown>> extends ToolDefinitio
       onProgress?: (message: string) => void;
       /** Variables that plugins add to the environment of a shell command (the `shell.env` event). */
       env?: Record<string, string>;
+      /** allow-all: a shell command runs with the user's rights, outside the sandbox of the OS. */
+      hostShell?: boolean;
       /** Pre-approves tools for the rest of the turn, as rules of Claude Code: the `allowed-tools` of a skill. */
       grantTools?: (rules: string[]) => void;
       /** Runs another tool of this turn through the same checks as a call of the model. */
@@ -226,6 +228,8 @@ export interface RunTurnOptions {
   provider?: string;
   /** Depth of nested task invocations (0 for root, incremented per child). */
   taskDepth?: number;
+  /** allow-all: shell commands run with the user's rights, outside the sandbox of the OS. */
+  hostShell?: boolean;
   /** Task category for cheap-model routing (title, summary, background go cheap). */
   taskKind?: string;
   /** Cheap model id; when set with an eligible taskKind the turn routes cheap. */
@@ -1386,6 +1390,7 @@ async function executeOne(
     requestApproval: options.requestApproval,
     taskDepth: options.taskDepth,
     env: shellEnv,
+    hostShell: options.hostShell,
     grantTools: (rules: string[]) => {
       const grants = turnGrants.get(options);
       if (grants === undefined) turnGrants.set(options, [...rules]);

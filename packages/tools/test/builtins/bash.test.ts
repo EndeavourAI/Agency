@@ -223,6 +223,34 @@ describe("createBashTool", () => {
     expect(manager.list()).toHaveLength(1);
   });
 
+  test("under allow-all a command runs outside the OS sandbox, in the foreground and the background", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agency-bash-test-"));
+    dirs.push(root);
+    const wrapped: string[][] = [];
+    const osLike = Object.assign(new SandboxBoundary(root), {
+      exec: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+      wrapHeld: (argv: string[]) => {
+        wrapped.push(argv);
+        return { argv, release: () => {} };
+      },
+    });
+    const manager = new ProcessManager();
+    managers.push(manager);
+    const deps: ToolDeps = {
+      identity: { type: "user" },
+      capabilities: { ...FULL_CAPABILITIES, pathScopes: [root] },
+      sandbox: osLike,
+    };
+    const tool = createBashTool(deps, resolveShell(process.platform), { cwd: root }, manager);
+    const ran = await tool.handler({ command: "echo on-host" }, { signal, hostShell: true });
+    expect(ran.content).toContain("on-host");
+    await tool.handler({ command: "echo on-host", background: true }, { signal, hostShell: true });
+    expect(manager.list()).toHaveLength(1);
+    expect(wrapped).toHaveLength(0);
+    await tool.handler({ command: "echo sandboxed" }, { signal });
+    expect(wrapped).toHaveLength(1);
+  });
+
   test("a long command under the OS sandbox moves to the background as on the host, with the sandbox's notes", async () => {
     const root = mkdtempSync(join(tmpdir(), "agency-bash-test-"));
     dirs.push(root);

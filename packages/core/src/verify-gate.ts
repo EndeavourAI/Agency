@@ -1,3 +1,4 @@
+import { readdirSync } from "node:fs";
 import { type AgencyEvents, type EventBus, HookBlock } from "./events.ts";
 
 const EDIT_TOOLS = new Set(["edit", "write", "notebook_edit"]);
@@ -7,6 +8,18 @@ const DOC_FILE = /\.(md|mdx|txt|rst|adoc|html?|css|csv|svg)$/i;
 const CHECK_COMMAND =
   /\b(tests?|spec|pytest|jest|vitest|mocha|tsc|typecheck|type-check|lint|eslint|biome|ruff|flake8|mypy|pyright|clippy|check|build|compile|make|gradlew?|mvn|cargo|go\s+(?:test|vet|build)|dotnet|ctest|phpunit|rspec)\b/i;
 const LISTED_FILES = 5;
+/** A name at the root of a workspace that has checks: a project file, a test folder or a test file. */
+const CHECK_INFRA =
+  /^(package\.json|pyproject\.toml|setup\.(py|cfg)|tox\.ini|pytest\.ini|noxfile\.py|[Mm]akefile|GNUmakefile|Cargo\.toml|go\.mod|pom\.xml|build\.gradle(\.kts)?|CMakeLists\.txt|.+\.(csproj|sln)|Gemfile|composer\.json|deno\.jsonc?|tsconfig\.json|tests?|spec|__tests__|test_.+\.py|.+_test\.\w+|.+\.(test|spec)\.\w+)$/;
+
+/** True when the root of `root` has something to check with; unreadable counts as yes. */
+function hasChecks(root: string): boolean {
+  try {
+    return readdirSync(root).some((name) => CHECK_INFRA.test(name));
+  } catch {
+    return true;
+  }
+}
 
 /** A command that runs `path` as a program: `python3 fetch.py`, `./run.sh`. Reading it (`cat`) is no run. */
 function runsFile(command: string, path: string): boolean {
@@ -30,7 +43,7 @@ export function verifyReminder(files: readonly string[]): string {
  * Verify before done, as a harness rule: a turn that changed code since its last passing check is sent back once
  * before it ends. Measured on SWT-Bench, keeping only patches that pass a check roughly doubled precision.
  */
-export function attachVerifyGate(bus: EventBus): () => void {
+export function attachVerifyGate(bus: EventBus, root?: string): () => void {
   // The files that each turn changed since its last passing check.
   const changed = new Map<string, Set<string>>();
   const reminded = new Set<string>();
@@ -58,7 +71,13 @@ export function attachVerifyGate(bus: EventBus): () => void {
     // A worker reports to its lead, which checks the whole change.
     if (p.turnId === undefined || p.taskDepth > 0) return;
     const files = changed.get(p.turnId);
-    if (files === undefined || files.size === 0 || reminded.has(p.turnId)) {
+    // Live: in 6 of 12 headless runs with no tests or project file, the model spent calls to find no check.
+    if (
+      files === undefined ||
+      files.size === 0 ||
+      reminded.has(p.turnId) ||
+      (root !== undefined && !hasChecks(root))
+    ) {
       changed.delete(p.turnId);
       reminded.delete(p.turnId);
       return;

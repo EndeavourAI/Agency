@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { attachVerifyGate, EventBus, HookBlock } from "../src/index.ts";
 
 const after = (bus: EventBus, tool: string, input: Record<string, unknown>, isError = false) =>
@@ -66,4 +69,22 @@ test("a passing run of a changed script checks that script, and only that one", 
   expect(sent).toHaveLength(1);
   expect(sent[0]).toContain("src/lib.py");
   expect(sent[0]).not.toContain("run.sh");
+});
+
+test("a workspace with no tests and no project file gets no reminder: no check applies there", async () => {
+  // Live: in 6 of 12 headless runs on Linux the model spent one to three calls finding that no check existed.
+  const bare = mkdtempSync(join(tmpdir(), "agency-gate-bare-"));
+  const bus = new EventBus();
+  attachVerifyGate(bus, bare);
+  after(bus, "write", { path: "fetch.py" });
+  expect(await stop(bus)).toEqual([]);
+
+  const project = mkdtempSync(join(tmpdir(), "agency-gate-project-"));
+  writeFileSync(join(project, "pyproject.toml"), "");
+  const checked = new EventBus();
+  attachVerifyGate(checked, project);
+  after(checked, "write", { path: "fetch.py" });
+  expect(await stop(checked)).toHaveLength(1);
+  rmSync(bare, { recursive: true });
+  rmSync(project, { recursive: true });
 });

@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **No verify reminder in a workspace with nothing to check**: no test file or folder and no project file
+  (`package.json`, `pyproject.toml`, `Makefile`, `Cargo.toml`, `go.mod` and the like) at its root. In 6 of 12 live
+  headless runs on Linux the reminder fired in such a folder, and the model spent one to three calls (up to a
+  quarter of a short task's cost) to find that no check existed. Terminal-Bench adds its tests after the run.
 - **The `bash` tool says that a background process stops when the session ends**, and that one which must
   outlive it starts with `nohup ... &`. A live headless run (Sonnet 5.5) started a server that the task needed
   after the run with `background: true`; it lived on only because the command also used `setsid`.

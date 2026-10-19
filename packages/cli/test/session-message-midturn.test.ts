@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolSpec } from "@agency/core";
@@ -170,6 +170,8 @@ describe("messages the harness writes mid-turn", () => {
       handler: async () => ({ content: "written" }),
     };
     const workspaceRoot = mkdtempSync(join(tmpdir(), "agency-origin-ws-"));
+    // A project with checks: a bare folder gets no reminder.
+    writeFileSync(join(workspaceRoot, "package.json"), "{}");
     const sessionsDir = mkdtempSync(join(tmpdir(), "agency-origin-sess-"));
     dirs.push(workspaceRoot, sessionsDir);
     const daemon = await createAgentDaemon({

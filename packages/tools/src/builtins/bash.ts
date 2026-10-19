@@ -230,17 +230,19 @@ export function createBashTool(
         }
       }
 
+      // The OS sandbox wraps a command that then runs on the host: the host path gives it the detach and the kill.
+      const wrapHeld = (
+        deps.sandbox as {
+          wrapHeld?: (
+            argv: string[],
+            cwd?: string,
+            network?: boolean,
+          ) => { argv: string[]; release: () => void; explain?: (output: string) => string[] };
+        }
+      ).wrapHeld;
+
       if (input.background) {
         const argv = [shell.command, ...shell.buildArgs(input.command)];
-        const wrapHeld = (
-          deps.sandbox as {
-            wrapHeld?: (
-              argv: string[],
-              cwd?: string,
-              network?: boolean,
-            ) => { argv: string[]; release: () => void };
-          }
-        ).wrapHeld;
         // A backend that runs commands elsewhere must hold this one too: on the host it has the user's rights.
         if (wrapHeld === undefined && asContainerExecBackend(deps.sandbox) !== undefined) {
           return { content: t("tool.bash.background_refused"), isError: true as const };
@@ -313,12 +315,13 @@ export function createBashTool(
           : { content: truncateResult(combined) };
       };
 
-      const container = asContainerExecBackend(deps.sandbox);
+      const container = wrapHeld === undefined ? asContainerExecBackend(deps.sandbox) : undefined;
       if (container !== undefined) {
         return runContainerExec(container, argv, cwd, ctx, timeout, finish, network);
       }
 
-      const proc = Bun.spawn(argv, {
+      const held = wrapHeld?.call(deps.sandbox, argv, cwd, network);
+      const proc = Bun.spawn(held?.argv ?? argv, {
         windowsHide: true,
         cwd,
         env: { ...modelCommandEnv(), ...ctx.env },
@@ -326,6 +329,7 @@ export function createBashTool(
         stderr: "pipe",
       });
       trackJob(proc.pid, proc.exited);
+      if (held !== undefined) void proc.exited.then(held.release, held.release);
 
       // Reads start immediately and stay in flight across the race below:
       // when the kill lands the pipes close and they settle with whatever
@@ -482,6 +486,9 @@ ${notice}`
           };
         }
         let outcome: { aborted: boolean; stdout: string; stderr: string; exitCode?: number } = settled;
+        const notes = held?.explain?.(`${outcome.stdout}\n${outcome.stderr}`) ?? [];
+        if (notes.length > 0)
+          outcome = { ...outcome, stderr: [outcome.stderr.trimEnd(), ...notes].filter(Boolean).join("\n") };
         // Abort intent wins over a simultaneous clean exit. On Linux the
         // killed shell's wrapper tail can beat SIGKILL to a marker-printed
         // exit 0 (or the abort signal can land just as the pipes close), so

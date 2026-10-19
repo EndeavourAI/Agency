@@ -223,6 +223,41 @@ describe("createBashTool", () => {
     expect(manager.list()).toHaveLength(1);
   });
 
+  test("a long command under the OS sandbox moves to the background as on the host, with the sandbox's notes", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agency-bash-test-"));
+    dirs.push(root);
+    let released = false;
+    const osLike = Object.assign(new SandboxBoundary(root), {
+      // Live: under bubblewrap a `find /` held the turn for 598 s, as this path has no detach.
+      exec: () => new Promise<never>(() => {}),
+      wrapHeld: (argv: string[]) => ({
+        argv,
+        release: () => {
+          released = true;
+        },
+        explain: (output: string) =>
+          output.includes("denied-here") ? ["[sandbox: that path is read-only]"] : [],
+      }),
+    });
+    const manager = new ProcessManager();
+    managers.push(manager);
+    const deps: ToolDeps = {
+      identity: { type: "user" },
+      capabilities: { ...FULL_CAPABILITIES, pathScopes: [root] },
+      sandbox: osLike,
+    };
+    const tool = createBashTool(deps, resolveShell(process.platform), { cwd: root }, manager, 300);
+    const detached = await tool.handler({ command: `node -e "setTimeout(()=>{}, 5000)"` }, { signal });
+    expect(detached.content).toContain("moved to the background");
+    expect(manager.list()).toHaveLength(1);
+
+    const waiting = createBashTool(deps, resolveShell(process.platform), { cwd: root }, manager);
+    const explained = await waiting.handler({ command: "echo denied-here" }, { signal });
+    expect(explained.content).toContain("[sandbox: that path is read-only]");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(released).toBe(true);
+  }, 10_000);
+
   test("aborting the signal kills the running process", async () => {
     const { tool } = setup();
     const controller = new AbortController();

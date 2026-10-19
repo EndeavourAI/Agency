@@ -469,16 +469,17 @@ export class OsSandboxBackend implements SandboxBackend {
     return filterFile;
   }
 
-  /** `wrap` for a command that outlives the call: call `release` once it exits, which removes its placeholders. */
+  /** `wrap` for a command run on the host: `release` once it exits removes its placeholders; `explain` names a denial. */
   wrapHeld(
     argv: string[],
     cwd: string = this.root,
     network = false,
-  ): { argv: string[]; release: () => void } {
+  ): { argv: string[]; release: () => void; explain: (output: string) => string[] } {
     const placed = this.placeholders();
     return {
       argv: this.wrap(argv, cwd, network, placed),
       release: () => removePlaceholders(this.root, placed),
+      explain: (output) => this.violations(output, network),
     };
   }
 

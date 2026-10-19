@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Under the sandbox of the operating system, a long `bash` command moves to the background after 120 seconds**, as
+  the tool's description says and as it does with no OS sandbox: on Linux with bubblewrap and on macOS, a command
+  ran through a path with no detach, so it held the turn until it ended. In a live headless run on Linux, a model's
+  `find /` held the turn for 598 seconds. The command now runs on the host in the sandbox's wrapper, with the same
+  kill, partial output and detach as an unsandboxed one, and the note that names a sandbox denial is kept.
 - **A turn reports its cost, priced request by request**, when the provider reports no charge (Anthropic): the
   result's `usage.costUsd`, so `agency -p --format json` gives `total_cost_usd` as `claude -p` does, and the session's
   usage entry takes that cost. In a live run of Claude Haiku 5.5 on Linux the JSON had no `total_cost_usd`, though the

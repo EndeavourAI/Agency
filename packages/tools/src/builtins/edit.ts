@@ -166,6 +166,8 @@ export function createEditTool(
         }
         snapshots.capture(resolved, current, ctx.turnId);
         writeFileSync(resolved, outcome.content, "utf8");
+        // Live: a write after three edits of a file warned that the file was never read.
+        options?.readState?.mark(resolved);
         await runFormatter(formatter, resolved);
         snapshots.recordAfter(resolved);
         const shownPath = projectPath(deps.sandbox.resolvePath("."), resolved, input.path);

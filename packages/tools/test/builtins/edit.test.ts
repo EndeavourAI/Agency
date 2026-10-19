@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FULL_CAPABILITIES, SandboxBoundary } from "@agency/guard";
 import { createEditTool } from "../../src/builtins/edit.ts";
+import { createWriteTool } from "../../src/builtins/write.ts";
 import type { ToolDeps } from "../../src/contract.ts";
+import { ReadState } from "../../src/read-state.ts";
 import { SnapshotStore } from "../../src/snapshot.ts";
 
 const dirs: string[] = [];
@@ -36,6 +38,17 @@ describe("createEditTool", () => {
 
     expect(result.isError).toBeFalsy();
     expect(readFileSync(join(root, "a.ts"), "utf8")).toBe("const x = 2;\n");
+  });
+
+  test("an edited file counts as read: a later write of it gets no unread note", async () => {
+    const { deps, root, snapshots } = setup();
+    writeFileSync(join(root, "a.ts"), "const x = 1;\n");
+    const readState = new ReadState();
+    const edit = createEditTool(deps, snapshots, {}, { readState });
+    await edit.handler({ path: "a.ts", oldText: "const x = 1;", newText: "const x = 2;" }, { signal });
+    const write = createWriteTool(deps, snapshots, {}, { readState });
+    const result = await write.handler({ path: "a.ts", content: "const x = 3;\n" }, { signal });
+    expect(result.content).not.toContain("never read");
   });
 
   test("an edit that would change nothing is refused, not reported as done", async () => {

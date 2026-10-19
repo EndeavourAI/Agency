@@ -8,6 +8,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A file that `edit` changed counts as read**, as the option of the tool said: a later `write` of it no longer
+  warns that the file "was never read this session" (seen live after three edits of one file).
 - **`edit` keeps a conflict marker that the file has as part of `oldText`**: a trailing `>>>>>>> feature` was taken
   as junk that a model adds and stripped before matching, so the edit removed the lines above it and left the
   marker in the file. In a live merge task on Linux this happened three times in a row, five extra calls and an

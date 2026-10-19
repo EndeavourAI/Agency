@@ -1,3 +1,4 @@
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Config, dataDir, type ProviderConfig, parseModelRef } from "@agency/core";
 import type { HttpClient } from "@agency/net";
@@ -22,13 +23,32 @@ export interface ModelCatalog {
 
 /** A turn waits at most this long for the model list. */
 const LEARN_TIMEOUT_MS = 4000;
+/** A saved list older than this is read again in the background. */
+const LEARNED_TTL_MS = 86_400_000;
+
+// Live: each headless run's new daemon waited 0.23 to 0.32 s for OpenRouter's 787 KB list before its first request.
+const learnedPath = (): string => join(dataDir(), "cache", "openrouter-models.json");
+function savedModels(): ModelInfo[] {
+  try {
+    return (JSON.parse(readFileSync(learnedPath(), "utf8")) as { models: ModelInfo[] }).models;
+  } catch {
+    return [];
+  }
+}
+function savedIsFresh(): boolean {
+  try {
+    return Date.now() - statSync(learnedPath()).mtimeMs < LEARNED_TTL_MS;
+  } catch {
+    return false;
+  }
+}
 
 export function createModelCatalog(providers: Record<string, ProviderConfig>, config: Config): ModelCatalog {
   let base: readonly ModelInfo[] | undefined;
   let mergedCatalog: ModelInfo[] | undefined;
   const ensureCatalog = (): ModelInfo[] => {
     if (!mergedCatalog) {
-      base ??= loadCachedCatalog(join(dataDir(), "cache"))?.models ?? BUILTIN_MODELS;
+      base ??= [...(loadCachedCatalog(join(dataDir(), "cache"))?.models ?? BUILTIN_MODELS), ...savedModels()];
       mergedCatalog = mergeCatalogWithConfig(base, providers);
     }
     return mergedCatalog;
@@ -52,15 +72,22 @@ export function createModelCatalog(providers: Record<string, ProviderConfig>, co
   // One read for the life of the daemon. After a failure the defaults stay: a turn must not wait a second time.
   let learned: Promise<void> | undefined;
   const learnModel = (provider: string, model: string, http: HttpClient): Promise<void> => {
-    if (provider !== "openrouter" || catalogModel(provider, model)) return Promise.resolve();
+    if (provider !== "openrouter") return Promise.resolve();
+    const known = catalogModel(provider, model) !== undefined;
+    if (known && savedIsFresh()) return Promise.resolve();
     const baseUrl = providers.openrouter?.baseUrl ?? GATEWAY_BASE_URLS.openrouter ?? "";
     learned ??= fetchOpenRouterModels(http, baseUrl, AbortSignal.timeout(LEARN_TIMEOUT_MS))
       .then((models) => {
-        base = [...(base ?? BUILTIN_MODELS), ...models];
+        base = [...(loadCachedCatalog(join(dataDir(), "cache"))?.models ?? BUILTIN_MODELS), ...models];
         mergedCatalog = undefined;
+        try {
+          mkdirSync(join(dataDir(), "cache"), { recursive: true });
+          writeFileSync(learnedPath(), JSON.stringify({ savedAt: new Date().toISOString(), models }));
+        } catch {}
       })
       .catch(() => {});
-    return learned;
+    // A known model does not wait for a stale list to be read again.
+    return known ? Promise.resolve() : learned;
   };
   return { listModels: () => ensureCatalog(), catalogModel, resolveAgentModel, learnModel };
 }

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { codeRunnerReadPaths, SessionStore, type ToolSpec, TraceRecorder } from "@agency/core";
+import { codeRunnerReadPaths, dataDir, SessionStore, type ToolSpec, TraceRecorder } from "@agency/core";
 import { createFileTrustStore, scriptSandboxAvailable } from "@agency/guard";
 import type { HttpClient } from "@agency/net";
 import type { ModelInfo, ProviderAdapter, StreamEvent } from "@agency/providers";
@@ -1388,6 +1388,7 @@ describe("createAgentDaemon", () => {
   });
 
   test("run_turn takes the limits of an openrouter model from the provider's model list, with one read", async () => {
+    rmSync(join(dataDir(), "cache", "openrouter-models.json"), { force: true });
     const maxTokens: Array<number | undefined> = [];
     const capturingAdapter: ProviderAdapter = {
       family: "fake",
@@ -1428,6 +1429,8 @@ describe("createAgentDaemon", () => {
   });
 
   test("run_turn keeps the default limits when the model list cannot be read", async () => {
+    // A daemon keeps the list it read for the next ones; this one must start with none.
+    rmSync(join(dataDir(), "cache", "openrouter-models.json"), { force: true });
     let maxTokens: number | undefined;
     const capturingAdapter: ProviderAdapter = {
       family: "fake",

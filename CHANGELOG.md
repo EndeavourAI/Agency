@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The OpenRouter model list that a daemon reads is kept in the cache**, so the next daemon knows the model at
+  once: before, each daemon read the whole list (787 KB, 0.23 to 0.32 s) before the first request of a model that
+  the built-in catalog lacks, and the built-in catalog has no OpenRouter model. Every headless run starts a daemon:
+  in the log, the first turn of a new daemon waited a median 249 ms from its start to the first model call (189
+  runs), a turn of a running daemon 81 ms. A list older than a day is read again in the background, and a model the
+  saved list lacks still waits for the read, as before.
 - **A session whose cache reads at a tenth of the input price or less prunes in 20K-token batches**, not 10K: the
   batch now follows the cache read price of the model in the catalog, as well as what the first three requests
   cached. On `poolside/laguna-s-2.1` through OpenRouter (input $0.09/M, cache read $0.009/M), uncached input was 57%

@@ -16,8 +16,13 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 - **Builds for Alpine and other musl systems**: releases add `agency-linux-x64-musl` and
   `agency-linux-arm64-musl`, and `install.sh` picks one on a musl system. The glibc build does not start on Alpine
   (many container images, some Terminal-Bench tasks). The musl build needs `libstdc++` and `libgcc`
-  (`apk add libstdc++ libgcc`) and is compiled without bytecode: Bun 1.4's musl runtime aborts on its own bytecode.
-  Live on Alpine 3.22: the build ran `-p` and fixed a bug.
+  (`apk add libstdc++ libgcc`). Live on Alpine 3.22: the build ran `-p` and fixed a bug.
+- **A binary built on another OS starts**: `scripts/build.ts` compiled bytecode into every target, but bytecode
+  made on another OS aborts at start (a JavaScriptCore assertion): each Linux binary built on Windows crashed on
+  `--version`, found by the first Terminal-Bench run. Bytecode now goes only into targets of the build machine's
+  OS; a target of another OS starts about 45 ms slower. Another CPU or libc is fine: a linux-arm64 build made on
+  x64 ran under qemu, and a musl build made on glibc ran on Alpine. Release builds were made on their own OS and
+  were not affected.
 - **An edit or write with a line that stands for left-out code is refused**: a model that sends
   `// ... rest of code ...` or `# ... existing code ...` in place of the code would delete that code. `edit`,
   `write` and `apply_patch` now refuse such a line (one the file did not have already) and say why, as Gemini CLI

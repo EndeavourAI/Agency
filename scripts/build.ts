@@ -104,8 +104,8 @@ async function compile(target: string, outfile: string, version: string): Promis
       "--compile",
       "--minify",
       // Each start, also each command of the Windows sandbox helper, skips the parse: about 45 ms less, 9 MB more.
-      // Bun 1.4's musl build aborts on its own bytecode (a JSC assertion, live on Alpine 3.22).
-      ...(target.endsWith("-musl") ? [] : ["--bytecode"]),
+      // Bytecode made on another OS aborts at start (a JSC assertion: Windows-built Linux binaries); another CPU is fine.
+      ...(target.split("-")[1] === currentTarget().split("-")[1] ? ["--bytecode"] : []),
       "--format=esm",
       "--sourcemap=none",
       "--define",

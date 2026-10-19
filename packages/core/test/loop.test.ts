@@ -268,7 +268,7 @@ describe("runTurn", () => {
     expect(result.messages[0]!.content[0]).toMatchObject({ name: "edit", input: { path: "a.ts" } });
   });
 
-  test("a Claude model is offered Claude Code's tool names and sees its history in them", async () => {
+  test("under toolDialect claude-code the model gets Claude Code's tool names, in its history too", async () => {
     const sent: { tools: string[]; call?: unknown }[] = [];
     const base = toolThenDoneAdapter("Edit", { file_path: "a.ts", old_string: "x", new_string: "y" });
     const adapter: ProviderAdapter = {
@@ -295,7 +295,11 @@ describe("runTurn", () => {
       apiKey: "key",
       session: [],
     };
-    await runTurn(adapter, new Scheduler(), noopHttp, { ...options, model: "claude-haiku-5-5" });
+    await runTurn(adapter, new Scheduler(), noopHttp, {
+      ...options,
+      model: "claude-haiku-5-5",
+      toolDialect: "claude-code",
+    });
     expect(sent[0]!.tools).toEqual(["Edit"]);
     expect(sent[1]!.call).toMatchObject({ name: "Edit", input: { file_path: "a.ts", old_string: "x" } });
 

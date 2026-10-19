@@ -242,18 +242,15 @@ const APPLY_PATCH = {
 
 export type ToolDialect = "native" | "claude-code" | "codex";
 
-/**
- * Anthropic trains Claude on Claude Code; Moonshot, Z.ai, MiniMax, Qwen and DeepSeek test their coding models in it
- * and serve an Anthropic API for it. Other models get the names here.
- */
-const CLAUDE_CODE_MODELS = /claude|kimi|glm|minimax|qwen[^/]*coder|deepseek/i;
-
 /** OpenAI trains GPT-5 and its codex models on `apply_patch`; gpt-oss and older GPTs are not (Codex, OpenCode). */
 const CODEX_MODELS = /gpt-[5-9]|codex/i;
 
+/**
+ * "auto" does not pick "claude-code": on 13 bench tasks Haiku 5.5 (148 runs) and MiniMax M3.1 (12) solved as many
+ * with the names here, in 2 to 6% fewer calls.
+ */
 export function dialectFor(model: string, configured: ToolDialect | "auto" = "auto"): ToolDialect {
   if (configured !== "auto") return configured;
-  if (CLAUDE_CODE_MODELS.test(model)) return "claude-code";
   return CODEX_MODELS.test(model) && !/oss/i.test(model) ? "codex" : "native";
 }
 

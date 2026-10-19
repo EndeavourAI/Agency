@@ -17,20 +17,20 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   or delete), so the permission rules see each path; it runs as an `edit` of that file, with its snapshot, undo,
   formatter and verify gate. A patch of several files is refused with the list of files, to send one call for each.
   `toolDialect: "codex"` gives this form to any model.
-- **Claude and the models tested in Claude Code see Claude Code's tool names** (`toolDialect`, new, default
-  `"auto"`): for a model id with `claude`, `kimi`, `glm`, `minimax`, `qwen…coder` or `deepseek`, `read`, `write`,
-  `edit`, `bash`, `grep` and `glob` go to the model as `Read`, `Write`, `Edit` (`file_path`, `old_string`,
-  `new_string`, `replace_all`, `edits`), `Bash` (`run_in_background`), `Grep` (`-i`) and `Glob`, in the tool list,
-  in the calls of the history and in the errors that name an argument. Anthropic trains Claude on these; Moonshot,
-  Z.ai, MiniMax and Qwen test their coding models in Claude Code. The session, hooks and permission rules keep
-  this harness's names, and the names follow the model of each request, so a fallback of another family gets its
-  own. `"native"` or `"claude-code"` fixes one for all models.
+- **Tool names by model** (`toolDialect`, new, default `"auto"`): `"claude-code"` gives `read`, `write`, `edit`,
+  `bash`, `grep` and `glob` to the model as `Read`, `Write`, `Edit` (`file_path`, `old_string`, `new_string`,
+  `replace_all`, `edits`), `Bash` (`run_in_background`), `Grep` (`-i`) and `Glob`, in the tool list, in the calls
+  of the history and in the errors that name an argument. The session, hooks and permission rules keep this
+  harness's names, and the names follow the model of each request, so a fallback of another family gets its own.
+  `"auto"` does not pick it for Claude or the models tested in Claude Code: on the 13 bench tasks Haiku 5.5 (148
+  runs) and MiniMax M3.1 (12, free) solved every task with either names, and with this harness's names in 2 to 6%
+  fewer calls.
 - **Tool calls in the names of other harnesses run**: a model trained on Claude Code, Codex, Gemini CLI, OpenCode
   or Kimi CLI sends that harness's tool and argument names (`Edit` with `file_path`/`old_string`, `read_file`,
   `exec_command` with `cmd`, Codex's `shell` with an argv, `MultiEdit` with `edits`). Each call is mapped to the
   names here when it arrives, so the history, the permission rules and the verify gate see one form. Arguments
   that a model sent as the wrong type are converted from the schema: an array of edits sent as a JSON string
-  (Opus 4.6, GLM-5.1 and Haiku 5.5 do this), a number or a boolean as a string, one edit object where an array
+  (Pi records this of Opus 4.6 and GLM-5.1), a number or a boolean as a string, one edit object where an array
   goes, and an optional argument sent as null.
 - **The live bench has eight terminal tasks and compares builds**: `packages/eval/bench` gains `tb-*` tasks in the
   shape of Terminal-Bench (a fetch that needs the network, a server that must outlive the run, a stopped git

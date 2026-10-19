@@ -110,20 +110,12 @@ test("a name of this harness wins over its alias, and an unknown tool passes as 
 });
 
 test("the dialect follows the model id, and a configured one wins", () => {
-  for (const model of [
-    "claude-haiku-5-5",
-    "anthropic/claude-sonnet-5-5",
-    "z-ai/glm-4.6",
-    "moonshotai/kimi-k2",
-    "qwen/qwen3-coder:free",
-    "minimax/minimax-m2",
-  ])
-    expect(dialectFor(model)).toBe("claude-code");
   for (const model of ["gpt-5.1", "openai/gpt-5-codex", "gpt-5.1-codex-mini"])
     expect(dialectFor(model)).toBe("codex");
-  for (const model of ["openai/gpt-oss-120b", "gpt-4.1", "gemini-3-pro", "qwen/qwen3-235b", "llama-4"])
+  for (const model of ["claude-haiku-5-5", "z-ai/glm-4.6", "openai/gpt-oss-120b", "gpt-4.1", "gemini-3-pro"])
     expect(dialectFor(model)).toBe("native");
-  expect(dialectFor("claude-haiku-5-5", "native")).toBe("native");
+  expect(dialectFor("claude-haiku-5-5", "claude-code")).toBe("claude-code");
+  expect(dialectFor("gpt-5.1", "native")).toBe("native");
 });
 
 test("Claude Code's dialect renames the tools, their schemas and the history, and comes back as ours", () => {

@@ -62,6 +62,9 @@ describe("createReadTool", () => {
       { start_line: 2, end_line: 3 },
       { startLine: 2, endLine: 3 },
       { offset: 2, end: 3 },
+      // Live: a read with these names sent the whole 45K head of loop.ts, five times in one session.
+      { start_offset: 2, end_offset: 3 },
+      { start_index: 2, end_index: 3 },
     ]) {
       const result = await tool.handler({ path: "a.txt", ...range } as { path: string }, { signal });
       expect(result.content).toBe("2\ttwo\n3\tthree");

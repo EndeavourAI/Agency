@@ -267,16 +267,30 @@ async function searchInProcess(
   return { text: out.join("\n"), capped: false };
 }
 
+type GrepInput = {
+  pattern: string;
+  path?: string;
+  glob?: string;
+  caseInsensitive?: boolean;
+  context?: number;
+  type?: string;
+  filesOnly?: boolean;
+};
+
+/** Live: `case_insensitive`, `-i`, `output_mode: "files_with_matches"` and `extension` were ignored, so the result held every match line. */
+function withNamesOfOtherHarnesses(input: GrepInput & Record<string, unknown>): GrepInput {
+  const mode = input.output_mode ?? input.outputMode;
+  const extension = typeof input.extension === "string" ? input.extension.replace(/^\*?\./, "") : "";
+  return {
+    ...input,
+    caseInsensitive: input.caseInsensitive ?? (input.case_insensitive === true || input["-i"] === true),
+    filesOnly: input.filesOnly ?? (mode === "files_with_matches" || mode === "filesWithMatches"),
+    ...(input.glob === undefined && extension !== "" ? { glob: `*.${extension}` } : {}),
+  };
+}
+
 export function createGrepTool(deps: ToolDeps): ToolSpec {
-  const spec: ToolSpec<{
-    pattern: string;
-    path?: string;
-    glob?: string;
-    caseInsensitive?: boolean;
-    context?: number;
-    type?: string;
-    filesOnly?: boolean;
-  }> = {
+  const spec: ToolSpec<GrepInput> = {
     name: "grep",
     description:
       "Searches file contents for a regex pattern (ripgrep syntax; `a|b` matches either), returning " +
@@ -309,7 +323,8 @@ export function createGrepTool(deps: ToolDeps): ToolSpec {
       return `${label}: ${matches} ${matches === 1 ? "match" : "matches"} (${clip(result.content)})`;
     },
 
-    async handler(input, ctx) {
+    async handler(given, ctx) {
+      const input = withNamesOfOtherHarnesses(given);
       const searchRoot = deps.sandbox.resolvePath(input.path ?? ".");
       requirePathScope(deps.identity, deps.capabilities, searchRoot);
 

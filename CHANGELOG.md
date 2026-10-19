@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`read` and `grep` take the argument names that models bring from other harnesses**: `read` takes
+  `start_offset`/`end_offset` and `start_index`/`end_index` as a line range, and `grep` takes `case_insensitive`
+  and `-i`, `output_mode: "files_with_matches"` (or `outputMode: "filesWithMatches"`) and `extension`. Each was
+  ignored before: in 584 stored sessions, 10 reads with such a range got the whole file (one research session sent
+  the 45K head of `loop.ts` for a ten-line slice, and five such reads sent 136K characters), and greps
+  for a file list or one extension got every match line of the project (up to 20K characters).
 - **A `grep` past its 200-match cap shows the first 100 matches and then the path of each other file that
   matches**, from a second search with `filesOnly`, instead of 200 match lines that stop partway through the
   files. Claude Code's Grep lists files by default for the same reason. In 112 stored research sessions, 112 of 714

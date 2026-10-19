@@ -38,6 +38,29 @@ describe("createGrepTool", () => {
     expect(result.content).toContain("\n2:const");
   });
 
+  test("takes the argument names of other harnesses for case, file list and extension", async () => {
+    const { deps, root } = setup();
+    writeFileSync(join(root, "a.ts"), "Target\n");
+    writeFileSync(join(root, "b.py"), "target\n");
+    const tool = createGrepTool(deps);
+    const run = (input: Record<string, unknown>) =>
+      tool.handler({ pattern: "target", ...input } as { pattern: string }, { signal });
+
+    // Live: each was ignored, and a call for a file list or one extension got every match line of the project.
+    const insensitive = await run({ case_insensitive: true, glob: "*.ts" });
+    if (isMissingBinary(insensitive.content)) return;
+    expect(insensitive.content).toContain("Target");
+    expect((await run({ "-i": true, glob: "*.ts" })).content).toContain("Target");
+    for (const mode of [{ output_mode: "files_with_matches" }, { outputMode: "filesWithMatches" }])
+      expect((await run({ ...mode, caseInsensitive: true })).content.split("\n").sort()).toEqual([
+        "a.ts",
+        "b.py",
+      ]);
+    const extension = await run({ extension: "py" });
+    expect(extension.content).toContain("b.py");
+    expect(extension.content).not.toContain("a.ts");
+  });
+
   test("names each file once, above its match lines, as rg --heading prints them", async () => {
     const { deps, root } = setup();
     mkdirSync(join(root, "src"));

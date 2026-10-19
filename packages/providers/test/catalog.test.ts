@@ -33,7 +33,7 @@ const SAMPLE_CATALOG = {
         release_date: "2026-05-01",
         tool_call: true,
         reasoning: true,
-        cost: { input: 0.000015, output: 0.000075, cache_read: 0.0000015 },
+        cost: { input: 15, output: 75, cache_read: 1.5 },
         limit: { context: 200000, output: 32000 },
         modalities: { input: ["text", "image"] },
       },
@@ -68,7 +68,8 @@ function model(overrides: Partial<ModelInfo> & Pick<ModelInfo, "id" | "family">)
 }
 
 describe("convertModelsDevCatalog", () => {
-  test("converts per-token costs to per-MTok by x1e6", () => {
+  // models.dev prices per million tokens: Haiku 5.5 is 0.1 there, Anthropic's $0.10/M, and Laguna 0.09, OpenRouter's $0.09/M.
+  test("keeps models.dev costs, which are per million tokens", () => {
     const models = convertModelsDevCatalog(ModelsDevCatalogSchema.parse(SAMPLE_CATALOG));
     const opus = models.find((m) => m.id === "claude-opus-5");
     expect(opus?.pricing.inputPerMTok).toBe(15);

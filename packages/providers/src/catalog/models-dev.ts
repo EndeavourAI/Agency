@@ -98,9 +98,6 @@ export type ModelsDevModel = z.infer<typeof ModelsDevModelSchema>;
 export type ModelsDevProvider = z.infer<typeof ModelsDevProviderSchema>;
 export type ModelsDevCatalog = Record<string, ModelsDevProvider>;
 
-/** models.dev costs are per token; Agency prices per million tokens. */
-const PER_MTOK = 1_000_000;
-
 /** The generic client package that makes any OpenAI-compatible endpoint work. */
 const DEFAULT_NPM = "@ai-sdk/openai-compatible";
 
@@ -134,9 +131,10 @@ function mapModel(
     contextWindow: model.limit.context,
     maxOutputTokens: model.limit.output ?? 0,
     pricing: {
-      inputPerMTok: (model.cost?.input ?? 0) * PER_MTOK,
-      outputPerMTok: (model.cost?.output ?? 0) * PER_MTOK,
-      cachedInputPerMTok: model.cost?.cache_read !== undefined ? model.cost.cache_read * PER_MTOK : undefined,
+      // models.dev prices per million tokens, as Agency does: a factor of a million here made a Claude call cost dollars a token.
+      inputPerMTok: model.cost?.input ?? 0,
+      outputPerMTok: model.cost?.output ?? 0,
+      cachedInputPerMTok: model.cost?.cache_read,
     },
     capabilities: {
       tools: model.tool_call ?? false,

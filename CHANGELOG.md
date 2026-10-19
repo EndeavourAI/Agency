@@ -8,6 +8,14 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Agency knows the price and limits of the current Claude models, and reads models.dev prices in the right
+  unit**: the built-in catalog gains Claude Haiku 5.5, Sonnet 5.5 and Opus 5.5 at Anthropic's prices (1M-token
+  window, 128K output), and Opus 5 and Sonnet 5 get the current prices ($5/$25 and $2/$10, not $15/$75 and $3/$15).
+  Before, a machine with no catalog cache, such as a fresh container, knew no 5.5 model: a turn on one cost $0 in
+  every report and budget, and asked for 8,192 output tokens at most. models.dev lists dollars per million tokens
+  (its Haiku 5.5 entry is 0.1, Anthropic's $0.10/M), but the catalog multiplied them by a million, so a Claude
+  token priced at dollars; the cache version is now 4, so a cache with such prices is read again. Haiku 5.5's
+  higher price for a prompt over 100K tokens ($0.50/$2.50) is not modelled yet.
 - **The OpenRouter model list that a daemon reads is kept in the cache**, so the next daemon knows the model at
   once: before, each daemon read the whole list (787 KB, 0.23 to 0.32 s) before the first request of a model that
   the built-in catalog lacks, and the built-in catalog has no OpenRouter model. Every headless run starts a daemon:

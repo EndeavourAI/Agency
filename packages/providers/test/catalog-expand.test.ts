@@ -63,7 +63,7 @@ function bigBlob(providers: number): Record<string, unknown> {
     for (let m = 0; m < 2; m++) {
       models[`model-${m}`] = {
         name: `Provider ${p} Model ${m}`,
-        cost: { input: 0.000001 * (p + 1), output: 0.000002 * (p + 1) },
+        cost: { input: p + 1, output: 2 * (p + 1) },
         limit: { context: 128_000, output: 8_000 },
         tool_call: true,
       };

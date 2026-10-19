@@ -56,14 +56,48 @@ export interface ModelInfo {
  * family's live models endpoint.
  */
 export const BUILTIN_MODELS: ModelInfo[] = [
+  // Anthropic's price table of 2026-10-06; Haiku 5.5 costs $0.50/$2.50 for a prompt over 100K tokens.
+  {
+    id: "claude-haiku-5-5",
+    family: "anthropic",
+    name: "Claude Haiku 5.5",
+    providerName: "Anthropic",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    pricing: { inputPerMTok: 0.1, outputPerMTok: 0.5, cachedInputPerMTok: 0.01, cacheWritePerMTok: 0.125 },
+    capabilities: { tools: true, vision: true, thinking: true },
+    releaseDate: "2026-10-07",
+  },
+  {
+    id: "claude-sonnet-5-5",
+    family: "anthropic",
+    name: "Claude Sonnet 5.5",
+    providerName: "Anthropic",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    pricing: { inputPerMTok: 2, outputPerMTok: 10, cachedInputPerMTok: 0.2, cacheWritePerMTok: 2.5 },
+    capabilities: { tools: true, vision: true, thinking: true },
+    releaseDate: "2026-09-28",
+  },
+  {
+    id: "claude-opus-5-5",
+    family: "anthropic",
+    name: "Claude Opus 5.5",
+    providerName: "Anthropic",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    pricing: { inputPerMTok: 4, outputPerMTok: 20, cachedInputPerMTok: 0.2, cacheWritePerMTok: 5 },
+    capabilities: { tools: true, vision: true, thinking: true },
+    releaseDate: "2026-09-22",
+  },
   {
     id: "claude-opus-5",
     family: "anthropic",
     name: "Claude Opus 5",
     providerName: "Anthropic",
-    contextWindow: 200_000,
-    maxOutputTokens: 32_000,
-    pricing: { inputPerMTok: 15, outputPerMTok: 75, cachedInputPerMTok: 1.5, cacheWritePerMTok: 18.75 },
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    pricing: { inputPerMTok: 5, outputPerMTok: 25, cachedInputPerMTok: 0.5, cacheWritePerMTok: 6.25 },
     capabilities: { tools: true, vision: true, thinking: true },
     releaseDate: "2026-05-01",
   },
@@ -72,9 +106,9 @@ export const BUILTIN_MODELS: ModelInfo[] = [
     family: "anthropic",
     name: "Claude Sonnet 5",
     providerName: "Anthropic",
-    contextWindow: 200_000,
-    maxOutputTokens: 64_000,
-    pricing: { inputPerMTok: 3, outputPerMTok: 15, cachedInputPerMTok: 0.3, cacheWritePerMTok: 3.75 },
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    pricing: { inputPerMTok: 2, outputPerMTok: 10, cachedInputPerMTok: 0.2, cacheWritePerMTok: 2.5 },
     capabilities: { tools: true, vision: true, thinking: true },
     releaseDate: "2026-02-01",
   },
@@ -127,9 +161,9 @@ export const BUILTIN_MODELS: ModelInfo[] = [
 /**
  * On-disk catalog cache schema version. v1 is the unversioned legacy shape
  * (no `version` field); v2+ stamps it. Lives here (not catalog-cache.ts) so
- * both cache files share one version without an import cycle. v3 adds `efforts`.
+ * both cache files share one version without an import cycle. v3 adds `efforts`; v4 stops multiplying models.dev prices.
  */
-export const CATALOG_CACHE_VERSION = 3;
+export const CATALOG_CACHE_VERSION = 4;
 
 /**
  * Tolerantly normalizes a parsed cache blob. Unversioned legacy files migrate

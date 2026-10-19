@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A passing command that names a test file counts as a check** for the verify reminder (`test_stats`,
+  `parser_test.py`): live, a model ran its tests with `python3 -c "import test_stats; ..."` where pytest was not
+  installed, and the reminder still cost three calls.
 - **No verify reminder in a workspace with nothing to check**: no test file or folder and no project file
   (`package.json`, `pyproject.toml`, `Makefile`, `Cargo.toml`, `go.mod` and the like) at its root. In 6 of 12 live
   headless runs on Linux the reminder fired in such a folder, and the model spent one to three calls (up to a

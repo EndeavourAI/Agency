@@ -88,3 +88,14 @@ test("a workspace with no tests and no project file gets no reminder: no check a
   rmSync(bare, { recursive: true });
   rmSync(project, { recursive: true });
 });
+
+test("a passing command that runs a test file by its name is a check", async () => {
+  // Live: `python3 -c "import test_stats as t; t.test_mean()"` passed, and the reminder still cost three calls.
+  for (const command of ['python3 -c "import test_stats as t; t.test_mean()"', "python3 parser_test.py"]) {
+    const bus = new EventBus();
+    attachVerifyGate(bus);
+    after(bus, "edit", { path: "stats.py" });
+    after(bus, "bash", { command });
+    expect(await stop(bus)).toEqual([]);
+  }
+});

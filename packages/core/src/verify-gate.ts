@@ -6,7 +6,7 @@ const EDIT_TOOLS = new Set(["edit", "write", "notebook_edit"]);
 const DOC_FILE = /\.(md|mdx|txt|rst|adoc|html?|css|csv|svg)$/i;
 /** A command that checks code: a test run, type check, linter or build. A false match only spares the reminder. */
 const CHECK_COMMAND =
-  /\b(tests?|spec|pytest|jest|vitest|mocha|tsc|typecheck|type-check|lint|eslint|biome|ruff|flake8|mypy|pyright|clippy|check|build|compile|make|gradlew?|mvn|cargo|go\s+(?:test|vet|build)|dotnet|ctest|phpunit|rspec)\b/i;
+  /\b(tests?|test_\w+|\w+_test|spec|pytest|jest|vitest|mocha|tsc|typecheck|type-check|lint|eslint|biome|ruff|flake8|mypy|pyright|clippy|check|build|compile|make|gradlew?|mvn|cargo|go\s+(?:test|vet|build)|dotnet|ctest|phpunit|rspec)\b/i;
 const LISTED_FILES = 5;
 /** A name at the root of a workspace that has checks: a project file, a test folder or a test file. */
 const CHECK_INFRA =

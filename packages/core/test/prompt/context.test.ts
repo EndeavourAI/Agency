@@ -8,6 +8,7 @@ import {
   defaultGitRunner,
   gatherEnvironmentInfo,
   parseGitStatus,
+  warmGitRunner,
 } from "../../src/prompt/context.ts";
 
 const dirs: string[] = [];
@@ -108,6 +109,25 @@ describe("gatherEnvironmentInfo", () => {
       writeFileSync(join(root, `f${String(index).padStart(2, "0")}`), "");
     const many = buildEnvironmentBlock(gatherEnvironmentInfo({ cwd: root, now, git: () => null }));
     expect(many).toContain("f59, and 12 more\n");
+  });
+
+  test("a warm runner answers the first status from a spawn started earlier, then runs git again", async () => {
+    const repo = tempDir();
+    if (spawnSync("git", ["init"], { cwd: repo }).status !== 0) return;
+    writeFileSync(join(repo, "a.txt"), "");
+    const warm = warmGitRunner(repo);
+    await Bun.sleep(1_500);
+    const args = ["status", "--porcelain", "--branch"];
+    let started = performance.now();
+    const first = warm(repo, args);
+    const warmMs = performance.now() - started;
+    started = performance.now();
+    const second = warm(repo, args);
+    const coldMs = performance.now() - started;
+    // On Windows the spawn took 36 ms of the 58 that a status cost before each session's first request.
+    expect(first).toBe(second);
+    expect(first).toContain("?? a.txt");
+    expect(warmMs).toBeLessThan(coldMs);
   });
 
   test("the real runner degrades to null outside a repo", () => {

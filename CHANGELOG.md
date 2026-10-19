@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A new daemon runs `git status` for the environment block as it starts**, not before the first request: on
+  Windows the status took 58 ms (36 of them to start the process) on this repository, synchronously, before the
+  first request of each session. In 198 daemon starts in the log, the first turn began a median 98 ms after the
+  daemon was up (10th percentile 83 ms), so the status is ready by then; in the daemon tests the time from start to
+  the first reply fell from 133 to 97 ms. A status older than 10 seconds, and every later session, runs git as
+  before, and `stop()` waits for the spawn so that the folder can be deleted.
 - **The environment block names the files and folders at the project root** (up to 60, a folder with a trailing
   slash; hidden ones and `node_modules` left out), as Gemini CLI and Cline give the model the folder structure at
   the start. In 233 stored sessions since 2026-10-15, 34 searched in their first three replies for Python or

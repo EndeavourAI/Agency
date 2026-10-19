@@ -745,6 +745,7 @@ export async function executeTurn(
               memoryFile: ctx.memoryFile,
               userAgentInstructions: ctx.userAgentInstructions,
               environments: ctx.sessionEnvironments,
+              git: ctx.git,
             });
             result = await runTurn(adapterFor(resolvedProvider), schedulerFor(resolvedProvider), http, {
               identity,
@@ -876,6 +877,7 @@ export async function executeTurn(
                 memoryFile: ctx.memoryFile,
                 userAgentInstructions: ctx.userAgentInstructions,
                 environments: ctx.sessionEnvironments,
+                git: ctx.git,
               },
             );
             try {
@@ -944,6 +946,7 @@ export async function executeTurn(
               memoryFile: ctx.memoryFile,
               userAgentInstructions: ctx.userAgentInstructions,
               environments: ctx.sessionEnvironments,
+              git: ctx.git,
             });
             writeTurnCassette(traceRecorder, params, sysPrompt, collectedTraceEvents, result);
           }

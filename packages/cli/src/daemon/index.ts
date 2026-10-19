@@ -43,6 +43,7 @@ import {
   TraceRecorder,
   userPluginStore,
   WakeRegistry,
+  warmGitRunner,
 } from "@agency/core";
 import {
   ApprovalManager,
@@ -214,6 +215,8 @@ export async function chooseSandboxBackend(
 }
 
 export async function createAgentDaemon(options: AgentDaemonOptions): Promise<AgentDaemon> {
+  // First: the status runs while the daemon starts and the client connects.
+  const git = warmGitRunner(options.workspaceRoot);
   const config = loadConfig({ globalDir: options.configDir, env: process.env });
   const sandboxFallback = await chooseSandboxBackend(config, options.workspaceRoot);
   // fetch, websearch and the browser get the network limit of shell commands.
@@ -802,6 +805,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
     turnOwners,
     activeTurnMeta,
     sessionEnvironments: sessionEnvironmentStore(todoSessionsDir),
+    git,
     commands,
     catalogModel,
     learnModel: models.learnModel,
@@ -940,6 +944,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
       stopped = true;
       clearTimeout(idleTimer);
       clearInterval(staleConfigTimer);
+      await git.settled;
       stopBoardSync();
       disposeDesktop();
       if (builtinsMode) {

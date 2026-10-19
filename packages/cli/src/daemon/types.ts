@@ -741,6 +741,8 @@ export interface DaemonContext {
   activeTurnMeta: Map<string, ActiveTurnMeta>;
   /** For each session, the environment block of its first turn. */
   sessionEnvironments: EnvironmentStore;
+  /** Runs git for the environment block; the daemon's answers the first status from a spawn started at its start. */
+  git: GitRunner;
   commands: CommandTemplate[];
   catalogModel: (provider: string, model: string) => ModelInfo | undefined;
   learnModel: (provider: string, model: string, http: HttpClient) => Promise<void>;

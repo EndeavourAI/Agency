@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { release } from "node:os";
 
@@ -44,6 +44,37 @@ export function defaultGitRunner(cwd: string, args: string[]): string | null {
   } catch {
     return null;
   }
+}
+
+const STATUS_ARGS = ["status", "--porcelain", "--branch"];
+
+/**
+ * Starts the status at once and hands it to the first call within `maxAgeMs`, then runs git as before: on Windows the
+ * status cost 58 ms, 36 of them the spawn, before the first request of each session of a new daemon.
+ */
+export function warmGitRunner(root: string, maxAgeMs = 10_000): GitRunner & { settled: Promise<void> } {
+  const started = Date.now();
+  let warm: string | null | undefined;
+  // A stop waits for the spawn: on Windows a git still running in the folder keeps it from being deleted.
+  const settled = new Promise<void>((resolve) =>
+    execFile(
+      "git",
+      STATUS_ARGS,
+      { cwd: root, timeout: GIT_TIMEOUT_MS, windowsHide: true, encoding: "utf8" },
+      (error, stdout) => {
+        warm = error ? null : stdout.trim() || null;
+        resolve();
+      },
+    ),
+  );
+  const run: GitRunner = (cwd, args) => {
+    const fresh = warm !== undefined && cwd === root && args.join(" ") === STATUS_ARGS.join(" ");
+    if (!fresh || Date.now() - started > maxAgeMs) return defaultGitRunner(cwd, args);
+    const out = warm as string | null;
+    warm = undefined;
+    return out;
+  };
+  return Object.assign(run, { settled });
 }
 
 /**
@@ -103,7 +134,7 @@ export function gatherEnvironmentInfo(options: GatherEnvironmentOptions): Enviro
       .sort();
   } catch {}
 
-  const status = runGit(options.cwd, ["status", "--porcelain", "--branch"]);
+  const status = runGit(options.cwd, STATUS_ARGS);
   if (status !== null) {
     const parsed = parseGitStatus(status);
     if (parsed !== undefined) info.git = parsed;

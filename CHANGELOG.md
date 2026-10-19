@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A Harbor agent for Terminal-Bench**: `packages/eval/harbor/agency_agent.py` runs Agency in Harbor
+  (`harbor run -d terminal-bench@2.0 --agent-import-path agency_agent:Agency -m anthropic/<model>`). It uploads
+  the release binary that fits the container (x64 or arm64, glibc or musl, with `libstdc++` added on Alpine), runs
+  `agency -p` under allow-all with 300 steps, and gives Harbor the tokens and cost of the run. Checked through
+  Harbor's own agent base class in an Alpine root: it installed, fixed a bug and reported $0.0005.
 - **Builds for Alpine and other musl systems**: releases add `agency-linux-x64-musl` and
   `agency-linux-arm64-musl`, and `install.sh` picks one on a musl system. The glibc build does not start on Alpine
   (many container images, some Terminal-Bench tasks). The musl build needs `libstdc++` and `libgcc`

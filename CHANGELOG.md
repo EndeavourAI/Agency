@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`agency -p` runs its daemon inside its own process**, as `claude -p` and `codex exec` run: it no longer spawns
+  or reuses the shared daemon of the workspace, which cost 0.25 to 0.65 s of each cold run (WSL), stayed 10 minutes
+  after it, and could be a daemon of an older build: in a live benchmark, every run of a new checkout talked to
+  the daemon of an old one. The interactive app and `agency daemon` keep the shared daemon. A background process
+  of a `-p` run now stops when the run ends.
 - **A passing command that names a test file counts as a check** for the verify reminder (`test_stats`,
   `parser_test.py`): live, a model ran its tests with `python3 -c "import test_stats; ..."` where pytest was not
   installed, and the reminder still cost three calls.

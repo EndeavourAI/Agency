@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   collectAgentsFiles,
@@ -8,11 +9,13 @@ import {
   dataDir,
   foreignHookPaths,
   loadConfig,
+  logDir,
 } from "@agency/core";
 import type { PermissionMode, ToolPermissionValue } from "@agency/guard";
 import { t } from "@agency/i18n";
 import type { ThinkingLevel } from "@agency/providers";
 import {
+  connectToDaemon,
   type DaemonClient,
   DEFAULT_SPAWN_TIMEOUT_MS,
   type EnsureDaemonOptions,
@@ -20,7 +23,7 @@ import {
 } from "@agency/rpc";
 import type { ImageBlock, Message } from "@agency/schema";
 import { clientProjectPaths } from "@agency/tools";
-import type { RunTurnParams, RunTurnRpcResult, SystemPromptParts } from "./daemon.ts";
+import type { AgentDaemonOptions, RunTurnParams, RunTurnRpcResult, SystemPromptParts } from "./daemon.ts";
 import { runSessionTurn } from "./session-runner.ts";
 
 export interface RunHeadlessOptions {
@@ -99,17 +102,8 @@ export function hasTrustGatedContent(workspaceRoot: string): boolean {
   );
 }
 
-/**
- * Finds or starts this workspace's daemon (one per workspace root) and returns
- * a handshake-complete client. Checks trust before spawning, and logs
- * spawn/connect progress to the log sink.
- */
-export async function connectHeadlessClient(
-  options: HeadlessConnectOptions,
-): Promise<{ port: number; client: DaemonClient }> {
-  const log = options.log ?? ((msg: string) => process.stderr.write(`${msg}\n`));
-
-  // Trust check: verify the workspace is trusted before any daemon work.
+/** Verifies the workspace is trusted before any daemon work: asks on stderr when the config requires trust. */
+async function checkTrust(options: HeadlessConnectOptions, log: (msg: string) => void): Promise<void> {
   const { createFileTrustStore } = await import("@agency/guard");
   const env = process.env;
   const cfg = loadConfig({ globalDir: configDir(env), env });
@@ -133,6 +127,54 @@ export async function connectHeadlessClient(
     // Silence here would hide that the model runs without the project's own rules.
     log(t("cli.trust.instructions_skipped"));
   }
+}
+
+/**
+ * A daemon in this process for one `-p` run, as `claude -p` and `codex exec` run: no spawn (0.25-0.65 s of a cold
+ * run in WSL), nothing left running after it, and never a daemon of an older build. Closing the client stops it.
+ */
+export async function inProcessClient(
+  options: HeadlessConnectOptions & { daemon?: Partial<AgentDaemonOptions> },
+): Promise<{ port: number; client: DaemonClient }> {
+  await checkTrust(options, options.log ?? ((msg: string) => process.stderr.write(`${msg}\n`)));
+  const { createAgentDaemon } = await import("./daemon.ts");
+  // A private instance file: no other client may find a daemon that ends with this run.
+  const dir = mkdtempSync(join(tmpdir(), "agency-p-"));
+  let daemon: Awaited<ReturnType<typeof createAgentDaemon>>;
+  try {
+    daemon = await createAgentDaemon({
+      workspaceRoot: options.workspaceRoot,
+      instanceFile: join(dir, "instance.json"),
+      logsDir: logDir(),
+      ...options.daemon,
+    });
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
+  }
+  const client = await connectToDaemon(daemon.server.port, "127.0.0.1", { token: daemon.server.token });
+  const close = client.close.bind(client);
+  client.close = async () => {
+    try {
+      await close();
+    } finally {
+      await daemon.stop();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  return { port: daemon.server.port, client };
+}
+
+/**
+ * Finds or starts this workspace's daemon (one per workspace root) and returns
+ * a handshake-complete client. Checks trust before spawning, and logs
+ * spawn/connect progress to the log sink.
+ */
+export async function connectHeadlessClient(
+  options: HeadlessConnectOptions,
+): Promise<{ port: number; client: DaemonClient }> {
+  const log = options.log ?? ((msg: string) => process.stderr.write(`${msg}\n`));
+  await checkTrust(options, log);
 
   return ensureDaemon({
     workspaceRoot: options.workspaceRoot,
@@ -174,7 +216,7 @@ export async function connectHeadlessClient(
  * prerequisite for this one to work.
  */
 export async function runHeadless(options: RunHeadlessOptions): Promise<RunTurnRpcResult> {
-  const { client } = await connectHeadlessClient(options);
+  const { client } = await inProcessClient(options);
   if (options.sessionId !== undefined) {
     try {
       const { result } = await runSessionTurn(client, {

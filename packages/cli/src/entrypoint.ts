@@ -57,7 +57,13 @@ import type { Message } from "@agency/schema";
 import { imageMimeFor, loadMcpConfigArg } from "@agency/tools";
 import { DEFAULT_SYSTEM_PROMPT, type RunTurnRpcResult, STRUCTURED_OUTPUT_TOOL } from "./daemon.ts";
 import { debugCommand } from "./debug.ts";
-import { connectHeadlessClient, DAEMON_COMMAND, type RunHeadlessOptions, runHeadless } from "./headless.ts";
+import {
+  connectHeadlessClient,
+  DAEMON_COMMAND,
+  inProcessClient,
+  type RunHeadlessOptions,
+  runHeadless,
+} from "./headless.ts";
 import { harnessImportCmd, scanHarnesses } from "./import-commands.ts";
 import { mcpCmd, mcpServe } from "./mcp-commands.ts";
 import { createTerminalOnboardingPrompter, readSecretLine, runOnboarding } from "./onboarding.ts";
@@ -1199,7 +1205,7 @@ async function runPrintMode(
 
     const client = deps.ensureClient
       ? await deps.ensureClient({ workspaceRoot, instanceDir: deps.instanceDir })
-      : (await connectHeadlessClient({ workspaceRoot, instanceDir: deps.instanceDir, log: err })).client;
+      : (await inProcessClient({ workspaceRoot, instanceDir: deps.instanceDir, log: err })).client;
     try {
       const images = parsed.images.length ? loadImageBlocks(parsed.images) : undefined;
       const { result, tipId } = await runSessionTurn(client, {

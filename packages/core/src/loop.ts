@@ -45,7 +45,7 @@ import {
 } from "./sessions/compaction.ts";
 import type { MessageOrigin } from "./sessions/entry.ts";
 import { modelSummarizer, type SentRequest, summarizeAtEnd } from "./sessions/summarize.ts";
-import { canonicalCall } from "./tool-dialect.ts";
+import { canonicalCall, dialectFor, type ToolDialect, wireMessages, wireTools } from "./tool-dialect.ts";
 import type { TraceRecorder } from "./trace/recorder.ts";
 import { relativePaths } from "./transcript.ts";
 import { truncateToolResults } from "./truncate.ts";
@@ -208,6 +208,8 @@ export interface RunTurnOptions {
   compactionLimit?: number;
   /** `keepToolResults` of the config: old results of re-runnable tools stay whole in each request. */
   keepToolResults?: boolean;
+  /** `toolDialect` of the config: the tool names a model sees. "auto" (default) picks them from the model id. */
+  toolDialect?: ToolDialect | "auto";
   /** The session's cache so far, so its prune rule lasts across turns. Absent: the turn counts its own. */
   cacheSeen?: CacheSeen;
   /** The environment block: each request sends it in the first user message, not in the system prompt. */
@@ -425,17 +427,22 @@ export async function runTurn(
   };
   const collectWithFallback = async (): Promise<CollectedTurn> => {
     const runOne = async (model: string): Promise<CollectedTurn> => {
+      // By the model of this request: a fallback of another family gets its own names.
+      const dialect = dialectFor(model, options.toolDialect);
       const request: ProviderRequest = {
         model,
         apiKey: options.apiKey,
         system: options.systemPrompt,
         ...(options.systemSegments !== undefined ? { systemSegments: options.systemSegments } : {}),
         // A copy: the loop changes `messages` in place, and the request is kept for a later compaction.
-        messages: withContext(
-          options.keepToolResults ? messages : pruneStaleResults(messages, pruneRule(cacheSeen)),
-          options.context,
+        messages: wireMessages(
+          withContext(
+            options.keepToolResults ? messages : pruneStaleResults(messages, pruneRule(cacheSeen)),
+            options.context,
+          ),
+          dialect,
         ),
-        tools: toolDefs(),
+        tools: wireTools(toolDefs(), dialect),
         maxTokens: options.maxTokensPerRequest ?? 8192,
         thinkingLevel: options.thinkingLevel,
         ...(options.vision === undefined ? {} : { vision: options.vision }),

@@ -182,3 +182,126 @@ export function canonicalCall(
   const input = coerce(spec.inputSchema, canonicalInput(spec.name, call.input)) as Record<string, unknown>;
   return { ...call, name: spec.name, input };
 }
+
+/** A tool in the names of the harness that a model family was trained on: its name, and our argument → its argument. */
+interface WireTool {
+  name: string;
+  args: Record<string, string>;
+}
+
+/** Claude Code's names (claude-agent-sdk `sdk-tools.d.ts`). Calls in them come back through the aliases above. */
+const CLAUDE_CODE: Record<string, WireTool> = {
+  read: { name: "Read", args: { path: "file_path" } },
+  write: { name: "Write", args: { path: "file_path" } },
+  edit: {
+    name: "Edit",
+    args: {
+      path: "file_path",
+      oldText: "old_string",
+      newText: "new_string",
+      replaceAll: "replace_all",
+      hunks: "edits",
+    },
+  },
+  bash: { name: "Bash", args: { background: "run_in_background" } },
+  grep: { name: "Grep", args: { caseInsensitive: "-i" } },
+  glob: { name: "Glob", args: {} },
+};
+
+export type ToolDialect = "native" | "claude-code";
+
+/**
+ * Anthropic trains Claude on Claude Code; Moonshot, Z.ai, MiniMax, Qwen and DeepSeek test their coding models in it
+ * and serve an Anthropic API for it. Other models get the names here.
+ */
+const CLAUDE_CODE_MODELS = /claude|kimi|glm|minimax|qwen[^/]*coder|deepseek/i;
+
+export function dialectFor(model: string, configured: ToolDialect | "auto" = "auto"): ToolDialect {
+  if (configured !== "auto") return configured;
+  return CLAUDE_CODE_MODELS.test(model) ? "claude-code" : "native";
+}
+
+/** Our argument names in text: a camelCase name anywhere, a plain word (`background`) only as `name:`. */
+function wireText(text: string, args: Record<string, string>): string {
+  let out = text;
+  for (const [name, wire] of Object.entries(args)) {
+    if (name === "path") continue;
+    const pattern = /[A-Z]/.test(name) ? String.raw`\b${name}\b` : String.raw`\b${name}(?=:)`;
+    out = out.replace(new RegExp(pattern, "g"), wire);
+  }
+  return out;
+}
+
+function wireKeys(value: unknown, args: Record<string, string>): unknown {
+  if (Array.isArray(value)) return value.map((item) => wireKeys(item, args));
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [args[key] ?? key, wireKeys(item, args)]),
+  );
+}
+
+function wireSchema(schema: Schema, args: Record<string, string>): Schema {
+  const out: Schema = { ...schema };
+  if (schema.properties && typeof schema.properties === "object")
+    out.properties = Object.fromEntries(
+      Object.entries(schema.properties as Record<string, Schema>).map(([key, item]) => [
+        args[key] ?? key,
+        wireSchema(item, args),
+      ]),
+    );
+  if (Array.isArray(schema.required)) out.required = schema.required.map((key) => args[key] ?? key);
+  if (schema.items && typeof schema.items === "object") out.items = wireSchema(schema.items as Schema, args);
+  return out;
+}
+
+/** The tool list as the model of this dialect knows it. */
+export function wireTools<T extends { name: string; description: string; inputSchema: Schema }>(
+  tools: T[],
+  dialect: ToolDialect,
+): T[] {
+  if (dialect === "native") return tools;
+  return tools.map((tool) => {
+    const wire = CLAUDE_CODE[tool.name];
+    if (!wire) return tool;
+    return {
+      ...tool,
+      name: wire.name,
+      description: wireText(tool.description, wire.args),
+      inputSchema: wireSchema(tool.inputSchema, wire.args),
+    };
+  });
+}
+
+/**
+ * The history in the names of `wireTools`, so the calls the model sees match the tools it is offered. A pure function
+ * of the history: the cached prefix stays the same from one request to the next.
+ */
+export function wireMessages<M extends { content: ContentBlock[] }>(
+  messages: M[],
+  dialect: ToolDialect,
+): M[] {
+  if (dialect === "native") return messages;
+  const toolOf = new Map<string, WireTool>();
+  return messages.map((message) => {
+    let changed = false;
+    const content = message.content.map((block) => {
+      if (block.type === "tool_call") {
+        const wire = CLAUDE_CODE[block.name];
+        if (!wire) return block;
+        toolOf.set(block.id, wire);
+        changed = true;
+        return {
+          ...block,
+          name: wire.name,
+          input: wireKeys(block.input, wire.args) as Record<string, unknown>,
+        };
+      }
+      // An error names the arguments to fix.
+      const wire = block.type === "tool_result" && block.isError ? toolOf.get(block.toolCallId) : undefined;
+      if (!wire || block.type !== "tool_result") return block;
+      changed = true;
+      return { ...block, content: wireText(block.content, wire.args) };
+    });
+    return changed ? { ...message, content } : message;
+  });
+}

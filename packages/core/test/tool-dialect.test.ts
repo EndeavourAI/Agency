@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { canonicalCall } from "../src/tool-dialect.ts";
+import { canonicalCall, dialectFor, wireMessages, wireTools } from "../src/tool-dialect.ts";
 
 const hunk = {
   type: "object",
@@ -107,4 +107,72 @@ test("a name of this harness wins over its alias, and an unknown tool passes as 
   });
   // A mangled string stays as sent: validation then names the fault to the model.
   expect(call("edit", { path: "a", hunks: '[{"oldText">x' }).input.hunks).toBe('[{"oldText">x');
+});
+
+test("the dialect follows the model id, and a configured one wins", () => {
+  for (const model of [
+    "claude-haiku-5-5",
+    "anthropic/claude-sonnet-5-5",
+    "z-ai/glm-4.6",
+    "moonshotai/kimi-k2",
+    "qwen/qwen3-coder:free",
+    "minimax/minimax-m2",
+  ])
+    expect(dialectFor(model)).toBe("claude-code");
+  for (const model of ["gpt-5.1", "gemini-3-pro", "qwen/qwen3-235b", "llama-4"])
+    expect(dialectFor(model)).toBe("native");
+  expect(dialectFor("claude-haiku-5-5", "native")).toBe("native");
+});
+
+test("Claude Code's dialect renames the tools, their schemas and the history, and comes back as ours", () => {
+  const description =
+    "Pass oldText+newText, or hunks: [{oldText, newText, replaceAll?}]. Each path is relative.";
+  const [edit] = wireTools([{ ...tools[0]!, description }], "claude-code");
+  expect(edit!.name).toBe("Edit");
+  expect(edit!.description).toBe(
+    "Pass old_string+new_string, or edits: [{old_string, new_string, replace_all?}]. Each path is relative.",
+  );
+  expect(Object.keys((edit!.inputSchema as { properties: object }).properties)).toEqual([
+    "file_path",
+    "old_string",
+    "new_string",
+    "replace_all",
+    "edits",
+  ]);
+  expect(edit!.inputSchema).toMatchObject({
+    required: ["file_path"],
+    properties: { edits: { items: { required: ["old_string", "new_string"] } } },
+  });
+
+  const history = [
+    {
+      role: "assistant" as const,
+      content: [
+        {
+          type: "tool_call" as const,
+          id: "c1",
+          name: "edit",
+          input: { path: "a.ts", hunks: [{ oldText: "x", newText: "y" }] },
+        },
+      ],
+    },
+    {
+      role: "user" as const,
+      content: [
+        { type: "tool_result" as const, toolCallId: "c1", content: "send the oldText again", isError: true },
+      ],
+    },
+  ];
+  const [sent, result] = wireMessages(history, "claude-code");
+  expect(sent!.content[0]).toEqual({
+    type: "tool_call",
+    id: "c1",
+    name: "Edit",
+    input: { file_path: "a.ts", edits: [{ old_string: "x", new_string: "y" }] },
+  });
+  expect(result!.content[0]).toMatchObject({ content: "send the old_string again" });
+  expect(wireMessages(history, "native")).toBe(history);
+  // What the model sends back in those names is ours again.
+  const back = sent!.content[0] as Parameters<typeof canonicalCall>[0];
+  expect(canonicalCall(back, tools)).toEqual(history[0]!.content[0]);
 });

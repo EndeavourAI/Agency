@@ -8,6 +8,14 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Claude and the models tested in Claude Code see Claude Code's tool names** (`toolDialect`, new, default
+  `"auto"`): for a model id with `claude`, `kimi`, `glm`, `minimax`, `qwen…coder` or `deepseek`, `read`, `write`,
+  `edit`, `bash`, `grep` and `glob` go to the model as `Read`, `Write`, `Edit` (`file_path`, `old_string`,
+  `new_string`, `replace_all`, `edits`), `Bash` (`run_in_background`), `Grep` (`-i`) and `Glob`, in the tool list,
+  in the calls of the history and in the errors that name an argument. Anthropic trains Claude on these; Moonshot,
+  Z.ai, MiniMax and Qwen test their coding models in Claude Code. The session, hooks and permission rules keep
+  this harness's names, and the names follow the model of each request, so a fallback of another family gets its
+  own. `"native"` or `"claude-code"` fixes one for all models.
 - **Tool calls in the names of other harnesses run**: a model trained on Claude Code, Codex, Gemini CLI, OpenCode
   or Kimi CLI sends that harness's tool and argument names (`Edit` with `file_path`/`old_string`, `read_file`,
   `exec_command` with `cmd`, Codex's `shell` with an argv, `MultiEdit` with `edits`). Each call is mapped to the

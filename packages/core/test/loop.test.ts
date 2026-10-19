@@ -268,6 +268,42 @@ describe("runTurn", () => {
     expect(result.messages[0]!.content[0]).toMatchObject({ name: "edit", input: { path: "a.ts" } });
   });
 
+  test("a Claude model is offered Claude Code's tool names and sees its history in them", async () => {
+    const sent: { tools: string[]; call?: unknown }[] = [];
+    const base = toolThenDoneAdapter("Edit", { file_path: "a.ts", old_string: "x", new_string: "y" });
+    const adapter: ProviderAdapter = {
+      family: "fake",
+      stream(request) {
+        sent.push({
+          tools: (request.tools ?? []).map((tool) => tool.name),
+          call: request.messages.flatMap((m) => m.content).find((block) => block.type === "tool_call"),
+        });
+        return base.stream(request);
+      },
+    };
+    const spec: ToolSpec = {
+      name: "edit",
+      description: "edits",
+      inputSchema: { type: "object", properties: { path: { type: "string" } } },
+      handler: async () => ({ content: "edited" }),
+    };
+    const options = {
+      identity: user,
+      capabilities: FULL_CAPABILITIES,
+      systemPrompt: "sys",
+      tools: [spec],
+      apiKey: "key",
+      session: [],
+    };
+    await runTurn(adapter, new Scheduler(), noopHttp, { ...options, model: "claude-haiku-5-5" });
+    expect(sent[0]!.tools).toEqual(["Edit"]);
+    expect(sent[1]!.call).toMatchObject({ name: "Edit", input: { file_path: "a.ts", old_string: "x" } });
+
+    sent.length = 0;
+    await runTurn(adapter, new Scheduler(), noopHttp, { ...options, model: "gpt-5.1" });
+    expect(sent.map((request) => request.tools[0])).toEqual(["edit"]);
+  });
+
   test("a tool handler that throws becomes a tool_result error, not an unhandled rejection", async () => {
     const spec: ToolSpec = {
       name: "flaky",

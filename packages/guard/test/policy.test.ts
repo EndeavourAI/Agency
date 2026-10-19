@@ -281,6 +281,19 @@ describe("PermissionsGate", () => {
     expect(plan.denyReason({ tool: "read", riskTier: "safe" })).toBeUndefined();
   });
 
+  test("a refused write to a harness file names the file and says the call can go elsewhere", async () => {
+    // Live: under allow-all, a server log sent to .agency/ was refused, and the model gave up the whole task.
+    const gate = new PermissionsGate({ workspaceRoot: root }).withMode("allow-all");
+    const command = "nohup python3 -m http.server 8765 > .agency/http.log 2>&1 &";
+    const request = { tool: "bash", command, riskTier: "dangerous" } as const;
+    expect(await gate.check(request, undefined)).toBe("deny");
+    expect(gate.denyReason(request)).toContain(".agency/http.log");
+    expect(gate.denyReason(request)).toContain("/tmp");
+    const elsewhere = { ...request, command: command.replace(".agency/http.log", "/tmp/http.log") };
+    expect(await gate.check(elsewhere, undefined)).toBe("allow");
+    expect(gate.denyReason(elsewhere)).toBeUndefined();
+  });
+
   test("plan mode asks for a web read as ask mode does, and setMode ends it in place", async () => {
     const plan = new PermissionsGate({ workspaceRoot: root }).withMode("plan");
     const asked: string[] = [];

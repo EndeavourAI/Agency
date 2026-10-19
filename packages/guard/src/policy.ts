@@ -1298,6 +1298,11 @@ export class PermissionsGate implements ToolPolicy {
   }
 
   denyReason(request: ToolCallPolicyRequest): string | undefined {
+    // Live: a server's log sent to .agency/ was refused under allow-all, and the model gave up the whole task.
+    const harness = this.decisionFor(request) === "deny" ? undefined : this.harnessFileWritten(request);
+    if (harness !== undefined && !this.planRefuses(request)) {
+      return `permission denied: this ${request.tool} call writes ${harness}, a file of the agent harness, which only the user can approve, and no one approved it. Write that file somewhere else (a log can go to /tmp) and send the call again.`;
+    }
     if (!this.planRefuses(request)) return undefined;
     return `plan mode: ${request.tool} is refused. This session is in plan mode, which is read-only. Do not call it again. Explore with read-only tools, then present your plan: call plan_exit with the full plan in markdown so the user can approve it.`;
   }

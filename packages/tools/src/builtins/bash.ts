@@ -182,7 +182,9 @@ export function createBashTool(
         : `Despite the tool's name, write commands in ${shell.label} syntax on this platform, not bash/POSIX syntax. `) +
       "Each command starts in the project root: a cd lasts for that command only, so write `cd dir && command`; " +
       "environment variables do not persist either. Pass background: true for " +
-      "long-running processes (dev servers, watchers) instead of waiting for them to exit. Pass " +
+      // Live: a model started a server that the task needed after the run with background: true, which stops it.
+      "long-running processes (dev servers, watchers) instead of waiting for them to exit; they stop when the " +
+      "session ends, so start one that must outlive it with `nohup ... &`. Pass " +
       "timeout (milliseconds) to kill a command that may hang. A command with no timeout that runs " +
       `over ${Math.round(detachMs / 1000)} seconds moves to the background and keeps running.` +
       (offline ? BASH_SANDBOX_NOTE : ""),

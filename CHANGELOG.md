@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The `bash` tool says that a background process stops when the session ends**, and that one which must
+  outlive it starts with `nohup ... &`. A live headless run (Sonnet 5.5) started a server that the task needed
+  after the run with `background: true`; it lived on only because the command also used `setsid`.
 - **An overload of the provider (Anthropic's 529) is retried for up to 5 minutes**, as a rate limit is, and not
   four times in about 3.5 s: an overload outlasts that, and the turn ended with an error, so a long benchmark task
   was lost on one busy minute (Claude Code retries it ten times). With a fallback model, the turn still moves to

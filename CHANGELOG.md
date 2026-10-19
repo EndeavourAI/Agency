@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Open coding models get their vendor's temperature**: GLM-4.6 and 4.7 and MiniMax M2 run at 1.0, Kimi K2 at
+  0.6 (its thinking and K2.5 models at 1.0), and Qwen3-Coder at 0.7, as their vendors recommend and OpenCode sends.
+  Before, each request took the default of the provider that served it. Other models are unchanged.
 - **GPT-5 and codex models edit with `apply_patch`**: for a model id with `gpt-5` or later or `codex` (not
   `gpt-oss`), `edit` and `write` go to the model as Codex's `apply_patch` tool, in the patch format that OpenAI
   trains these models on; Codex, OpenCode, Cline and Roo do the same. A patch changes one file a call (update, add

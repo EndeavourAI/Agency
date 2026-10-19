@@ -34,6 +34,7 @@ import type { AutoReviewer } from "./auto-review.ts";
 import { CODE_TOOL } from "./codemode.ts";
 import { permissionsFromRules } from "./config/claude-permissions.ts";
 import { type AgencyEvents, HookBlock, HookStop } from "./events.ts";
+import { temperatureFor } from "./model-sampling.ts";
 import { namedFiles } from "./prefetch.ts";
 import { type CacheSeen, dedupeReads, pruneRule, pruneStaleResults, seeCache } from "./prune.ts";
 import {
@@ -445,6 +446,7 @@ export async function runTurn(
         tools: wireTools(toolDefs(), dialect),
         maxTokens: options.maxTokensPerRequest ?? 8192,
         thinkingLevel: options.thinkingLevel,
+        ...(temperatureFor(model) === undefined ? {} : { temperature: temperatureFor(model) }),
         ...(options.vision === undefined ? {} : { vision: options.vision }),
         ...(options.efforts === undefined ? {} : { efforts: options.efforts }),
         ...(options.sessionId === undefined ? {} : { cacheKey: options.sessionId }),

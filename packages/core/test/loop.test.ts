@@ -300,7 +300,7 @@ describe("runTurn", () => {
     expect(sent[1]!.call).toMatchObject({ name: "Edit", input: { file_path: "a.ts", old_string: "x" } });
 
     sent.length = 0;
-    await runTurn(adapter, new Scheduler(), noopHttp, { ...options, model: "gpt-5.1" });
+    await runTurn(adapter, new Scheduler(), noopHttp, { ...options, model: "gemini-3-pro" });
     expect(sent.map((request) => request.tools[0])).toEqual(["edit"]);
   });
 

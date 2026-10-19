@@ -109,6 +109,7 @@ export * from "./hashline.ts";
 export * from "./html.ts";
 export * from "./lsp/index.ts";
 export * from "./mcp/index.ts";
+export { applyChunks, type PatchOp, parsePatch } from "./patch.ts";
 export * from "./process-manager.ts";
 export * from "./read-state.ts";
 export * from "./registry.ts";

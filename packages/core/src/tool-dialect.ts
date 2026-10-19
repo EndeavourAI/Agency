@@ -1,4 +1,5 @@
 import type { ContentBlock } from "@agency/schema";
+import { parsePatch } from "@agency/tools";
 
 type ToolCall = Extract<ContentBlock, { type: "tool_call" }>;
 type Schema = Record<string, unknown>;
@@ -21,6 +22,7 @@ const NAME_ALIASES: Record<string, string> = {
   grep_search: "grep",
   search_file_content: "grep",
   todowrite: "todo",
+  apply_patch: "edit",
 };
 
 /** Per tool: argument names of other harnesses → the name here. A name here that the call has wins. */
@@ -133,6 +135,17 @@ function commandLine(argv: unknown[]): string {
 function canonicalInput(tool: string, input: Record<string, unknown>): Record<string, unknown> {
   let out = renamed(input, ARG_ALIASES[tool] ?? {});
   if (tool === "edit") {
+    // Codex's `apply_patch {input}`; OpenCode's names it `patchText`.
+    const patch = [out.patch, out.input, out.patchText].find((value) => typeof value === "string");
+    if (typeof patch === "string" && /^\s*\*\*\* Begin Patch/.test(patch)) {
+      const ops = parsePatch(patch);
+      const { input: _input, patchText: _text, ...rest } = out;
+      out = {
+        ...rest,
+        patch,
+        ...(typeof ops !== "string" && rest.path === undefined ? { path: ops[0]?.path } : {}),
+      };
+    }
     let hunks = out.hunks;
     if (typeof hunks === "string") {
       try {
@@ -208,7 +221,26 @@ const CLAUDE_CODE: Record<string, WireTool> = {
   glob: { name: "Glob", args: {} },
 };
 
-export type ToolDialect = "native" | "claude-code";
+/** Codex's `apply_patch` (`codex-rs` `apply_patch_spec.rs`), sent as a function: it works on every wire API. */
+const APPLY_PATCH = {
+  name: "apply_patch",
+  description:
+    "Edits, creates or deletes one file with a patch. For several files, send one call for each, in one reply. Format:\n" +
+    '*** Begin Patch\n*** Update File: src/app.py\n@@ def greet():\n-    print("hi")\n+    print("hello")\n*** End Patch\n' +
+    "In an update, each change starts with `@@`, optionally followed by a line just above it (a function or class " +
+    'header) to place it, then lines that start with " " (unchanged, about 3 before and after the change), "-" ' +
+    '(removed) or "+" (added). A new file is `*** Add File: path` with each line starting with "+"; ' +
+    "`*** Delete File: path` deletes one. Paths are relative to the project root.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      input: { type: "string", description: "The whole patch, from *** Begin Patch to *** End Patch." },
+    },
+    required: ["input"],
+  },
+};
+
+export type ToolDialect = "native" | "claude-code" | "codex";
 
 /**
  * Anthropic trains Claude on Claude Code; Moonshot, Z.ai, MiniMax, Qwen and DeepSeek test their coding models in it
@@ -216,9 +248,13 @@ export type ToolDialect = "native" | "claude-code";
  */
 const CLAUDE_CODE_MODELS = /claude|kimi|glm|minimax|qwen[^/]*coder|deepseek/i;
 
+/** OpenAI trains GPT-5 and its codex models on `apply_patch`; gpt-oss and older GPTs are not (Codex, OpenCode). */
+const CODEX_MODELS = /gpt-[5-9]|codex/i;
+
 export function dialectFor(model: string, configured: ToolDialect | "auto" = "auto"): ToolDialect {
   if (configured !== "auto") return configured;
-  return CLAUDE_CODE_MODELS.test(model) ? "claude-code" : "native";
+  if (CLAUDE_CODE_MODELS.test(model)) return "claude-code";
+  return CODEX_MODELS.test(model) && !/oss/i.test(model) ? "codex" : "native";
 }
 
 /** Our argument names in text: a camelCase name anywhere, a plain word (`background`) only as `name:`. */
@@ -260,6 +296,11 @@ export function wireTools<T extends { name: string; description: string; inputSc
   dialect: ToolDialect,
 ): T[] {
   if (dialect === "native") return tools;
+  if (dialect === "codex")
+    // A patch adds a file too, so `write` goes: Codex offers no second way to write.
+    return tools
+      .filter((tool) => tool.name !== "write")
+      .map((tool) => (tool.name === "edit" ? { ...tool, ...APPLY_PATCH } : tool));
   return tools.map((tool) => {
     const wire = CLAUDE_CODE[tool.name];
     if (!wire) return tool;
@@ -281,6 +322,19 @@ export function wireMessages<M extends { content: ContentBlock[] }>(
   dialect: ToolDialect,
 ): M[] {
   if (dialect === "native") return messages;
+  if (dialect === "codex")
+    return messages.map((message) =>
+      message.content.some((block) => block.type === "tool_call" && typeof block.input.patch === "string")
+        ? {
+            ...message,
+            content: message.content.map((block) =>
+              block.type === "tool_call" && typeof block.input.patch === "string"
+                ? { ...block, name: APPLY_PATCH.name, input: { input: block.input.patch } }
+                : block,
+            ),
+          }
+        : message,
+    );
   const toolOf = new Map<string, WireTool>();
   return messages.map((message) => {
     let changed = false;

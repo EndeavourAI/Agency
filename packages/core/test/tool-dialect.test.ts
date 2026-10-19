@@ -119,7 +119,9 @@ test("the dialect follows the model id, and a configured one wins", () => {
     "minimax/minimax-m2",
   ])
     expect(dialectFor(model)).toBe("claude-code");
-  for (const model of ["gpt-5.1", "gemini-3-pro", "qwen/qwen3-235b", "llama-4"])
+  for (const model of ["gpt-5.1", "openai/gpt-5-codex", "gpt-5.1-codex-mini"])
+    expect(dialectFor(model)).toBe("codex");
+  for (const model of ["openai/gpt-oss-120b", "gpt-4.1", "gemini-3-pro", "qwen/qwen3-235b", "llama-4"])
     expect(dialectFor(model)).toBe("native");
   expect(dialectFor("claude-haiku-5-5", "native")).toBe("native");
 });
@@ -175,4 +177,34 @@ test("Claude Code's dialect renames the tools, their schemas and the history, an
   // What the model sends back in those names is ours again.
   const back = sent!.content[0] as Parameters<typeof canonicalCall>[0];
   expect(canonicalCall(back, tools)).toEqual(history[0]!.content[0]);
+});
+
+test("Codex's dialect offers apply_patch for edit and write, and a patch comes back as an edit of its file", () => {
+  const offered = wireTools(
+    [tools[0]!, { name: "write", description: "w", inputSchema: {} }, tools[2]!].map((tool) => ({
+      description: "d",
+      ...tool,
+    })),
+    "codex",
+  );
+  expect(offered.map((tool) => tool.name)).toEqual(["apply_patch", "bash"]);
+
+  const text = "*** Begin Patch\n*** Update File: src/a.py\n@@\n-x\n+y\n*** End Patch";
+  const edit = canonicalCall(
+    { type: "tool_call", id: "c1", name: "apply_patch", input: { input: text } },
+    tools,
+  );
+  expect(edit).toEqual({
+    type: "tool_call",
+    id: "c1",
+    name: "edit",
+    input: { patch: text, path: "src/a.py" },
+  });
+  const [sent] = wireMessages([{ role: "assistant" as const, content: [edit] }], "codex");
+  expect(sent!.content[0]).toEqual({
+    type: "tool_call",
+    id: "c1",
+    name: "apply_patch",
+    input: { input: text },
+  });
 });

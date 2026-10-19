@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **GPT-5 and codex models edit with `apply_patch`**: for a model id with `gpt-5` or later or `codex` (not
+  `gpt-oss`), `edit` and `write` go to the model as Codex's `apply_patch` tool, in the patch format that OpenAI
+  trains these models on; Codex, OpenCode, Cline and Roo do the same. A patch changes one file a call (update, add
+  or delete), so the permission rules see each path; it runs as an `edit` of that file, with its snapshot, undo,
+  formatter and verify gate. A patch of several files is refused with the list of files, to send one call for each.
+  `toolDialect: "codex"` gives this form to any model.
 - **Claude and the models tested in Claude Code see Claude Code's tool names** (`toolDialect`, new, default
   `"auto"`): for a model id with `claude`, `kimi`, `glm`, `minimax`, `qwen…coder` or `deepseek`, `read`, `write`,
   `edit`, `bash`, `grep` and `glob` go to the model as `Read`, `Write`, `Edit` (`file_path`, `old_string`,

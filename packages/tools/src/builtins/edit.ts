@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { requirePathScope } from "@agency/guard";
 import { t } from "@agency/i18n";
 import { AgencyError, ErrorCode } from "@agency/schema";
@@ -6,6 +7,7 @@ import type { ToolDeps, ToolSpec } from "../contract.ts";
 import { applyEditsVerified, type EditHunk } from "../edit-engine.ts";
 import type { FormatterConfig } from "../formatter.ts";
 import { runFormatter } from "../formatter.ts";
+import { applyChunks, parsePatch } from "../patch.ts";
 import type { ReadState } from "../read-state.ts";
 import { clip, projectPath, str, summarize } from "../render.ts";
 import type { SnapshotStore } from "../snapshot.ts";
@@ -26,6 +28,8 @@ type EditInput = {
   newText?: string;
   hunks?: EditHunk[];
   replaceAll?: boolean;
+  /** A Codex `apply_patch` patch of this one file: the form that GPT-5 models get (core's tool dialect). */
+  patch?: string;
 };
 
 function hasHunks(input: EditInput): boolean {
@@ -133,6 +137,51 @@ export function createEditTool(
         ask: ctx.requestApproval,
       });
       requirePathScope(deps.identity, deps.capabilities, resolved);
+
+      if (typeof input.patch === "string") {
+        const ops = parsePatch(input.patch);
+        if (typeof ops === "string") return { content: `apply_patch rejected: ${ops}`, isError: true };
+        const [op] = ops;
+        // One file a call: the permission rules see the path of each change.
+        if (ops.length > 1 || op?.path !== input.path)
+          return {
+            content: `apply_patch rejected: a patch here changes one file. Send one apply_patch call for each of ${ops.map((o) => o.path).join(", ")}, in one reply.`,
+            isError: true,
+          };
+        if (op.kind === "update" && op.moveTo !== undefined)
+          return {
+            content:
+              "apply_patch rejected: *** Move to is not taken here. Change the file, then move it with the shell.",
+            isError: true,
+          };
+        const before = existsSync(resolved) ? readFileSync(resolved, "utf8") : undefined;
+        if (op.kind !== "add" && before === undefined)
+          return { content: t("tool.edit.missing_file", { path: input.path }), isError: true };
+        if (op.kind === "delete") {
+          snapshots.capture(resolved, before as string, ctx.turnId);
+          unlinkSync(resolved);
+          return { content: `deleted ${input.path}` };
+        }
+        const after = op.kind === "add" ? op.content : applyChunks(before as string, op.chunks);
+        if (after instanceof Error)
+          return { content: `apply_patch rejected: ${after.message}`, isError: true };
+        if (after === before)
+          return { content: t("tool.edit.no_change", { path: input.path }), isError: true };
+        if (before === undefined) {
+          mkdirSync(dirname(resolved), { recursive: true });
+          snapshots.captureCreated(resolved, ctx.turnId);
+        } else snapshots.capture(resolved, before, ctx.turnId);
+        writeFileSync(resolved, after, "utf8");
+        options?.readState?.mark(resolved);
+        await runFormatter(formatter, resolved);
+        snapshots.recordAfter(resolved);
+        let content = t("tool.edit.applied", {
+          path: projectPath(deps.sandbox.resolvePath("."), resolved, input.path),
+        });
+        const broken = syntaxNote(input.path, before, after);
+        if (broken !== undefined) content += `\n${broken}`;
+        return { content };
+      }
 
       if (hasHunks(input) === hasPair(input)) {
         return { content: t("tool.edit.bad_input"), isError: true };

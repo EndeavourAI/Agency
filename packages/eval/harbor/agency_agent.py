@@ -73,6 +73,10 @@ class Agency(BaseInstalledAgent):
         await self.exec_as_root(environment, command=f"mkdir -p {ROOT}")
         await environment.upload_file(local, str(BINARY))
         await self.exec_as_root(environment, command=f"chmod 755 {BINARY} && {BINARY} --version")
+        # `run` goes as the agent user, and Agency's home is under this folder.
+        if environment.default_user is not None:
+            owner = shlex.quote(str(environment.default_user))
+            await self.exec_as_root(environment, command=f"chown -R {owner} {ROOT}")
 
     @override
     @with_prompt_template

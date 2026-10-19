@@ -37,8 +37,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   of the history and in the errors that name an argument. The session, hooks and permission rules keep this
   harness's names, and the names follow the model of each request, so a fallback of another family gets its own.
   `"auto"` does not pick it for Claude or the models tested in Claude Code: on the 13 bench tasks Haiku 5.5 (148
-  runs) and MiniMax M3.1 (12, free) solved every task with either names, and with this harness's names in 2 to 6%
-  fewer calls.
+  runs) and MiniMax M3.1 (12, free) solved every task with either names, with no measurable difference in calls
+  (2% pooled, inside the run-to-run noise).
 - **Tool calls in the names of other harnesses run**: a model trained on Claude Code, Codex, Gemini CLI, OpenCode
   or Kimi CLI sends that harness's tool and argument names (`Edit` with `file_path`/`old_string`, `read_file`,
   `exec_command` with `cmd`, Codex's `shell` with an argv, `MultiEdit` with `edits`). Each call is mapped to the

@@ -54,7 +54,10 @@ export function prepareWorkspace(task: { name: string; spec: TaskSpec }, ws: str
 /** Hashes of the check files: a run that edits them does not count as solved. */
 export function testHashes(ws: string): string {
   if (!existsSync(join(ws, "test"))) return "";
-  return readdirSync(join(ws, "test"))
+  // Files only: a run of Python tests leaves a __pycache__ folder there.
+  return readdirSync(join(ws, "test"), { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
     .sort()
     .map((f) =>
       createHash("sha256")

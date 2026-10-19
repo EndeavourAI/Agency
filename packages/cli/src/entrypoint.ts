@@ -875,7 +875,7 @@ function subcommandError(group: string, subcommand: string | undefined): Error {
 
 /** What `-p` prints in text mode: the reply to the prompt this run sent.
  *  A session turn returns the earlier turns too, and those are not output. */
-function assistantText(messages: Message[]): string {
+function assistantText(messages: Message[], prompt?: string): string {
   const isCutNote = (message: Message) =>
     message.role === "user" &&
     message.content.some((block) => block.type === "text" && block.text === OUTPUT_CUT_NOTE);
@@ -891,18 +891,38 @@ function assistantText(messages: Message[]): string {
     .slice(start)
     .flatMap((message) => (message.role === "assistant" ? message.content : []))
     .flatMap((block) => (block.type === "text" ? [block.text] : []));
-  if (answer.length > 0) return answer.join("\n");
+  if (answer.length > 0) {
+    // A harness note (untested edits) can send an answer back; live, `result` then held only the reply to the note.
+    // So a reply of this run that a note, not a tool result, follows is part of the answer.
+    const asked =
+      prompt === undefined
+        ? -1
+        : messages.findLastIndex(
+            (message) =>
+              message.role === "user" &&
+              message.content.some((block) => block.type === "text" && block.text === prompt),
+          );
+    const run = asked < 0 ? [] : messages.slice(asked + 1, start);
+    const earlier = run.flatMap((message, i) => {
+      const next = run[i + 1];
+      const noted = next?.role === "user" && next.content.some((block) => block.type === "text");
+      if (message.role !== "assistant" || !noted || isCutNote(next)) return [];
+      const texts = message.content.flatMap((block) => (block.type === "text" ? [block.text] : []));
+      return texts.length > 0 ? [texts.join("\n")] : [];
+    });
+    return [...earlier, answer.join("\n")].join("\n\n");
+  }
 
   // No answer (a turn that stopped early): show every text of this run, so partial work is not lost.
   // The note after a cut reply is not a prompt: the parts before it are output too. A real model drops the
   // space at the cut ("22" then "23"), so the parts keep a line break between them and never merge.
-  const prompt = messages.findLastIndex(
+  const lastAsk = messages.findLastIndex(
     (message) =>
       message.role === "user" &&
       message.content.some((block) => block.type === "text" && block.text !== OUTPUT_CUT_NOTE),
   );
   const parts: string[] = [];
-  for (const message of messages.slice(prompt + 1)) {
+  for (const message of messages.slice(lastAsk + 1)) {
     if (message.role !== "assistant") continue;
     for (const block of message.content) {
       if (block.type === "text") parts.push(block.text);
@@ -922,15 +942,18 @@ function reportTurn<T extends RunTurnRpcResult>(
   err: LineSink,
   parsed: Pick<ParsedArgv, "format" | "streamJson" | "outputLastMessage">,
   result: T,
+  prompt?: string,
 ): number {
   if (parsed.outputLastMessage !== undefined) {
     const answer =
-      "structuredOutput" in result ? JSON.stringify(result.structuredOutput) : assistantText(result.messages);
+      "structuredOutput" in result
+        ? JSON.stringify(result.structuredOutput)
+        : assistantText(result.messages, prompt);
     writeFileSync(resolve(parsed.outputLastMessage), `${answer}\n`);
   }
   // A run that the cost limit cut is not finished: a script must not read it as success.
   const failed = result.stopReason === "error" || result.error !== undefined || result.budgetExceeded;
-  const text = assistantText(result.messages);
+  const text = assistantText(result.messages, prompt);
   // The fields of `claude -p --output-format json` come first: a script for Claude Code reads `.result`.
   const payload = {
     type: "result",
@@ -1198,7 +1221,7 @@ async function runPrintMode(
         ...(parsed.maxCost === undefined ? {} : { budget: { maxCostUsd: parsed.maxCost } }),
         nonInteractive: true,
       });
-      return reportTurn(out, err, parsed, { sessionId, tipId, ...result });
+      return reportTurn(out, err, parsed, { sessionId, tipId, ...result }, prompt);
     } finally {
       await client.close();
     }
@@ -1234,7 +1257,7 @@ async function runPrintMode(
     ...(parsed.maxCost === undefined ? {} : { budget: { maxCostUsd: parsed.maxCost } }),
   });
   if (outputSchema === undefined)
-    return reportTurn(out, err, parsed, sessionId === undefined ? result : { sessionId, ...result });
+    return reportTurn(out, err, parsed, sessionId === undefined ? result : { sessionId, ...result }, prompt);
   const answer = result.messages
     .flatMap((m) => m.content)
     .findLast((b) => b.type === "tool_call" && b.name === STRUCTURED_OUTPUT_TOOL);
@@ -1301,7 +1324,7 @@ function mcpServeCmd(
       try {
         await runPrintMode(run, call.prompt, deps, (line) => (payload = line), err);
         const result = JSON.parse(payload) as RunTurnRpcResult;
-        const text = assistantText(result.messages);
+        const text = assistantText(result.messages, call.prompt);
         const failure =
           result.error?.message ?? (result.budgetExceeded ? t("cli.error.budget_exceeded") : undefined);
         return failure === undefined
@@ -1412,7 +1435,7 @@ async function workflowCmd(
       spent += turn.usage.costUsd ?? 0;
       err(t("cli.workflow.agent_end", { n: String(n), reason: turn.error?.code ?? turn.stopReason }));
       return {
-        text: assistantText(turn.messages),
+        text: assistantText(turn.messages, prompt),
         stopReason: turn.stopReason,
         usage: turn.usage,
         ok: turn.stopReason !== "error" && !turn.error && !turn.budgetExceeded,

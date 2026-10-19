@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`-p` output keeps an answer that a harness note sent back**: when the untested-edits note made the model check its
+  work, `result` (and text output) held only the reply to the note. In a live run on Linux, the model reported the
+  status code 200, and `.result` said only "No project checks apply". The answers of the run now come first, then
+  the reply to the note; a run with no note prints as before.
 - **Under `--permission-mode allow-all`, a command may pass the network limit of the sandbox**, even in a headless
   run where no one can be asked, as Claude Code's bypass mode allows everything. Before, a headless run refused every
   ask, so under the OS sandbox (bubblewrap, macOS) `pip install` failed under allow-all: in a live run on Linux the

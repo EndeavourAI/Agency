@@ -1334,6 +1334,28 @@ describe("-p headless mode", () => {
     expect([payload.result, payload.stopReason]).toEqual(["hi from the fake daemon", "end_turn"]);
   });
 
+  test("the answer that a harness note sent back stays in the result, before the reply to the note", async () => {
+    // Live: the model answered "200", the untested-edits note sent it back, and `result` held only "No checks apply".
+    const turn: RunTurnRpcResult = {
+      ...TURN_RESULT,
+      messages: [
+        { role: "user", content: [{ type: "text", text: "print the status code" }] },
+        { role: "assistant", content: [{ type: "text", text: "The status code is 200." }] },
+        { role: "user", content: [{ type: "text", text: "You changed fetch.py and ran no passing test." }] },
+        {
+          role: "assistant",
+          content: [{ type: "tool_call", id: "c1", name: "glob", input: { pattern: "*.toml" } }],
+        },
+        { role: "user", content: [{ type: "tool_result", toolCallId: "c1", content: "no files matched" }] },
+        { role: "assistant", content: [{ type: "text", text: "No project checks apply." }] },
+      ],
+    };
+    const { deps, out } = capture();
+    const argv = ["-p", "--model", "openai/fake-1", "--output-format", "json", "print the status code"];
+    expect(await runEntrypoint(argv, { ...baseDeps(), ...deps, ...fakeRunHeadless(turn) })).toBe(0);
+    expect(JSON.parse(out.join("\n")).result).toBe("The status code is 200.\n\nNo project checks apply.");
+  });
+
   test("codex exec and the flags of codex and pi run as -p", async () => {
     const exec = parseArgv(["exec", "--skip-git-repo-check", "-m", "openai/fake-1", "fix it"]);
     expect([exec.print, exec.command, exec.model]).toEqual(["fix it", undefined, "openai/fake-1"]);

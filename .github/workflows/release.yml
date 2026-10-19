@@ -25,7 +25,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            targets: bun-linux-x64,bun-linux-arm64
+            targets: bun-linux-x64,bun-linux-arm64,bun-linux-x64-musl,bun-linux-arm64-musl
             sign_os: linux
           - os: macos-latest
             targets: bun-darwin-x64,bun-darwin-arm64

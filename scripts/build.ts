@@ -19,6 +19,9 @@ const ENTRYPOINT = "packages/cli/src/entrypoint.ts";
 const TARGETS: Record<string, string> = {
   "bun-linux-x64": "agency-linux-x64",
   "bun-linux-arm64": "agency-linux-arm64",
+  // Alpine and other musl images: a glibc build does not start there.
+  "bun-linux-x64-musl": "agency-linux-x64-musl",
+  "bun-linux-arm64-musl": "agency-linux-arm64-musl",
   "bun-darwin-x64": "agency-darwin-x64",
   "bun-darwin-arm64": "agency-darwin-arm64",
   "bun-windows-x64": "agency-windows-x64.exe",
@@ -101,7 +104,8 @@ async function compile(target: string, outfile: string, version: string): Promis
       "--compile",
       "--minify",
       // Each start, also each command of the Windows sandbox helper, skips the parse: about 45 ms less, 9 MB more.
-      "--bytecode",
+      // Bun 1.4's musl build aborts on its own bytecode (a JSC assertion, live on Alpine 3.22).
+      ...(target.endsWith("-musl") ? [] : ["--bytecode"]),
       "--format=esm",
       "--sourcemap=none",
       "--define",

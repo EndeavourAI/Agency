@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { validateToolInput } from "../src/loop.ts";
 import { canonicalCall, dialectFor, wireMessages, wireTools } from "../src/tool-dialect.ts";
 
 const hunk = {
@@ -199,4 +200,14 @@ test("Codex's dialect offers apply_patch for edit and write, and a patch comes b
     name: "apply_patch",
     input: { input: text },
   });
+});
+
+test("a patch that does not parse still reaches edit with its file, so the model gets the patch fault", () => {
+  const text = "*** Begin Patch\n*** Update File: src/a.py\nnot a change line\n*** End Patch";
+  const edit = canonicalCall(
+    { type: "tool_call", id: "c1", name: "apply_patch", input: { input: text } },
+    tools,
+  );
+  expect(edit.input).toEqual({ patch: text, path: "src/a.py" });
+  expect(validateToolInput(tools[0]!.inputSchema, edit.input)).toBeUndefined();
 });

@@ -139,12 +139,13 @@ function canonicalInput(tool: string, input: Record<string, unknown>): Record<st
     const patch = [out.patch, out.input, out.patchText].find((value) => typeof value === "string");
     if (typeof patch === "string" && /^\s*\*\*\* Begin Patch/.test(patch)) {
       const ops = parsePatch(patch);
+      // A patch that does not parse still names its file: the edit then reports the fault, not a missing `path`.
+      const path =
+        typeof ops === "string"
+          ? /^\*\*\* (?:Add|Delete|Update) File: (.+)$/m.exec(patch)?.[1]?.trim()
+          : ops[0]?.path;
       const { input: _input, patchText: _text, ...rest } = out;
-      out = {
-        ...rest,
-        patch,
-        ...(typeof ops !== "string" && rest.path === undefined ? { path: ops[0]?.path } : {}),
-      };
+      out = { ...rest, patch, ...(rest.path === undefined && path !== undefined ? { path } : {}) };
     }
     let hunks = out.hunks;
     if (typeof hunks === "string") {
@@ -246,8 +247,8 @@ export type ToolDialect = "native" | "claude-code" | "codex";
 const CODEX_MODELS = /gpt-[5-9]|codex/i;
 
 /**
- * "auto" does not pick "claude-code": on 13 bench tasks Haiku 5.5 (148 runs) and MiniMax M3.1 (12) solved as many
- * with the names here, in 2 to 6% fewer calls.
+ * "auto" does not pick "claude-code": on 13 bench tasks Haiku 5.5 (148 runs) and MiniMax M3.1 (12) showed no
+ * difference (2% in calls, inside the noise), and its rewrite of the history is a cost of its own.
  */
 export function dialectFor(model: string, configured: ToolDialect | "auto" = "auto"): ToolDialect {
   if (configured !== "auto") return configured;

@@ -1699,3 +1699,51 @@ describe("A5: input validation and permissions gating", () => {
     }
   });
 });
+
+test("the catalog's cache read price sets the prune batch of the session", async () => {
+  const cachedUsage = { inputTokens: 10_000, outputTokens: 5, cachedInputTokens: 8_000 };
+  const adapter = (): ProviderAdapter => {
+    let call = 0;
+    return {
+      family: "fake",
+      async *stream(): AsyncIterable<StreamEvent> {
+        call += 1;
+        if (call <= 3) {
+          yield { type: "tool_call_start", id: `call_${call}`, name: "noop" };
+          yield { type: "tool_call_delta", id: `call_${call}`, inputJsonDelta: "{}" };
+          yield { type: "tool_call_end", id: `call_${call}` };
+          yield { type: "message_stop", stopReason: "tool_use", usage: cachedUsage };
+        } else {
+          yield { type: "text_delta", text: "done" };
+          yield { type: "message_stop", stopReason: "end_turn", usage: cachedUsage };
+        }
+      },
+    };
+  };
+  const noop: ToolSpec = {
+    name: "noop",
+    description: "does nothing",
+    inputSchema: { type: "object", properties: {} },
+    riskTier: "safe",
+    handler: async () => ({ content: "ok" }),
+  };
+  const batchAt = async (cachedInput: number | undefined) => {
+    const cacheSeen = { requests: 0, input: 0, cached: 0, written: 0 };
+    await runTurn(adapter(), new Scheduler(), noopHttp, {
+      identity: user,
+      capabilities: FULL_CAPABILITIES,
+      systemPrompt: "sys",
+      tools: [noop],
+      model: "m",
+      apiKey: "k",
+      session: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+      toolPolicy: { check: async () => "allow" as const },
+      cacheSeen,
+      ...(cachedInput === undefined ? {} : { pricePerMTok: { input: 1, output: 2, cachedInput } }),
+    });
+    return (cacheSeen as { rule?: { batchTokens: number } }).rule?.batchTokens;
+  };
+  expect(await batchAt(0.1)).toBe(20_000);
+  expect(await batchAt(0.25)).toBe(10_000);
+  expect(await batchAt(undefined)).toBe(10_000);
+});

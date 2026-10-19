@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A session whose cache reads at a tenth of the input price or less prunes in 20K-token batches**, not 10K: the
+  batch now follows the cache read price of the model in the catalog, as well as what the first three requests
+  cached. On `poolside/laguna-s-2.1` through OpenRouter (input $0.09/M, cache read $0.009/M), uncached input was 57%
+  of the research cost in the stored runs. A replay of 112 research sessions with the repository's own pruning,
+  priced at 0.1x: cost −11% with 20K batches (−13% with 40K, but 32% more input), input +12%; all tasks −9%. At a
+  0.25x read price 10K and 20K differ by 1%, so 10K stays; a model with no known cache price keeps 10K too.
 - **A new daemon runs `git status` for the environment block as it starts**, not before the first request: on
   Windows the status took 58 ms (36 of them to start the process) on this repository, synchronously, before the
   first request of each session. In 198 daemon starts in the log, the first turn began a median 98 ms after the

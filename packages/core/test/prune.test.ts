@@ -152,3 +152,16 @@ test("the rule follows what the first three requests cached, then stays", () => 
   expect(pruneRule(seen([none, none, read]))).toEqual({ age: 6, batchTokens: 0 });
   expect(pruneRule(seen([read, read, read, none, none, none]))).toEqual({ age: 6, batchTokens: 10_000 });
 });
+
+test("a cache read at a tenth of the input price or less keeps 20K batches", () => {
+  const seen = (readPrice: number | undefined): CacheSeen => {
+    const cache: CacheSeen = { requests: 0, input: 0, cached: 0, written: 0 };
+    for (let request = 0; request < 3; request++)
+      seeCache(cache, { inputTokens: 10_000, cachedInputTokens: 8_000 }, readPrice);
+    return cache;
+  };
+  // Replay of 112 research sessions at Laguna's 0.1x read price: cost -11% against 10K batches, input +12%.
+  expect(pruneRule(seen(0.1))).toEqual({ age: 6, batchTokens: 20_000 });
+  expect(pruneRule(seen(0.25))).toEqual({ age: 6, batchTokens: 10_000 });
+  expect(pruneRule(seen(undefined))).toEqual({ age: 6, batchTokens: 10_000 });
+});

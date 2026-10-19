@@ -24,11 +24,15 @@ export interface CacheSeen {
 const NO_CACHE: PruneRule = { age: 6, batchTokens: 0 };
 const READ_CACHE: PruneRule = { age: 6, batchTokens: 10_000 };
 const WRITTEN_CACHE: PruneRule = { age: 6, batchTokens: 40_000 };
+// The same replay at Laguna's 0.1x read price: 20K batches cost 11% less than 10K, with 12% more input.
+const CHEAP_READ_CACHE: PruneRule = { age: 6, batchTokens: 20_000 };
 
 /** Counts one request's usage until the rule is fixed: a cache that holds half the input keeps batches. */
 export function seeCache(
   seen: CacheSeen,
   usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens?: number },
+  /** A cached input token's price over an input token's, from the catalog. */
+  readPrice?: number,
 ): void {
   if (seen.rule !== undefined) return;
   seen.requests += 1;
@@ -36,7 +40,14 @@ export function seeCache(
   seen.cached += usage.cachedInputTokens ?? 0;
   seen.written += usage.cacheWriteInputTokens ?? 0;
   if (seen.requests < 3) return;
-  seen.rule = seen.cached * 2 < seen.input ? NO_CACHE : seen.written > 0 ? WRITTEN_CACHE : READ_CACHE;
+  seen.rule =
+    seen.cached * 2 < seen.input
+      ? NO_CACHE
+      : seen.written > 0
+        ? WRITTEN_CACHE
+        : (readPrice ?? 1) <= 0.1
+          ? CHEAP_READ_CACHE
+          : READ_CACHE;
 }
 
 /** Before the rule is fixed, the one that prunes least. */

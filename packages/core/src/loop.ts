@@ -611,7 +611,12 @@ export async function runTurn(
         await append({ role: "assistant", content: relativePaths(turn.content, options.cwd) });
       spoke = turn.content.some((block) => block.type === "text" && block.text.trim() !== "");
       cumulativeUsage = addUsage(cumulativeUsage, turn.usage);
-      seeCache(cacheSeen, turn.usage);
+      const price = options.pricePerMTok;
+      seeCache(
+        cacheSeen,
+        turn.usage,
+        price?.input ? (price.cachedInput ?? price.input) / price.input : undefined,
+      );
       requestTokens = turn.usage.inputTokens + turn.usage.outputTokens;
       // A compaction that left the request at the trigger size cannot help: the next ones would each cost a summary.
       if (folded && requestTokens >= triggerTokens(compactionThreshold)) proactiveFolds = false;

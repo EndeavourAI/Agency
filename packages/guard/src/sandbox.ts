@@ -137,6 +137,7 @@ export class SandboxBoundary implements SandboxBackend {
         tool: opts.tool,
         title: `access outside the workspace: ${candidate}`,
         path: candidate,
+        source: "external_directory",
       });
       if (response === "reject") {
         throw new AgencyError(

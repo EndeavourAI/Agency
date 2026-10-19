@@ -25,7 +25,18 @@ test("allow-all lets a command past the network limit of the sandbox, even with 
   expect(await approval({ permissionMode: "allow-all", nonInteractive: true })(network)).toBe("once");
   expect(await approval({ nonInteractive: true })(network)).toBe("reject");
   expect(await approval({ permissionMode: "allow-edits", nonInteractive: true })(network)).toBe("reject");
-  // Only the network: another ask under allow-all is still refused when no one can answer.
-  const outside: ApprovalRequest = { tool: "read", title: "Read outside the workspace", path: "/etc/passwd" };
-  expect(await approval({ permissionMode: "allow-all", nonInteractive: true })(outside)).toBe("reject");
+  // Another ask under allow-all is still refused when no one can answer.
+  const plan: ApprovalRequest = { tool: "plan_exit", title: "the plan", oneTime: true };
+  expect(await approval({ permissionMode: "allow-all", nonInteractive: true })(plan)).toBe("reject");
+});
+
+test("allow-all lets a file tool past the edge of the workspace; other modes still ask", async () => {
+  const outside: ApprovalRequest = {
+    tool: "read",
+    title: "access outside the workspace: /etc/hosts",
+    path: "/etc/hosts",
+    source: "external_directory",
+  };
+  expect(await approval({ permissionMode: "allow-all", nonInteractive: true })(outside)).toBe("once");
+  expect(await approval({ permissionMode: "allow-edits", nonInteractive: true })(outside)).toBe("reject");
 });

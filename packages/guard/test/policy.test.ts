@@ -366,9 +366,9 @@ describe("PermissionsGate", () => {
     expect(mapped.externalDirectoryDecision("/etc/passwd")).toBe("ask");
   });
 
-  test("unconfigured external_directory defaults to deny (historical sandbox behavior)", () => {
+  test("unconfigured external_directory asks, as Claude Code does for a path outside its folder", () => {
     const gate = new PermissionsGate({ workspaceRoot: root });
-    expect(gate.externalDirectoryDecision("/tmp/x")).toBe("deny");
+    expect(gate.externalDirectoryDecision("/tmp/x")).toBe("ask");
   });
 
   test("planner agent: absentToolsDenied filters bash when not in permissions map", () => {

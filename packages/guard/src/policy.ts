@@ -1149,12 +1149,12 @@ export class PermissionsGate implements ToolPolicy {
   /**
    * The `external_directory` permission governs access outside the workspace
    * root. Accepts a bare decision or a directory-glob map (matched against the
-   * resolved absolute path, forward-slash form); defaults to `deny`, which is
-   * the sandbox's historical behavior.
+   * resolved absolute path, forward-slash form); defaults to `ask`, as Claude Code
+   * asks for a path outside its folder (allow-all approves it).
    */
   externalDirectoryDecision(absolutePath: string): Decision {
     const entry = (this.permissions as { external_directory?: ToolPermissionValue }).external_directory;
-    if (entry === undefined) return "deny";
+    if (entry === undefined) return "ask";
     if (typeof entry === "string") return entry;
     const normalized = absolutePath.replace(/\\/g, "/");
     let matched: Decision | undefined;

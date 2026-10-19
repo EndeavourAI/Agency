@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A file tool asks for a path outside the workspace when the config sets no `external_directory` rule**, as
+  Claude Code asks for a path outside its folder; before, it was refused in every mode. Under allow-all the ask
+  passes, so `read`, `edit` and `write` reach `/etc` or a library's source; a headless run in another mode still
+  refuses it, and an explicit `external_directory` rule still wins. In 584 stored sessions, 36 calls were refused
+  for a real outside path, and the model then mostly turned to `bash`: one wasted reply each.
 - **Under `--permission-mode allow-all`, a `bash` command runs outside the sandbox of the operating system**, with
   the user's rights, as in Claude Code's bypass mode and Codex's `--yolo`. Under bubblewrap or Seatbelt, allow-all
   still left everything outside the workspace read-only (`apt install`, `/etc`, `/usr/local`) and gave each command

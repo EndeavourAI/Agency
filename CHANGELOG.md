@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Under `--permission-mode allow-all`, a command may pass the network limit of the sandbox**, even in a headless
+  run where no one can be asked, as Claude Code's bypass mode allows everything. Before, a headless run refused every
+  ask, so under the OS sandbox (bubblewrap, macOS) `pip install` failed under allow-all: in a live run on Linux the
+  task could not be done. Other modes still ask, and other asks in a headless run are still refused.
 - **Under the sandbox of the operating system, a long `bash` command moves to the background after 120 seconds**, as
   the tool's description says and as it does with no OS sandbox: on Linux with bubblewrap and on macOS, a command
   ran through a path with no detach, so it held the turn until it ended. In a live headless run on Linux, a model's

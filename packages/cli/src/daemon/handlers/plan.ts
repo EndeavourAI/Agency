@@ -38,7 +38,12 @@ export function createTurnApproval(
       });
       eventBus.emit("event", { event: "permission.asked", payload: { tool: request.tool } });
     } catch {}
-    if (approvals.hasAlways(request)) {
+    // allow-all lets a command past the network limit of the sandbox, as Claude Code's bypass mode allows all:
+    // live, a headless run refused `pip install` under allow-all, and the task could not be done.
+    if (
+      approvals.hasAlways(request) ||
+      (params.permissionMode === "allow-all" && request.source === "sandbox:network")
+    ) {
       reply("once", "answered");
       return "once";
     }

@@ -5,6 +5,7 @@ import { t } from "@agency/i18n";
 import type { ToolDeps, ToolSpec } from "../contract.ts";
 import type { FormatterConfig } from "../formatter.ts";
 import { runFormatter } from "../formatter.ts";
+import { newPlaceholder } from "../placeholder.ts";
 import type { ReadState } from "../read-state.ts";
 import { projectPath, str, summarize } from "../render.ts";
 import type { SnapshotStore } from "../snapshot.ts";
@@ -46,6 +47,9 @@ export function createWriteTool(
 
       const existed = existsSync(resolved);
       const before = existed ? readFileSync(resolved, "utf8") : undefined;
+      const omitted = newPlaceholder(input.content, before);
+      if (omitted !== undefined)
+        return { content: t("tool.placeholder", { tool: "write", line: omitted }), isError: true };
       if (before !== undefined) {
         snapshots.capture(resolved, before, ctx.turnId);
       } else {

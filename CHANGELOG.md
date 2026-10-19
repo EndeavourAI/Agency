@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **An edit or write with a line that stands for left-out code is refused**: a model that sends
+  `// ... rest of code ...` or `# ... existing code ...` in place of the code would delete that code. `edit`,
+  `write` and `apply_patch` now refuse such a line (one the file did not have already) and say why, as Gemini CLI
+  does. Code and prose that only mention these words pass.
 - **Open coding models get their vendor's temperature**: GLM-4.6 and 4.7 and MiniMax M2 run at 1.0, Kimi K2 at
   0.6 (its thinking and K2.5 models at 1.0), and Qwen3-Coder at 0.7, as their vendors recommend and OpenCode sends.
   Before, each request took the default of the provider that served it. Other models are unchanged.

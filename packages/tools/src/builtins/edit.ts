@@ -8,6 +8,7 @@ import { applyEditsVerified, type EditHunk } from "../edit-engine.ts";
 import type { FormatterConfig } from "../formatter.ts";
 import { runFormatter } from "../formatter.ts";
 import { applyChunks, parsePatch } from "../patch.ts";
+import { newPlaceholder } from "../placeholder.ts";
 import type { ReadState } from "../read-state.ts";
 import { clip, projectPath, str, summarize } from "../render.ts";
 import type { SnapshotStore } from "../snapshot.ts";
@@ -165,6 +166,9 @@ export function createEditTool(
         const after = op.kind === "add" ? op.content : applyChunks(before as string, op.chunks);
         if (after instanceof Error)
           return { content: `apply_patch rejected: ${after.message}`, isError: true };
+        const omitted = newPlaceholder(after, before);
+        if (omitted !== undefined)
+          return { content: t("tool.placeholder", { tool: "apply_patch", line: omitted }), isError: true };
         if (after === before)
           return { content: t("tool.edit.no_change", { path: input.path }), isError: true };
         if (before === undefined) {
@@ -202,6 +206,9 @@ export function createEditTool(
         if (hunk.oldText.length === 0) {
           return { content: t("tool.edit.empty_hunk", { index: index + 1 }), isError: true };
         }
+        const line = newPlaceholder(hunk.newText, hunk.oldText);
+        if (line !== undefined)
+          return { content: t("tool.placeholder", { tool: "edit", line }), isError: true };
       }
 
       try {

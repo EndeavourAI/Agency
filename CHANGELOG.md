@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A turn that ends while a file the task named is missing is sent back once**: when the model stops and a file
+  that the prompt names (an absolute path, or a relative one with a folder in it) does not exist in a folder that
+  does, it is told to make it, as a best effort is better than none, or to say in one line why not. On
+  Terminal-Bench 4 of 14 failed runs ended with such a file missing (`/app/solution.txt`, `/app/data.comp`). A path
+  in a folder that does not exist (`/path/to/out.txt`) is taken as an example and left alone.
 - **The JSON result of `-p` reports time and failed calls**: `duration_ms` (the run, as Claude Code reports it),
   `duration_api_ms` (time spent on model replies), `num_tool_calls` and `num_tool_errors`. The Harbor agent gives
   them to Harbor with the stop reason, so each trial shows where a run went wrong.

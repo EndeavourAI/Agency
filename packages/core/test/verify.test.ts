@@ -10,7 +10,7 @@ import { Scheduler } from "@agency/providers";
 import type { Message } from "@agency/schema";
 import { runTurn } from "../src/loop.ts";
 import { buildTestMap, parseLcov } from "../src/testmap.ts";
-import { untestedEdits, untestedNote } from "../src/verify.ts";
+import { missingOutputs, untestedEdits, untestedNote } from "../src/verify.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -172,4 +172,53 @@ test("a turn that would end with such a test unrun is told once, and goes on", a
   expect(seen).toHaveLength(3);
   const note = seen[2]?.messages.at(-1)?.content[0];
   expect(note?.type === "text" ? note.text : "").toContain("test/render.test.ts");
+});
+
+test("the files a task names that do not exist, in a folder that does, are its missing outputs", () => {
+  const root = repo();
+  const prompt =
+    "Compress /DATA/x into src/data.comp and write the word to src/solution.txt. Read src/render.ts. " +
+    "See https://example.com/a/b.html, version 1.2, e.g. a sketch at /path/to/out.txt.";
+  // Absolute and relative: the test uses the repo as the root of both.
+  expect(missingOutputs(prompt.replace("/DATA/x", `${root}/src/render.ts`), root)).toEqual([
+    "src/data.comp",
+    "src/solution.txt",
+  ]);
+  // An absolute path, as Terminal-Bench names its outputs (/app/solution.txt): POSIX paths only.
+  if (process.platform !== "win32")
+    expect(missingOutputs(`write it to ${root}/src/out.json`, root)).toEqual([`${root}/src/out.json`]);
+});
+
+test("a turn that ends while a file the task named is missing is sent back once", async () => {
+  const root = repo();
+  const seen: ProviderRequest[] = [];
+  const adapter: ProviderAdapter = {
+    family: "fake",
+    async *stream(request): AsyncIterable<StreamEvent> {
+      seen.push(request);
+      yield { type: "text_delta", text: "I could not finish." };
+      yield { type: "message_stop", stopReason: "end_turn", usage: { inputTokens: 1, outputTokens: 1 } };
+    },
+  };
+  await runTurn(
+    adapter,
+    new Scheduler({ maxAttempts: 1 }),
+    { fetch: async () => new Response() },
+    {
+      identity: { type: "user" },
+      capabilities: FULL_CAPABILITIES,
+      systemPrompt: "sys",
+      model: "m",
+      apiKey: "k",
+      cwd: root,
+      verifyEdits: true,
+      session: [{ role: "user", content: [{ type: "text", text: "Write the answer to src/solution.txt" }] }],
+      tools: [],
+    },
+  );
+  expect(seen).toHaveLength(2);
+  const note = seen[1]?.messages.at(-1)?.content[0];
+  expect(note?.type === "text" ? note.text : "").toContain(
+    "the task names src/solution.txt, and it does not exist",
+  );
 });

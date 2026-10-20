@@ -50,7 +50,7 @@ import { canonicalCall, dialectFor, type ToolDialect, wireMessages, wireTools } 
 import type { TraceRecorder } from "./trace/recorder.ts";
 import { relativePaths } from "./transcript.ts";
 import { truncateToolResults } from "./truncate.ts";
-import { untestedEdits, untestedNote } from "./verify.ts";
+import { missingNote, missingOutputs, untestedEdits, untestedNote } from "./verify.ts";
 
 export interface ToolSpec<Input = Record<string, unknown>> extends ToolDefinition {
   handler(
@@ -353,6 +353,7 @@ export async function runTurn(
   let outputContinuations = 0;
   let stopBlocked = false;
   let verifyNoted = false;
+  let outputsNoted = false;
   let serialReads = 0;
   let serialNoted = false;
   const cacheSeen = options.cacheSeen ?? { requests: 0, input: 0, cached: 0, written: 0 };
@@ -746,6 +747,20 @@ export async function runTurn(
           if (unrun.length > 0) {
             verifyNoted = true;
             await append({ role: "user", content: [{ type: "text", text: untestedNote(unrun) }] }, "harness");
+            continue;
+          }
+        }
+        if (canGoOn && options.verifyEdits && !outputsNoted && options.cwd !== undefined) {
+          outputsNoted = true;
+          const asked = messages[turnStart - 1];
+          const text =
+            asked?.role === "user" ? asked.content.flatMap((b) => (b.type === "text" ? [b.text] : [])) : [];
+          const missing = missingOutputs(text.join("\n"), options.cwd);
+          if (missing.length > 0) {
+            await append(
+              { role: "user", content: [{ type: "text", text: missingNote(missing) }] },
+              "harness",
+            );
             continue;
           }
         }

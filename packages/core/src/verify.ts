@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { Message } from "@agency/schema";
 import { coveringTests, readTestMap, type TestMap } from "./testmap.ts";
@@ -119,4 +119,27 @@ export function untestedNote(unrun: string[]): string {
   const folders = [...new Set(rest.map((test) => dirname(test).replace(/\\/g, "/")))];
   const more = rest.length === 0 ? "" : ` and ${rest.length} more in ${folders.join(", ")}`;
   return `[harness: these tests import a file that you changed in this turn, and no command of this turn ran them: ${unrun.slice(0, MAX_LISTED).join(", ")}${more}. Run them before you finish, or say why they need not run.]`;
+}
+
+/** A file that a prompt names: an absolute path, or a relative one with a folder in it, with a letter extension. */
+const NAMED_FILE =
+  /(?<![\w.:/-])(?:\/|(?:\.{1,2}\/)?[\w.-]+\/)(?:[\w.-]+\/)*[\w-][\w.-]*\.[A-Za-z][A-Za-z0-9]{0,5}\b(?!\/)/g;
+
+/**
+ * The files that `prompt` names and that do not exist, in a folder that does: what a task asked to be made. A path in
+ * a folder that is not there is an example (`/path/to/x.txt`), not an output.
+ */
+export function missingOutputs(prompt: string, cwd: string): string[] {
+  const named = new Set([...prompt.matchAll(NAMED_FILE)].map((match) => match[0]));
+  return [...named]
+    .filter((path) => {
+      const full = resolve(cwd, path);
+      return !existsSync(full) && existsSync(dirname(full));
+    })
+    .slice(0, MAX_LISTED);
+}
+
+/** Live (Terminal-Bench): 4 of 14 failed runs ended with a file that the task named missing. */
+export function missingNote(paths: string[]): string {
+  return `[harness: the task names ${paths.join(", ")}, and ${paths.length === 1 ? "it does" : "they do"} not exist. If the task asks for ${paths.length === 1 ? "it" : "them"}, make ${paths.length === 1 ? "it" : "them"} before you finish: a best effort is better than none. If not, say so in one line.]`;
 }

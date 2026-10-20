@@ -102,6 +102,9 @@ export const DEFAULT_SYSTEM_PROMPT =
   "grep and glob before reading whole files, and read a long file in slices with offset and limit; " +
   "name files by their path relative to the project root, not the absolute path: it is shorter and " +
   "harder to mistype.\n" +
+  // Live (Terminal-Bench db-wal-recovery): a model opened the database first, and that destroyed the WAL to recover.
+  "Before you run anything that can change data you were asked to inspect, repair or recover (a database, an " +
+  "archive, a log, a disk image), copy it and work on the copy.\n" +
   "Finishing: never change a test or a check to make it pass unless the user asks for that; fix the " +
   "code it checks. Before you say the work is done, run the checks that prove it and report what you " +
   "ran and its result; say plainly what is not done or not verified.\n" +

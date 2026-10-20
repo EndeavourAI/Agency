@@ -1342,6 +1342,8 @@ describe("-p headless mode", () => {
     const payload = JSON.parse(out.join("\n"));
     expect(payload).toMatchObject({ type: "result", subtype: "success", is_error: false, num_turns: 1 });
     expect([payload.result, payload.stopReason]).toEqual(["hi from the fake daemon", "end_turn"]);
+    expect(payload.duration_ms).toBeGreaterThan(0);
+    expect([payload.num_tool_calls, payload.num_tool_errors]).toEqual([0, 0]);
   });
 
   test("the answer that a harness note sent back stays in the result, before the reply to the note", async () => {

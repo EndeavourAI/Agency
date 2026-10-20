@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The JSON result of `-p` reports time and failed calls**: `duration_ms` (the run, as Claude Code reports it),
+  `duration_api_ms` (time spent on model replies), `num_tool_calls` and `num_tool_errors`. The Harbor agent gives
+  them to Harbor with the stop reason, so each trial shows where a run went wrong.
 - **A question in a headless run is answered with "no one will answer"**: the `question` tool of a `-p` or SDK turn
   said that the answer would come in the next message, so the model ended its turn to wait and the run ended with
   no answer. A headless turn's `question` now says that no one will answer, to choose the most reasonable option,

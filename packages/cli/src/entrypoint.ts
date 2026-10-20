@@ -53,7 +53,7 @@ import {
   ThinkingLevel,
 } from "@agency/providers";
 import { connectToDaemon, type DaemonClient, hashWorkspaceRoot, type InstanceInfo } from "@agency/rpc";
-import type { Message } from "@agency/schema";
+import type { ContentBlock, Message } from "@agency/schema";
 import { imageMimeFor, loadMcpConfigArg } from "@agency/tools";
 import { DEFAULT_SYSTEM_PROMPT, type RunTurnRpcResult, STRUCTURED_OUTPUT_TOOL } from "./daemon.ts";
 import { debugCommand } from "./debug.ts";
@@ -964,6 +964,15 @@ function printJsonOrText(out: LineSink, format: "text" | "json", payload: unknow
 }
 
 /** Prints a headless turn and returns its exit code; a salvaged turn names its cause on stderr. */
+function blocks<K extends ContentBlock["type"]>(
+  messages: Message[],
+  type: K,
+): Extract<ContentBlock, { type: K }>[] {
+  return messages.flatMap((message) =>
+    message.content.filter((block): block is Extract<ContentBlock, { type: K }> => block.type === type),
+  );
+}
+
 function reportTurn<T extends RunTurnRpcResult>(
   out: LineSink,
   err: LineSink,
@@ -992,6 +1001,14 @@ function reportTurn<T extends RunTurnRpcResult>(
     is_error: failed,
     result: text,
     num_turns: result.messages.filter((message) => message.role === "assistant").length,
+    // A `-p` run is its own process: the time since it started is the time of the run.
+    duration_ms: Math.round(performance.now()),
+    ...(result.timing === undefined
+      ? {}
+      : { duration_api_ms: Math.round(result.timing.ttftMs + result.timing.streamMs) }),
+    // A benchmark reads where a run went wrong from these: a high share of failed calls is a harness fault to find.
+    num_tool_calls: blocks(result.messages, "tool_call").length,
+    num_tool_errors: blocks(result.messages, "tool_result").filter((block) => block.isError).length,
     ...("sessionId" in result ? { session_id: result.sessionId } : {}),
     ...(result.usage?.costUsd === undefined ? {} : { total_cost_usd: result.usage.costUsd }),
     ...result,

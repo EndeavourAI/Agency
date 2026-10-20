@@ -45,16 +45,19 @@ def time_limit(trial_dir: Path) -> float | None:
         return None
 
 
-def usage_of(output: str) -> dict:
-    """The usage of the JSON result that `agency -p --format json` prints last, or {} if there is none."""
+def result_of(output: str) -> dict:
+    """The JSON result that `agency -p --format json` prints last, or {} if there is none."""
     start = output.find("{")
     if start == -1:
         return {}
     try:
-        result = json.loads(output[start:])
+        return json.loads(output[start:])
     except json.JSONDecodeError:
         return {}
-    return result.get("usage") or {}
+
+
+def usage_of(output: str) -> dict:
+    return result_of(output).get("usage") or {}
 
 
 class Agency(BaseInstalledAgent):
@@ -124,8 +127,11 @@ class Agency(BaseInstalledAgent):
         output = self.logs_dir / OUTPUT
         if not output.exists():
             return
-        usage = usage_of(output.read_text())
+        result = result_of(output.read_text())
+        usage = result.get("usage") or {}
         context.n_input_tokens = usage.get("inputTokens")
         context.n_cache_tokens = usage.get("cachedInputTokens")
         context.n_output_tokens = usage.get("outputTokens")
         context.cost_usd = usage.get("costUsd")
+        keys = ("duration_ms", "num_turns", "num_tool_calls", "num_tool_errors", "stopReason", "budgetExceeded")
+        context.metadata = {key: result[key] for key in keys if key in result}

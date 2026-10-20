@@ -188,6 +188,7 @@ Options:
   --max-steps <n>          With -p: tool steps one turn may take (default: maxSteps
                            of the config, or 100)
   --max-cost <usd>         With -p: stop the turn when its cost reaches this amount
+  --max-time <seconds>     With -p: the time the turn has; the model is told when it runs short
   --max-total-cost <usd>   With workflow run: no turn starts after the turns cost this much
   --system-prompt <text>   With -p: use this text in place of the built-in base prompt
   --append-system-prompt <text>
@@ -260,6 +261,8 @@ export interface ParsedArgv {
   jsonSchema: string | undefined;
   appendSystemPrompt: string | undefined;
   maxCost: number | undefined;
+  /** `--max-time` of `-p`: wall-clock seconds of the turn. */
+  maxTime: number | undefined;
   maxTotalCost: number | undefined;
   /** `--mcp-config <file|json>` of `-p`: MCP servers of this run; `--strict-mcp-config` drops the others. */
   mcpConfig: string[];
@@ -293,6 +296,17 @@ export interface ParsedArgv {
   since: string | undefined;
   help: boolean;
   version: boolean;
+}
+
+/** The budget of a `-p` turn from its flags; none when no flag sets one. */
+function budgetOf(parsed: ParsedArgv): { budget?: { maxCostUsd?: number; maxSeconds?: number } } {
+  if (parsed.maxCost === undefined && parsed.maxTime === undefined) return {};
+  return {
+    budget: {
+      ...(parsed.maxCost === undefined ? {} : { maxCostUsd: parsed.maxCost }),
+      ...(parsed.maxTime === undefined ? {} : { maxSeconds: parsed.maxTime }),
+    },
+  };
 }
 
 export interface EntrypointDeps {
@@ -389,6 +403,7 @@ export function parseArgv(argv: string[]): ParsedArgv {
     jsonSchema: undefined,
     appendSystemPrompt: undefined,
     maxCost: undefined,
+    maxTime: undefined,
     maxTotalCost: undefined,
     streamJson: false,
     format: "text",
@@ -610,6 +625,12 @@ export function parseArgv(argv: string[]): ParsedArgv {
         if (!(cost > 0)) throw new Error(t("cli.error.invalid_max_cost"));
         if (name !== "--max-total-cost") parsed.maxCost = cost;
         else parsed.maxTotalCost = cost;
+        break;
+      }
+      case "--max-time": {
+        const seconds = Number(value());
+        if (!(seconds > 0)) throw new Error(t("cli.error.invalid_max_time"));
+        parsed.maxTime = seconds;
         break;
       }
       case "--by": {
@@ -1224,7 +1245,7 @@ async function runPrintMode(
         maxToolIterations: parsed.maxSteps,
         ...(parsed.thinking === undefined ? {} : { thinkingLevel: parsed.thinking }),
         ...(parsed.goal === undefined ? {} : { goal: parsed.goal }),
-        ...(parsed.maxCost === undefined ? {} : { budget: { maxCostUsd: parsed.maxCost } }),
+        ...budgetOf(parsed),
         nonInteractive: true,
       });
       return reportTurn(out, err, parsed, { sessionId, tipId, ...result }, prompt);
@@ -1260,7 +1281,7 @@ async function runPrintMode(
     ...(tools === undefined ? {} : { tools }),
     maxToolIterations: parsed.maxSteps,
     ...(parsed.thinking === undefined ? {} : { thinkingLevel: parsed.thinking }),
-    ...(parsed.maxCost === undefined ? {} : { budget: { maxCostUsd: parsed.maxCost } }),
+    ...budgetOf(parsed),
   });
   if (outputSchema === undefined)
     return reportTurn(out, err, parsed, sessionId === undefined ? result : { sessionId, ...result }, prompt);

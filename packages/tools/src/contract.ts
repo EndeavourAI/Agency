@@ -41,6 +41,8 @@ export interface ToolContext {
   env?: Record<string, string>;
   /** allow-all: a shell command runs with the user's rights, outside the sandbox of the OS. */
   hostShell?: boolean;
+  /** When the time of the turn ends (epoch ms): a shell command does not wait past it. */
+  deadlineAt?: number;
 }
 
 export interface ToolResult {

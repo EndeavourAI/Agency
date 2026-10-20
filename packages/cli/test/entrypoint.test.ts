@@ -759,6 +759,16 @@ describe("-p headless mode", () => {
     expect(fake.calls[0]?.budget).toEqual({ maxCostUsd: 0.5 });
   });
 
+  test("--max-time sends the time of the turn, with the cost limit when both are given", async () => {
+    const fake = fakeRunHeadless();
+    await runEntrypoint(["-p", "hello", "--model", "openai/fake-1", "--max-time", "840", "--max-cost", "1"], {
+      ...baseDeps(),
+      ...capture().deps,
+      runHeadless: fake.runHeadless,
+    });
+    expect(fake.calls[0]?.budget).toEqual({ maxCostUsd: 1, maxSeconds: 840 });
+  });
+
   test("--system-prompt replaces the base prompt and --append-system-prompt adds to it", async () => {
     const prompts = async (...flags: string[]): Promise<string | undefined> => {
       const fake = fakeRunHeadless();

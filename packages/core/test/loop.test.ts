@@ -421,6 +421,42 @@ describe("runTurn", () => {
     expect(toolResult.content).toContain("not valid JSON");
   });
 
+  test("a turn with a time limit is told when it runs short, gives its tools the deadline, and stops at the end", async () => {
+    let deadline: number | undefined;
+    const spec: ToolSpec = {
+      name: "bash",
+      description: "runs",
+      inputSchema: {},
+      handler: async (_input, ctx) => {
+        deadline = ctx.deadlineAt;
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        return { content: "ran" };
+      },
+    };
+    const started = Date.now();
+    const result = await runTurn(
+      toolThenDoneAdapter("bash", { command: "make" }),
+      new Scheduler(),
+      noopHttp,
+      {
+        identity: user,
+        capabilities: FULL_CAPABILITIES,
+        systemPrompt: "sys",
+        tools: [spec],
+        model: "test-model",
+        apiKey: "key",
+        session: [],
+        budget: { maxSeconds: 0.1 },
+      },
+    );
+
+    expect(deadline).toBeGreaterThanOrEqual(started + 100);
+    expect(deadline).toBeLessThan(started + 1_000);
+    const toolResult = result.messages[1]!.content[0] as { content: string };
+    expect(toolResult.content).toContain("minutes of this run are left. Finish now");
+    expect(result.budgetExceeded).toBe(true);
+  });
+
   test("stops and reports budgetExceeded once the token budget is hit, after closing out pending tool calls", async () => {
     let handlerCalled = false;
     const spec: ToolSpec = {

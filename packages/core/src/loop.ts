@@ -69,6 +69,8 @@ export interface ToolSpec<Input = Record<string, unknown>> extends ToolDefinitio
       env?: Record<string, string>;
       /** allow-all: a shell command runs with the user's rights, outside the sandbox of the OS. */
       hostShell?: boolean;
+      /** When the time of the turn ends (epoch ms): a shell command does not wait past it. */
+      deadlineAt?: number;
       /** Pre-approves tools for the rest of the turn, as rules of Claude Code: the `allowed-tools` of a skill. */
       grantTools?: (rules: string[]) => void;
       /** Runs another tool of this turn through the same checks as a call of the model. */
@@ -103,6 +105,8 @@ export type AnyToolSpec = ToolSpec<Record<string, unknown>>;
 /** The model is told one time when this number of tool steps is left, and when this share of the cost limit is spent. */
 const LOW_STEPS = 5;
 const COST_NOTE_SHARE = 0.8;
+/** The model is told the time left once this share of `maxSeconds` is used. */
+const TIME_NOTE_SHARE = 0.75;
 /** The same failure of the same call this many times in a turn gets a note to the model. */
 const REPEATED_FAILURES = 3;
 const SERIAL_READS = 3;
@@ -110,6 +114,8 @@ const SERIAL_READS = 3;
 export interface Budget {
   maxTokens?: number;
   maxCostUsd?: number;
+  /** Wall-clock seconds of the turn: a task run by a benchmark or a CI job has a deadline that the model cannot see. */
+  maxSeconds?: number;
 }
 
 export interface PricePerMTok {
@@ -234,6 +240,8 @@ export interface RunTurnOptions {
   taskDepth?: number;
   /** allow-all: shell commands run with the user's rights, outside the sandbox of the OS. */
   hostShell?: boolean;
+  /** When the time of the turn ends (epoch ms); set from `budget.maxSeconds`, a shell command does not wait past it. */
+  deadlineAt?: number;
   /** A fallback model is ready: an overload ends the request after a few attempts, not after minutes. */
   quickOverload?: boolean;
   /** Task category for cheap-model routing (title, summary, background go cheap). */
@@ -315,8 +323,16 @@ export async function runTurn(
   const messages = [...options.session];
   // The reviewer of auto mode reads the transcript of this turn as it grows.
   const review = options.reviewApproval;
+  const startedAt = Date.now();
+  const maxSeconds = options.budget?.maxSeconds;
   const toolOptions: RunTurnOptions =
-    review === undefined ? options : { ...options, reviewApproval: (request) => review(request, messages) };
+    review === undefined && maxSeconds === undefined
+      ? options
+      : {
+          ...options,
+          ...(review === undefined ? {} : { reviewApproval: (request) => review(request, messages) }),
+          ...(maxSeconds === undefined ? {} : { deadlineAt: startedAt + maxSeconds * 1000 }),
+        };
   // Grants are kept by options object: each copy of the options shares the one list.
   turnGrants.set(toolOptions, grants);
   const append = async (message: Message, origin?: MessageOrigin): Promise<void> => {
@@ -492,6 +508,7 @@ export async function runTurn(
   let requestTokens = 0;
   let proactiveFolds = true;
   let costNoted = false;
+  let timeNoted = false;
   let lastSent: SentRequest | undefined;
   // The cost of each request, as the price table gives it: a provider such as Anthropic reports no charge.
   const pricedUsage = (): Usage =>
@@ -674,7 +691,7 @@ export async function runTurn(
         modelSpanId = null;
       }
 
-      if (exceedsBudget(cumulativeUsage, spentCostUsd, options.budget)) {
+      if (exceedsBudget(cumulativeUsage, spentCostUsd, options.budget, Date.now() - startedAt)) {
         if (toolCalls.length > 0) {
           // An early call asks only once the turn will run the calls: else the user answers for a thrown-away one.
           storeReply();
@@ -860,6 +877,15 @@ export async function runTurn(
             `${call.name} failed ${times} times with the same input and the same error. Do not send it again unchanged: change the input or the approach, or say what blocks you.`,
           );
         }
+      }
+      const timeLimit = options.budget?.maxSeconds;
+      const elapsed = (Date.now() - startedAt) / 1000;
+      if (!timeNoted && timeLimit !== undefined && elapsed >= timeLimit * TIME_NOTE_SHARE) {
+        timeNoted = true;
+        // Live (Terminal-Bench): a run spent its 900 s waiting on a slow query and was stopped with nothing written.
+        notes.push(
+          `About ${Math.max(1, Math.round((timeLimit - elapsed) / 60))} of the ${Math.round(timeLimit / 60)} minutes of this run are left. Finish now: make sure what the task asks for exists (files, outputs, a running service), then stop. Skip extra checks and do not start long commands.`,
+        );
       }
       const costLimit = options.budget?.maxCostUsd;
       if (!costNoted && costLimit !== undefined && spentCostUsd >= costLimit * COST_NOTE_SHARE) {
@@ -1400,6 +1426,7 @@ async function executeOne(
     taskDepth: options.taskDepth,
     env: shellEnv,
     hostShell: options.hostShell,
+    deadlineAt: options.deadlineAt,
     grantTools: (rules: string[]) => {
       const grants = turnGrants.get(options);
       if (grants === undefined) turnGrants.set(options, [...rules]);
@@ -1832,8 +1859,14 @@ function costOf(usage: Usage, price?: PricePerMTok): number {
   );
 }
 
-function exceedsBudget(usage: Usage, spentCostUsd: number, budget?: Budget): boolean {
+function exceedsBudget(
+  usage: Usage,
+  spentCostUsd: number,
+  budget: Budget | undefined,
+  elapsedMs: number,
+): boolean {
   if (!budget) return false;
+  if (budget.maxSeconds !== undefined && elapsedMs >= budget.maxSeconds * 1000) return true;
   if (budget.maxTokens !== undefined && totalTokens(usage) >= budget.maxTokens) return true;
   if (budget.maxCostUsd !== undefined && spentCostUsd >= budget.maxCostUsd) return true;
   return false;

@@ -8,6 +8,19 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A turn can have a time limit** (`--max-time <seconds>` with `-p`, `budget.maxSeconds` in the SDK): at three
+  quarters of it the model is told the minutes left and to finish what the task asks for, a shell command's
+  `timeout` is cut to the time left, and the turn ends at the limit with its result and usage written. A
+  benchmark or CI job has a deadline that the model cannot see: live on Terminal-Bench, query-optimize spent its
+  900 s waiting on a slow query twice and was killed with nothing written. The Harbor agent passes 90% of each
+  task's time.
+- **bash says how to wait for long work**: its description now says that a `timeout` of up to 600000 ms keeps a
+  build, a test suite or a long search in the foreground until it ends, and to wait for a background process with
+  `process_output` and `wait`, not with `sleep` loops. Before, `timeout` was described only as a way to kill a
+  hung command, and live a model stopped a long search as too slow while another polled with `sleep 110`.
+- **The system prompt says to copy data before changing it**: before running anything that can change data the
+  model was asked to inspect, repair or recover, it copies it. Live on Terminal-Bench (db-wal-recovery), a model
+  opened the database first, which destroyed the write-ahead log the task asked it to recover.
 - **The notice of a background command gives the call that reads it**: `process_output` is loaded on demand, so the
   model does not see its arguments. Live on Terminal-Bench (query-optimize, Haiku 5.5), a command that bash moved to
   the background was read with `process_output {wait: "true"}`, which failed, then `tool_search`, then `call_tool`:

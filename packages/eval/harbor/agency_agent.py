@@ -9,6 +9,7 @@ AGENCY_DIST names another folder of binaries; AGENCY_MAX_STEPS sets the step lim
 import json
 import os
 import shlex
+import tomllib
 from pathlib import Path, PurePosixPath
 from typing import override
 
@@ -29,6 +30,19 @@ def binary_for(machine: str, musl: bool) -> str:
     if arch is None:
         raise RuntimeError(f"no Agency build for the machine {machine.strip()!r}")
     return f"agency-linux-{arch}{'-musl' if musl else ''}"
+
+
+def time_limit(trial_dir: Path) -> float | None:
+    """The agent time of the task this trial runs (task.toml times the job's multipliers), or None if unknown."""
+    try:
+        trial = json.loads((trial_dir / "config.json").read_text())
+        task = tomllib.loads((Path(trial["task"]["path"]) / "task.toml").read_text())
+        seconds = (trial.get("agent") or {}).get("override_timeout_sec") or task["agent"]["timeout_sec"]
+        job = json.loads((Path(trial["trials_dir"]) / "config.json").read_text())
+        factor = job.get("agent_timeout_multiplier") or job.get("timeout_multiplier") or 1
+        return float(seconds) * float(factor)
+    except (OSError, KeyError, TypeError, ValueError):
+        return None
 
 
 def usage_of(output: str) -> dict:
@@ -91,12 +105,15 @@ class Agency(BaseInstalledAgent):
             "AGENCY_AGENTS_HOME": f"{ROOT}/agents",
         }
         steps = os.environ.get("AGENCY_MAX_STEPS", "300")
+        # Agency ends its turn before Harbor kills it: the result and its usage are then written.
+        limit = time_limit(self.logs_dir.parent)
+        max_time = f"--max-time {int(limit * 0.9 - 15)} " if limit and limit > 120 else ""
         # The exit code is not the verdict: the task's tests are. A failed run still leaves its usage in the log.
         await self.exec_as_agent(
             environment,
             command=(
                 f"mkdir -p {self.environment_logs_dir}; {BINARY} -p {shlex.quote(instruction)} "
-                f"--model {shlex.quote(self.model_name)} --permission-mode allow-all --max-steps {steps} "
+                f"--model {shlex.quote(self.model_name)} --permission-mode allow-all --max-steps {steps} {max_time}"
                 f"--format json > {log} 2> {self.environment_logs_dir}/agency.err || true"
             ),
             env=env,

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import {
   AgentRegistry,
   attachCommandHooks,
+  attachTestGuard,
   attachVerifyGate,
   BoardStore,
   ChannelStore,
@@ -498,6 +499,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
   };
   attachCommandHooks(eventBus, commandHooks, hookRun);
   if (config.verifyGate !== false) attachVerifyGate(eventBus, options.workspaceRoot);
+  if (config.testGuard !== false) attachTestGuard(eventBus, options.workspaceRoot);
   // The `env` of the Claude Code settings of a trusted workspace reaches each shell command, before CLAUDE_ENV_FILE.
   const claudeEnv = projectTrusted ? loadClaudeSettingsEnv(options.workspaceRoot) : {};
   if (Object.keys(claudeEnv).length > 0) {

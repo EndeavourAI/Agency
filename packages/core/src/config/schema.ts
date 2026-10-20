@@ -243,6 +243,8 @@ export const ConfigSchema = z.object({
   toolDialect: z.enum(["auto", "native", "claude-code", "codex"]).optional(),
   /** False: a turn that changed code and ran no passing check after may end. By default it is sent back once. */
   verifyGate: z.boolean().optional(),
+  /** False: a turn that weakened tests (deleted, fewer assertions, more skipped) may end. By default it is sent back once. */
+  testGuard: z.boolean().optional(),
   trace: z
     .object({
       /** True: each turn also writes a cassette for `/replay`, which holds the whole history and grows with the session. */

@@ -1,4 +1,5 @@
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { type AgencyEvents, type EventBus, HookBlock } from "./events.ts";
 
 const EDIT_TOOLS = new Set(["edit", "write", "notebook_edit"]);
@@ -114,6 +115,86 @@ export function attachVerifyGate(bus: EventBus, root?: string): () => void {
   });
   return () => {
     offAfter();
+    offStop();
+  };
+}
+
+/** A test file by its name: `a.test.ts`, `a_test.go`, `test_a.py`, or a file under `tests/`, `spec/` or `__tests__/`. */
+const TEST_PATH =
+  /(?:^|[\\/])(?:tests?|spec|__tests__)[\\/]|\.(?:test|spec)\.\w+$|_test\.\w+$|(?:^|[\\/])test_\w+\.\w+$/;
+/** Only the count before and after matters, so an import of `assert` counts on both sides. */
+const ASSERTION = /\bassert\w*|\bexpect\s*\(|\bt\.(?:Error|Fatal)f?\s*\(|\bXCTAssert/g;
+const SKIP =
+  /\.(?:skip|todo)\s*\(|\b(?:xit|xdescribe|xtest)\s*\(|@pytest\.mark\.(?:skip|xfail)|@unittest\.skip|\bpytest\.skip\s*\(|#\[ignore\]|\bt\.Skip\w*\s*\(/g;
+
+const count = (text: string, pattern: RegExp): number => text.match(pattern)?.length ?? 0;
+
+function readText(path: string): string | undefined {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+/** How a test file checks less than it did, if it does. */
+function weakening(before: string, after: string | undefined): string | undefined {
+  if (after === undefined) return "deleted";
+  const lost = count(before, ASSERTION) - count(after, ASSERTION);
+  if (lost > 0) return `${lost} fewer assertions`;
+  const skipped = count(after, SKIP) - count(before, SKIP);
+  return skipped > 0 ? `${skipped} more skipped` : undefined;
+}
+
+export function testGuardReminder(changes: readonly string[]): string {
+  return (
+    `You changed tests so that they check less: ${changes.join(", ")}. Unless the task asked for that, restore ` +
+    "them and fix the code instead. If it did, say so in one line and stop."
+  );
+}
+
+/**
+ * A turn that deleted a test file, took assertions out or skipped a test is sent back once: a model can make a check
+ * pass by weakening the test instead of fixing the code. A change through bash (`sed -i`, `rm`) is not seen.
+ */
+export function attachTestGuard(bus: EventBus, root = process.cwd()): () => void {
+  // Per turn, each test file as it was before the turn first changed it; undefined when it did not exist.
+  const originals = new Map<string, Map<string, string | undefined>>();
+  const reminded = new Set<string>();
+  const offBefore = bus.on("tool.execute.before", (payload) => {
+    const p = payload as AgencyEvents["tool.execute.before"];
+    const path = p.input.path;
+    if (
+      p.turnId === undefined ||
+      !EDIT_TOOLS.has(p.tool) ||
+      typeof path !== "string" ||
+      !TEST_PATH.test(path)
+    )
+      return;
+    const files = originals.get(p.turnId) ?? new Map<string, string | undefined>();
+    originals.set(p.turnId, files);
+    if (!files.has(path)) files.set(path, readText(resolve(root, path)));
+  });
+  const offStop = bus.on("turn.stop", (payload) => {
+    const p = payload as AgencyEvents["turn.stop"];
+    if (p.turnId === undefined || p.taskDepth > 0) return;
+    const files = originals.get(p.turnId);
+    const changes = reminded.has(p.turnId)
+      ? []
+      : [...(files ?? [])].flatMap(([path, before]) => {
+          const how = before === undefined ? undefined : weakening(before, readText(resolve(root, path)));
+          return how === undefined ? [] : [`${path} (${how})`];
+        });
+    if (changes.length === 0) {
+      originals.delete(p.turnId);
+      reminded.delete(p.turnId);
+      return;
+    }
+    reminded.add(p.turnId);
+    throw new HookBlock(testGuardReminder(changes));
+  });
+  return () => {
+    offBefore();
     offStop();
   };
 }

@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A turn that weakened tests is sent back once** (`testGuard`, on by default): when an `edit` or `write` deleted
+  a test file, took assertions out of one or added a skip, the end of the turn names each file and asks to restore
+  them and fix the code instead, unless the task asked for it. A model can make a failing check pass that way.
 - **A shell command's progress lines reach the model as a terminal shows them**: output that a progress bar
   rewrote with `\r` kept every version of the line. Only the last one is kept now. In 98 recorded Terminal-Bench runs
   that overwritten text was 4.8% of all tool output.

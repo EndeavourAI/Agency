@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { attachVerifyGate, EventBus, HookBlock } from "../src/index.ts";
+import { attachTestGuard, attachVerifyGate, EventBus, HookBlock } from "../src/index.ts";
 import { uncheckedClaim } from "../src/verify-gate.ts";
 
 const after = (bus: EventBus, tool: string, input: Record<string, unknown>, isError = false) =>
@@ -131,4 +131,47 @@ test("only the model's own word that it skipped a check counts", () => {
     "The tests did not run before the fix; now they pass.",
   ])
     expect(uncheckedClaim(answer)).toBeUndefined();
+});
+
+const edit = (bus: EventBus, root: string, path: string, content: string | undefined) => {
+  bus.emit("tool.execute.before", { tool: "write", input: { path }, turnId: "t1" });
+  if (content === undefined) rmSync(join(root, path));
+  else writeFileSync(join(root, path), content);
+  after(bus, "write", { path });
+};
+
+test("a turn that took assertions out of a test, skipped one or deleted a test file is sent back once", async () => {
+  const root = mkdtempSync(join(tmpdir(), "agency-tg-"));
+  try {
+    writeFileSync(join(root, "a.test.ts"), "test('x', () => { expect(f()).toBe(1); expect(g()).toBe(2); });");
+    writeFileSync(join(root, "test_b.py"), "def test_b():\n    assert b() == 1\n");
+    writeFileSync(join(root, "c_test.go"), 'func TestC(t *testing.T) { if c() != 1 { t.Errorf("c") } }');
+    const bus = new EventBus();
+    attachTestGuard(bus, root);
+    edit(bus, root, "a.test.ts", "test('x', () => { expect(f()).toBe(1); });");
+    edit(bus, root, "test_b.py", "import pytest\n@pytest.mark.skip\ndef test_b():\n    assert b() == 1\n");
+    edit(bus, root, "c_test.go", undefined);
+    const first = await stop(bus);
+    expect(first).toHaveLength(1);
+    for (const name of ["a.test.ts", "test_b.py", "c_test.go"]) expect(first[0]).toContain(name);
+    expect(await stop(bus)).toEqual([]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a new test, a test that gained assertions or a change outside tests passes the guard", async () => {
+  const root = mkdtempSync(join(tmpdir(), "agency-tg-"));
+  try {
+    writeFileSync(join(root, "a.test.ts"), "expect(f()).toBe(1);");
+    writeFileSync(join(root, "a.ts"), "export const f = () => 1;");
+    const bus = new EventBus();
+    attachTestGuard(bus, root);
+    edit(bus, root, "a.test.ts", "expect(f()).toBe(1);\nexpect(f()).not.toBe(2);");
+    edit(bus, root, "new.test.ts", "expect(1).toBe(1);");
+    edit(bus, root, "a.ts", "");
+    expect(await stop(bus)).toEqual([]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

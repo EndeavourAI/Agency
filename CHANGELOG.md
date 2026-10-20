@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **An edit whose hunks the model cut into its own format is repaired**: Haiku 5.5 sent `hunks` as the string
+  `[{"oldText">OLD` with the new text as the top-level `newText` in 9 of 98 Terminal-Bench runs, and each call was
+  refused (`"hunks" must be array`). Such a call is now the one hunk it meant: oldText is the text after the cut,
+  newText the top-level one. All 9 recorded calls replay into a valid edit; a broken string with no `newText`
+  still gets the error.
 - **Claude Code runs in Harbor with a fast install**: `packages/eval/harbor/claude_code_fast.py` is Harbor's Claude
   Code agent with one change: on a glibc x64 container it uploads the native `claude` binary (`CLAUDE_BINARY`)
   instead of installing Node.js and Claude Code in every container. Setup took 4 s instead of about 5 minutes, so a

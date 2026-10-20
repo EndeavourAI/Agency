@@ -211,3 +211,20 @@ test("a patch that does not parse still reaches edit with its file, so the model
   expect(edit.input).toEqual({ patch: text, path: "src/a.py" });
   expect(validateToolInput(tools[0]!.inputSchema, edit.input)).toBeUndefined();
 });
+
+test("hunks cut where the model switched to its own format become the one hunk it meant", () => {
+  // Live input of a Terminal-Bench run (fix-code-vulnerability).
+  const input = {
+    path: "bottle.py",
+    hunks: '[{"oldText">def _hkey(key):\n    key = touni(key)\n    return key.title()',
+    newText: "def _hkey(key):\n    key = touni(key)\n    check(key)\n    return key.title()",
+  };
+  expect(call("edit", input).input).toEqual({
+    path: "bottle.py",
+    oldText: "def _hkey(key):\n    key = touni(key)\n    return key.title()",
+    newText: input.newText,
+  });
+  expect(call("edit", { ...input, hunks: `${input.hunks}"}]` }).input.oldText).toBe(
+    "def _hkey(key):\n    key = touni(key)\n    return key.title()",
+  );
+});

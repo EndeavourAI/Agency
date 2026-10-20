@@ -149,9 +149,18 @@ function canonicalInput(tool: string, input: Record<string, unknown>): Record<st
     }
     let hunks = out.hunks;
     if (typeof hunks === "string") {
+      const raw = hunks;
       try {
-        hunks = JSON.parse(hunks);
-      } catch {}
+        hunks = JSON.parse(raw);
+      } catch {
+        // Live (Haiku 5.5, 9 of 98 Terminal-Bench runs): `hunks: "[{\"oldText\">OLD"` with the new text as the
+        // top-level newText. One hunk, cut where the model switched formats.
+        const cut = /^\s*\[\s*\{\s*"oldText"\s*>/.exec(raw);
+        if (cut && typeof out.newText === "string" && out.oldText === undefined) {
+          const { hunks: _broken, ...rest } = out;
+          return { ...rest, oldText: raw.slice(cut[0].length).replace(/"\s*\}\s*\]\s*$/, "") };
+        }
+      }
     }
     if (hunks !== null && typeof hunks === "object" && !Array.isArray(hunks)) hunks = [hunks];
     if (Array.isArray(hunks))

@@ -143,3 +143,16 @@ export function missingOutputs(prompt: string, cwd: string): string[] {
 export function missingNote(paths: string[]): string {
   return `[harness: the task names ${paths.join(", ")}, and ${paths.length === 1 ? "it does" : "they do"} not exist. If the task asks for ${paths.length === 1 ? "it" : "them"}, make ${paths.length === 1 ? "it" : "them"} before you finish: a best effort is better than none. If not, say so in one line.]`;
 }
+
+const TASK_QUOTE = 2_000;
+
+/**
+ * Live (Terminal-Bench): runs that worked well still failed a requirement stated once in the task (the source must be
+ * in /app, from the Debian package). One look back at the task before the end, with the missing files folded in.
+ */
+export function reviewNote(task: string, missing: string[]): string {
+  const quoted = task.length > TASK_QUOTE ? `${task.slice(0, TASK_QUOTE)} […]` : task;
+  const files =
+    missing.length === 0 ? "" : ` These files that it names do not exist yet: ${missing.join(", ")}.`;
+  return `[harness: before you finish, check the result against the task once more. The task was:\n\n${quoted}\n\nFor each concrete requirement (file names and paths, formats, where files must be, what must be running), confirm with a command that it holds now, and fix what does not.${files} Then give your final answer.]`;
+}

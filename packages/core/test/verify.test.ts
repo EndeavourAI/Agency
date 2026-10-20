@@ -222,3 +222,55 @@ test("a turn that ends while a file the task named is missing is sent back once"
     "the task names src/solution.txt, and it does not exist",
   );
 });
+
+test("a headless turn that used tools looks back at the task once before it ends", async () => {
+  const root = repo();
+  const run = async (reviewTask: boolean) => {
+    const seen: ProviderRequest[] = [];
+    const adapter: ProviderAdapter = {
+      family: "fake",
+      async *stream(request): AsyncIterable<StreamEvent> {
+        seen.push(request);
+        const usage = { inputTokens: 1, outputTokens: 1 };
+        if (seen.length === 1) {
+          yield { type: "tool_call_start", id: "c1", name: "noop" };
+          yield { type: "tool_call_delta", id: "c1", inputJsonDelta: "{}" };
+          yield { type: "tool_call_end", id: "c1" };
+          yield { type: "message_stop", stopReason: "tool_use", usage };
+          return;
+        }
+        yield { type: "text_delta", text: "done" };
+        yield { type: "message_stop", stopReason: "end_turn", usage };
+      },
+    };
+    await runTurn(
+      adapter,
+      new Scheduler({ maxAttempts: 1 }),
+      { fetch: async () => new Response() },
+      {
+        identity: { type: "user" },
+        capabilities: FULL_CAPABILITIES,
+        systemPrompt: "sys",
+        model: "m",
+        apiKey: "k",
+        cwd: root,
+        verifyEdits: true,
+        reviewTask,
+        session: [
+          { role: "user", content: [{ type: "text", text: "Build it from the Debian source in the root." }] },
+        ],
+        tools: [
+          { name: "noop", description: "noop", inputSchema: {}, handler: async () => ({ content: "ok" }) },
+        ],
+      },
+    );
+    return seen;
+  };
+  const reviewed = await run(true);
+  expect(reviewed).toHaveLength(3);
+  const note = reviewed[2]?.messages.at(-1)?.content[0];
+  expect(note?.type === "text" ? note.text : "").toContain(
+    "The task was:\n\nBuild it from the Debian source in the root.",
+  );
+  expect(await run(false)).toHaveLength(2);
+});

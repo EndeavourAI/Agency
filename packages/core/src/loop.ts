@@ -50,7 +50,7 @@ import { canonicalCall, dialectFor, type ToolDialect, wireMessages, wireTools } 
 import type { TraceRecorder } from "./trace/recorder.ts";
 import { relativePaths } from "./transcript.ts";
 import { truncateToolResults } from "./truncate.ts";
-import { missingNote, missingOutputs, untestedEdits, untestedNote } from "./verify.ts";
+import { missingNote, missingOutputs, reviewNote, untestedEdits, untestedNote } from "./verify.ts";
 
 export interface ToolSpec<Input = Record<string, unknown>> extends ToolDefinition {
   handler(
@@ -254,6 +254,8 @@ export interface RunTurnOptions {
   prefetchNamedFiles?: boolean;
   /** Before the turn ends, the model is told once of tests that import a file it changed and that it did not run. */
   verifyEdits?: boolean;
+  /** A headless task: before the first end, a turn that used tools re-checks the task's requirements once. */
+  reviewTask?: boolean;
 }
 
 const NEVER_ABORTED = new AbortController().signal;
@@ -756,11 +758,15 @@ export async function runTurn(
           const text =
             asked?.role === "user" ? asked.content.flatMap((b) => (b.type === "text" ? [b.text] : [])) : [];
           const missing = missingOutputs(text.join("\n"), options.cwd);
-          if (missing.length > 0) {
-            await append(
-              { role: "user", content: [{ type: "text", text: missingNote(missing) }] },
-              "harness",
-            );
+          const worked = messages.slice(turnStart).some((m) => m.content.some((b) => b.type === "tool_call"));
+          const note =
+            options.reviewTask && worked
+              ? reviewNote(text.join("\n"), missing)
+              : missing.length > 0
+                ? missingNote(missing)
+                : undefined;
+          if (note !== undefined) {
+            await append({ role: "user", content: [{ type: "text", text: note }] }, "harness");
             continue;
           }
         }

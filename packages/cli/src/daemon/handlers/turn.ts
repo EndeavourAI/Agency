@@ -796,6 +796,12 @@ export async function executeTurn(
               cwd: options.workspaceRoot,
               prefetchNamedFiles: true,
               verifyEdits: true,
+              // A headless root turn (a benchmark, CI): no one reviews the result before it counts.
+              ...(params.nonInteractive === true &&
+              config.verifyGate !== false &&
+              ((params as { taskDepth?: number }).taskDepth ?? 0) === 0
+                ? { reviewTask: true }
+                : {}),
               maxToolIterations: params.maxToolIterations ?? config.maxSteps,
               ...(config.compactionInstructions
                 ? { compactionInstructions: config.compactionInstructions }

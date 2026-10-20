@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A headless task looks back at its requirements once before it ends**: in `-p` and SDK turns that used tools,
+  the first end is sent back with the task quoted, to confirm each concrete requirement with a command (paths,
+  names, formats, where files must be, what must be running) and fix what does not hold; the files the task names
+  that do not exist are listed in the same note. On Terminal-Bench, runs that did the work well still failed a
+  requirement stated once in the task (build-pmars: the source in `/app`, from the Debian package). It costs one
+  request a run; `verifyGate: false` turns it off. Not measured yet.
 - **The system prompt asks to leave only the asked-for files**: when a task asks for specific output files, the
   model builds and tests in a temporary folder and removes what it made beside those outputs before it finishes.
   On Terminal-Bench, polyglot-c-py and polyglot-rust-c failed because the check wanted only the source file and

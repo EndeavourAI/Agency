@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A trimmed old tool result no longer ends a run with a 400**: on models with preserved thinking (Haiku 5.5,
+  Sonnet 5.5, Opus 5.5, Fable 5.1) each thinking block is bound to the history before it, and Agency trims old
+  tool results to save input. When a trim came before a replayed thinking block, the API refused the request
+  ("bound to a different conversation"): 4 of 98 Terminal-Bench runs ended this way. Requests with adaptive
+  thinking now set `thinking.block_binding.prefix_mismatch_behavior: "drop_block"` under the
+  `thinking-binding-controls-2026-08-01` beta, so the API drops that stale block and the run goes on.
 - **An edit whose hunks the model cut into its own format is repaired**: Haiku 5.5 sent `hunks` as the string
   `[{"oldText">OLD` with the new text as the top-level `newText` in 9 of 98 Terminal-Bench runs, and each call was
   refused (`"hunks" must be array`). Such a call is now the one hunk it meant: oldText is the text after the cut,

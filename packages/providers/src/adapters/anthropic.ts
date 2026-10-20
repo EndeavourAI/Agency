@@ -184,13 +184,22 @@ function buildRequestBody(request: ProviderRequest): Record<string, unknown> {
     } else {
       // These models hide the thinking text unless the request asks for the summary. The 4.6 models have no xhigh.
       const noXhigh = request.thinkingLevel === "xhigh" && /-4-6(?!\d)/.test(request.model);
-      body.thinking = { type: "adaptive", display: "summarized" };
+      // Live (Haiku 5.5, 4 of 98 Terminal-Bench runs): a request after old tool results were trimmed got a 400, as
+      // each thinking block is bound to the history before it. Dropping a stale block keeps the run going.
+      body.thinking = {
+        type: "adaptive",
+        display: "summarized",
+        block_binding: { prefix_mismatch_behavior: "drop_block" },
+      };
       body.output_config = { effort: noXhigh ? "high" : EFFORT[request.thinkingLevel] };
     }
   }
 
   return body;
 }
+
+/** `thinking.block_binding` is accepted only under this beta; without it the field is a 400. */
+const THINKING_BINDING_BETA = "thinking-binding-controls-2026-08-01";
 
 async function toAgencyError(res: Response): Promise<AgencyError> {
   const body = (await res.json().catch(() => undefined)) as
@@ -252,15 +261,18 @@ function readUsage(usage: Usage, wire: WireUsage | undefined): void {
 }
 
 async function* streamRaw(request: ProviderRequest, http: HttpClient): AsyncIterable<StreamEvent> {
+  const body = buildRequestBody(request);
+  const binding = (body.thinking as { block_binding?: unknown } | undefined)?.block_binding !== undefined;
   const res = await http.fetch(`${request.baseUrl ?? BASE_URL}/messages`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-api-key": request.apiKey,
       "anthropic-version": API_VERSION,
+      ...(binding ? { "anthropic-beta": THINKING_BINDING_BETA } : {}),
       ...request.headers,
     },
-    body: JSON.stringify(buildRequestBody(request)),
+    body: JSON.stringify(body),
     signal: request.signal,
   });
 

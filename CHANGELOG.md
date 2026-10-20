@@ -14,9 +14,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 - **The model runs a check it would list as not run before it answers**: the system prompt asked it to name what
   was not verified, and the doubt gate then sent that answer back. 46 of 99 recorded runs went back that way, and
   32 of them changed nothing.
-- **A turn that weakened tests is sent back once** (`testGuard`, on by default): when an `edit` or `write` deleted
-  a test file, took assertions out of one or added a skip, the end of the turn names each file and asks to restore
-  them and fix the code instead, unless the task asked for it. A model can make a failing check pass that way.
+- **A turn that weakened tests is sent back once** (`testGuard`, on by default): the test files and runner configs
+  are scanned before the first tool of a turn and at its end, so a change by any tool or command counts: a test file
+  deleted (not moved), fewer tests or assertions, more skipped or focused tests, more always-true assertions, or more
+  exclusions in a runner config. The end of the turn names each file and asks to restore them and fix the code
+  instead, unless the task asked for it. A model can make a failing check pass that way.
 - **A headless run keeps its final answer to 3 lines** (`terse`, on by default): what was done and how it was
   checked. In 99 recorded Terminal-Bench runs the median final answer was 1,467 characters that no one read.
 - **A shell command's progress lines reach the model as a terminal shows them**: output that a progress bar

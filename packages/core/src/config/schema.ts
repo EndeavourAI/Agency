@@ -243,7 +243,7 @@ export const ConfigSchema = z.object({
   toolDialect: z.enum(["auto", "native", "claude-code", "codex"]).optional(),
   /** False: a turn that changed code and ran no passing check after may end. By default it is sent back once. */
   verifyGate: z.boolean().optional(),
-  /** False: a turn that weakened tests (deleted, fewer assertions, more skipped) may end. By default it is sent back once. */
+  /** False: a turn that weakened tests (deleted, fewer checks, more skipped or excluded) may end. By default it is sent back once. */
   testGuard: z.boolean().optional(),
   /** False: a headless run's final answer has no length limit. By default it is at most 3 lines. */
   terse: z.boolean().optional(),

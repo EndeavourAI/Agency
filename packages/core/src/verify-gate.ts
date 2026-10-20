@@ -1,5 +1,7 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { type Dirent, readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { type AgencyEvents, type EventBus, HookBlock } from "./events.ts";
 
 const EDIT_TOOLS = new Set(["edit", "write", "notebook_edit"]);
@@ -122,28 +124,120 @@ export function attachVerifyGate(bus: EventBus, root?: string): () => void {
 /** A test file by its name: `a.test.ts`, `a_test.go`, `test_a.py`, or a file under `tests/`, `spec/` or `__tests__/`. */
 const TEST_PATH =
   /(?:^|[\\/])(?:tests?|spec|__tests__)[\\/]|\.(?:test|spec)\.\w+$|_test\.\w+$|(?:^|[\\/])test_\w+\.\w+$/;
-/** Only the count before and after matters, so an import of `assert` counts on both sides. */
-const ASSERTION = /\bassert\w*|\bexpect\s*\(|\bt\.(?:Error|Fatal)f?\s*\(|\bXCTAssert/g;
-const SKIP =
-  /\.(?:skip|todo)\s*\(|\b(?:xit|xdescribe|xtest)\s*\(|@pytest\.mark\.(?:skip|xfail)|@unittest\.skip|\bpytest\.skip\s*\(|#\[ignore\]|\bt\.Skip\w*\s*\(/g;
+/** A file that can tell the test runner to leave tests out. */
+const RUNNER_CONFIG =
+  /(?:^|[\\/])(?:pytest\.ini|pyproject\.toml|setup\.cfg|tox\.ini|conftest\.py|package\.json|(?:jest|vitest|karma|playwright)\.config\.\w+|\.mocharc\.\w+)$/;
+const SKIP_DIRS = new Set([
+  ".git",
+  "node_modules",
+  "dist",
+  "build",
+  "target",
+  "vendor",
+  ".venv",
+  "venv",
+  "__pycache__",
+]);
+const MAX_LISTED_PATHS = 50_000;
+const MAX_SCANNED = 5_000;
 
-const count = (text: string, pattern: RegExp): number => text.match(pattern)?.length ?? 0;
+/** Each kind of check that a test file holds; a change that lowers one (or raises a `less` one) weakens it. */
+const KINDS = {
+  tests: /\b(?:it|test)(?:\.\w+)?\s*\(|\bdef\s+test_|\bfunc\s+Test|#\[test\]|@Test\b|\[(?:Test|Fact)\]/g,
+  assertions:
+    /\b[Aa]ssert\w*|\bexpect\s*\(|\bt\.(?:Error|Fatal)f?\s*\(|\brequire\.\w+\s*\(|\.should\b|\bXCTAssert/g,
+  skipped:
+    /\.(?:skip|todo|only)\s*\(|\b(?:xit|xdescribe|xtest|fit|fdescribe)\s*\(|@pytest\.mark\.(?:skip|xfail)|@unittest\.skip|\bpytest\.skip\s*\(|#\[ignore\]|\bt\.Skip\w*\s*\(|@Disabled\b|@Ignore\b|\[Ignore\]|\bpending\s*\(/g,
+  "always true":
+    /\bassert\s+(?:True|1)\b|\.toBeTruthy\(\)|\.toBeDefined\(\)|\bexpect\(\s*true\s*\)|\bassert!\(\s*true\s*\)/g,
+  excluded:
+    /--ignore\b|--deselect\b|\bcollect_ignore|testPathIgnorePatterns|\bexclude\s*[:=]|\bnorecursedirs\b/g,
+} as const;
+type Kind = keyof typeof KINDS;
+type Counts = Record<Kind, number>;
+type Scanned = { counts: Counts; hash: string };
+const LESS: readonly Kind[] = ["tests", "assertions"];
 
-function readText(path: string): string | undefined {
-  try {
-    return readFileSync(path, "utf8");
-  } catch {
-    return undefined;
-  }
+function countsOf(text: string): Counts {
+  const counts = {} as Counts;
+  for (const kind of Object.keys(KINDS) as Kind[]) counts[kind] = text.match(KINDS[kind])?.length ?? 0;
+  return counts;
 }
 
-/** How a test file checks less than it did, if it does. */
-function weakening(before: string, after: string | undefined): string | undefined {
-  if (after === undefined) return "deleted";
-  const lost = count(before, ASSERTION) - count(after, ASSERTION);
-  if (lost > 0) return `${lost} fewer assertions`;
-  const skipped = count(after, SKIP) - count(before, SKIP);
-  return skipped > 0 ? `${skipped} more skipped` : undefined;
+/** Every path under `root`: git's list (tracked and new) in a repository, else a walk that skips build folders. */
+function listFiles(root: string): string[] {
+  try {
+    return execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: 5_000,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .split("\0")
+      .filter(Boolean);
+  } catch {}
+  const files: string[] = [];
+  const dirs = [""];
+  while (dirs.length > 0 && files.length < MAX_LISTED_PATHS) {
+    const dir = dirs.pop() ?? "";
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(join(root, dir), { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const path = dir === "" ? entry.name : `${dir}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name)) dirs.push(path);
+      } else files.push(path);
+    }
+  }
+  return files;
+}
+
+/** Each test file and runner config under `root`; an unchanged file comes from `cache`. ponytail: the first 5,000. */
+function scanTests(root: string, cache: Map<string, Scanned & { stamp: string }>): Map<string, Scanned> {
+  const scan = new Map<string, Scanned>();
+  for (const path of listFiles(root)) {
+    if (scan.size >= MAX_SCANNED) break;
+    if (!TEST_PATH.test(path) && !RUNNER_CONFIG.test(path)) continue;
+    try {
+      const full = join(root, path);
+      const { size, mtimeMs } = statSync(full);
+      const stamp = `${size}:${mtimeMs}`;
+      let file = cache.get(path);
+      if (file?.stamp !== stamp) {
+        const text = readFileSync(full, "utf8");
+        file = { counts: countsOf(text), hash: createHash("sha1").update(text).digest("hex"), stamp };
+        cache.set(path, file);
+      }
+      scan.set(path, file);
+    } catch {}
+  }
+  return scan;
+}
+
+/** How a file checks less than it did, if it does. */
+function weakening(before: Counts, after: Counts): string | undefined {
+  const how = (Object.keys(KINDS) as Kind[]).flatMap((kind) => {
+    const change = LESS.includes(kind) ? before[kind] - after[kind] : after[kind] - before[kind];
+    return change > 0 ? [`${change} ${LESS.includes(kind) ? "fewer" : "more"} ${kind}`] : [];
+  });
+  return how.length === 0 ? undefined : how.join(", ");
+}
+
+/** The weakened files between two scans; a deleted file whose text a new file holds was moved, not dropped. */
+export function weakenedTests(before: Map<string, Scanned>, after: Map<string, Scanned>): string[] {
+  const added = new Set([...after].filter(([path]) => !before.has(path)).map(([, file]) => file.hash));
+  return [...before].flatMap(([path, file]) => {
+    const now = after.get(path);
+    if (now === undefined) return added.has(file.hash) || !TEST_PATH.test(path) ? [] : [`${path} (deleted)`];
+    const how = weakening(file.counts, now.counts);
+    return how === undefined ? [] : [`${path} (${how})`];
+  });
 }
 
 export function testGuardReminder(changes: readonly string[]): string {
@@ -154,39 +248,30 @@ export function testGuardReminder(changes: readonly string[]): string {
 }
 
 /**
- * A turn that deleted a test file, took assertions out or skipped a test is sent back once: a model can make a check
- * pass by weakening the test instead of fixing the code. A change through bash (`sed -i`, `rm`) is not seen.
+ * A turn that weakened tests is sent back once: a model can make a check pass that way instead of fixing the code.
+ * The test files are scanned before the first tool of the turn, so a change through any tool or command is seen.
  */
 export function attachTestGuard(bus: EventBus, root = process.cwd()): () => void {
-  // Per turn, each test file as it was before the turn first changed it; undefined when it did not exist.
-  const originals = new Map<string, Map<string, string | undefined>>();
+  const before = new Map<string, Map<string, Scanned>>();
   const reminded = new Set<string>();
+  // Later scans only stat the files: the first full read took 318 ms on a repository with 365 test files.
+  const cache = new Map<string, Scanned & { stamp: string }>();
+  const warm = setTimeout(() => scanTests(root, cache), 0);
   const offBefore = bus.on("tool.execute.before", (payload) => {
     const p = payload as AgencyEvents["tool.execute.before"];
-    const path = p.input.path;
-    if (
-      p.turnId === undefined ||
-      !EDIT_TOOLS.has(p.tool) ||
-      typeof path !== "string" ||
-      !TEST_PATH.test(path)
-    )
-      return;
-    const files = originals.get(p.turnId) ?? new Map<string, string | undefined>();
-    originals.set(p.turnId, files);
-    if (!files.has(path)) files.set(path, readText(resolve(root, path)));
+    if (p.turnId !== undefined && !before.has(p.turnId)) before.set(p.turnId, scanTests(root, cache));
   });
   const offStop = bus.on("turn.stop", (payload) => {
     const p = payload as AgencyEvents["turn.stop"];
-    if (p.turnId === undefined || p.taskDepth > 0) return;
-    const files = originals.get(p.turnId);
-    const changes = reminded.has(p.turnId)
-      ? []
-      : [...(files ?? [])].flatMap(([path, before]) => {
-          const how = before === undefined ? undefined : weakening(before, readText(resolve(root, path)));
-          return how === undefined ? [] : [`${path} (${how})`];
-        });
+    if (p.turnId === undefined) return;
+    const scan = before.get(p.turnId);
+    // A worker's change is judged at its lead's end, against the scan from before the lead's first tool.
+    const changes =
+      p.taskDepth > 0 || reminded.has(p.turnId) || scan === undefined
+        ? []
+        : weakenedTests(scan, scanTests(root, cache));
     if (changes.length === 0) {
-      originals.delete(p.turnId);
+      before.delete(p.turnId);
       reminded.delete(p.turnId);
       return;
     }
@@ -194,6 +279,7 @@ export function attachTestGuard(bus: EventBus, root = process.cwd()): () => void
     throw new HookBlock(testGuardReminder(changes));
   });
   return () => {
+    clearTimeout(warm);
     offBefore();
     offStop();
   };

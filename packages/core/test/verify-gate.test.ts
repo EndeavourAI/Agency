@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { attachTestGuard, attachVerifyGate, EventBus, HookBlock } from "../src/index.ts";
@@ -173,5 +174,47 @@ test("a new test, a test that gained assertions or a change outside tests passes
     expect(await stop(bus)).toEqual([]);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the guard sees a change through any command: sed, rm, focus, an always-true assertion, a runner exclusion", async () => {
+  for (const git of [false, true]) {
+    const root = mkdtempSync(join(tmpdir(), "agency-tg-"));
+    try {
+      if (git) execFileSync("git", ["init", "-q"], { cwd: root });
+      mkdirSync(join(root, "tests"));
+      writeFileSync(join(root, "tests", "test_a.py"), "def test_a():\n    assert a() == 1\n");
+      writeFileSync(join(root, "tests", "test_b.py"), "def test_b():\n    assert b() == 1\n");
+      writeFileSync(
+        join(root, "c.test.ts"),
+        "test('c', () => { expect(c()).toBe(1); });\ntest('d', () => {});",
+      );
+      writeFileSync(join(root, "pytest.ini"), "[pytest]\n");
+      writeFileSync(join(root, "d.test.ts"), "test('d', () => { expect(d()).toBe(1); });");
+      const bus = new EventBus();
+      attachTestGuard(bus, root);
+      bus.emit("tool.execute.before", { tool: "bash", input: { command: "…" }, turnId: "t1" });
+      writeFileSync(join(root, "tests", "test_a.py"), "def test_a():\n    assert True\n");
+      rmSync(join(root, "tests", "test_b.py"));
+      writeFileSync(
+        join(root, "c.test.ts"),
+        "test.only('c', () => { expect(c()).toBe(1); });\ntest('d', () => {});",
+      );
+      writeFileSync(join(root, "pytest.ini"), "[pytest]\naddopts = --ignore=tests/slow\n");
+      // A moved file keeps its checks: no finding.
+      rmSync(join(root, "d.test.ts"));
+      writeFileSync(join(root, "e.test.ts"), "test('d', () => { expect(d()).toBe(1); });");
+      const [note] = await stop(bus);
+      for (const part of [
+        "tests/test_a.py (1 more always true)",
+        "tests/test_b.py (deleted)",
+        "c.test.ts (1 more skipped)",
+        "pytest.ini (1 more excluded)",
+      ])
+        expect(note).toContain(part);
+      expect(note).not.toContain("d.test.ts");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   }
 });

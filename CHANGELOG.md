@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A headless run is told that no one will answer**: in `-p` and SDK turns the system prompt now says that no one
+  reads a question before the run ends, so the model picks the most reasonable option, names it, and finishes.
+  Live on Terminal-Bench (crack-7z-hash, Haiku 5.5), a run stopped after 16 calls to ask for "permission to run a
+  longer attack" that no one could give, and the task failed; Claude Code finished the same task.
 - **An answer that says it skipped a check is sent back once to do it**: on Terminal-Bench with Haiku 5.5, 2 of
   the first 4 failed tasks ended with the model's own word that it had not checked its answer ("I did not run a
   chess engine to confirm this", "I could not confirm the reference's word size") and nearly all steps unused. The

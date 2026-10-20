@@ -19,6 +19,7 @@ import {
   type GitRunner,
   gatherEnvironmentInfo,
   type HookRunOptions,
+  headlessReminder,
   type InboxStore,
   type Logger,
   loadInstructions,
@@ -850,6 +851,7 @@ export function resolvePrompt(
 
   const reminders: SystemReminder[] = [...(params.systemReminders ?? [])];
   if (params.permissionMode === "plan" && !params.planInPrompt) reminders.push(readOnlyReminder());
+  if (params.nonInteractive) reminders.push(headlessReminder());
   if (options.mcpFailures) {
     for (const [name, reason] of options.mcpFailures) reminders.push(mcpServerDownReminder(name, reason));
   }

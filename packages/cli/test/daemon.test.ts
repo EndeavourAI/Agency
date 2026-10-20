@@ -1707,6 +1707,16 @@ describe("resolveSystemPrompt", () => {
     ...overrides,
   });
 
+  test("a headless turn is told that no one will answer a question", () => {
+    const root = tempRoot();
+    expect(
+      resolveSystemPrompt(params({ nonInteractive: true }), { workspaceRoot: root, git: () => null }),
+    ).toContain("no one will read a question or answer it");
+    expect(resolveSystemPrompt(params(), { workspaceRoot: root, git: () => null })).not.toContain(
+      "no one will",
+    );
+  });
+
   test("no reminders and no mcp failures means no reminder block", () => {
     const system = resolveSystemPrompt(params(), {
       workspaceRoot: tempRoot(),

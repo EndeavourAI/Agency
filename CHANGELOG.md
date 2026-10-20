@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A fixed Terminal-Bench set and a report**: `packages/eval/harbor/tasks.txt` names 35 Terminal-Bench 2.0 tasks
+  (easy to hard), `run.sh` runs them through Harbor with Agency or another agent (`AGENT=claude-code`), and
+  `report.py` prints the pass rate, time and cost of each task for several jobs side by side. A trial that failed
+  on the machine (a network or Docker fault) is counted apart and left out of the rate.
 - **A turn can have a time limit** (`--max-time <seconds>` with `-p`, `budget.maxSeconds` in the SDK): at three
   quarters of it the model is told the minutes left and to finish what the task asks for, a shell command's
   `timeout` is cut to the time left, and the turn ends at the limit with its result and usage written. A

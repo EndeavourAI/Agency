@@ -245,6 +245,8 @@ export const ConfigSchema = z.object({
   verifyGate: z.boolean().optional(),
   /** False: a turn that weakened tests (deleted, fewer assertions, more skipped) may end. By default it is sent back once. */
   testGuard: z.boolean().optional(),
+  /** False: a headless run's final answer has no length limit. By default it is at most 3 lines. */
+  terse: z.boolean().optional(),
   trace: z
     .object({
       /** True: each turn also writes a cassette for `/replay`, which holds the whole history and grows with the session. */

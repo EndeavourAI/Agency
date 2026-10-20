@@ -468,13 +468,15 @@ export function fileChangedReminder(path: string): SystemReminder {
 }
 
 /** A run with no one to answer (`-p`, the SDK). Live: a Terminal-Bench run stopped to ask "permission to run a longer attack". */
-export function headlessReminder(): SystemReminder {
+/** `terse`: live (Terminal-Bench), the final answer took a median 1,467 characters that no one read. */
+export function headlessReminder(terse = false): SystemReminder {
   return {
     kind: "headless",
     text:
       "This run is not interactive: no one will read a question or answer it before the run ends. Do not stop to ask " +
       "for input, a choice or permission. Choose the most reasonable option, name it in your final answer, and finish " +
-      "the task; end early only when it cannot be done.",
+      "the task; end early only when it cannot be done." +
+      (terse ? " Keep the final answer to at most 3 lines: what you did and how you checked it." : ""),
   };
 }
 

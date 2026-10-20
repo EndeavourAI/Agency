@@ -755,6 +755,7 @@ export async function executeTurn(
               memoryFile: ctx.memoryFile,
               userAgentInstructions: ctx.userAgentInstructions,
               environments: ctx.sessionEnvironments,
+              terse: config.terse !== false,
               git: ctx.git,
             });
             result = await runTurn(adapterFor(resolvedProvider), schedulerFor(resolvedProvider), http, {
@@ -898,6 +899,7 @@ export async function executeTurn(
                 memoryFile: ctx.memoryFile,
                 userAgentInstructions: ctx.userAgentInstructions,
                 environments: ctx.sessionEnvironments,
+                terse: config.terse !== false,
                 git: ctx.git,
               },
             );
@@ -969,6 +971,7 @@ export async function executeTurn(
               memoryFile: ctx.memoryFile,
               userAgentInstructions: ctx.userAgentInstructions,
               environments: ctx.sessionEnvironments,
+              terse: config.terse !== false,
               git: ctx.git,
             });
             writeTurnCassette(traceRecorder, params, sysPrompt, collectedTraceEvents, result);

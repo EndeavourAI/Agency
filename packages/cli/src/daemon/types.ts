@@ -223,6 +223,8 @@ export interface ResolveSystemPromptOptions {
   userAgentInstructions?: boolean;
   /** Environment block per session id. A block that changes between turns ends the prompt cache of the full history. */
   environments?: EnvironmentStore;
+  /** `terse` of the config: a headless run keeps its final answer short. */
+  terse?: boolean;
 }
 
 /**
@@ -857,7 +859,7 @@ export function resolvePrompt(
 
   const reminders: SystemReminder[] = [...(params.systemReminders ?? [])];
   if (params.permissionMode === "plan" && !params.planInPrompt) reminders.push(readOnlyReminder());
-  if (params.nonInteractive) reminders.push(headlessReminder());
+  if (params.nonInteractive) reminders.push(headlessReminder(options.terse));
   if (options.mcpFailures) {
     for (const [name, reason] of options.mcpFailures) reminders.push(mcpServerDownReminder(name, reason));
   }

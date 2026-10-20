@@ -11,6 +11,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 - **A turn that weakened tests is sent back once** (`testGuard`, on by default): when an `edit` or `write` deleted
   a test file, took assertions out of one or added a skip, the end of the turn names each file and asks to restore
   them and fix the code instead, unless the task asked for it. A model can make a failing check pass that way.
+- **A headless run keeps its final answer to 3 lines** (`terse`, on by default): what was done and how it was
+  checked. In 99 recorded Terminal-Bench runs the median final answer was 1,467 characters that no one read.
 - **A shell command's progress lines reach the model as a terminal shows them**: output that a progress bar
   rewrote with `\r` kept every version of the line. Only the last one is kept now. In 98 recorded Terminal-Bench runs
   that overwritten text was 4.8% of all tool output.

@@ -55,17 +55,17 @@ describe("bash: timeout + spill + progress (A6)", () => {
   test("a command with no timeout that runs too long moves to the background and keeps running", async () => {
     const { deps, manager, root } = setup();
     const tool = createBashTool(deps, resolveShell(process.platform), { cwd: root }, manager, 1_000);
-    const script = "console.log('first'); setTimeout(() => console.log('second'), 2500)";
+    const script = "console.log('early-marker'); setTimeout(() => console.log('late-marker'), 2500)";
     const result = await tool.handler({ command: `bun -e "${script}"` }, { signal });
 
     expect(result.isError).toBeUndefined();
-    expect(result.content).toContain("first");
-    expect(result.content).not.toContain("second");
+    expect(result.content).toContain("early-marker");
+    expect(result.content).not.toContain("late-marker");
     const id = /as process (\S+)\./.exec(result.content)?.[1] ?? "";
     expect(manager.list().find((p) => p.id === id)?.running).toBe(true);
 
     const rest = await createProcessOutputTool(manager).handler({ id, wait: 20 }, { signal });
-    expect(rest.content).toContain("second");
+    expect(rest.content).toContain("late-marker");
     expect(rest.content).toContain("[the process has exited]");
   }, 30_000);
 

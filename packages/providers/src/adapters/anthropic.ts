@@ -21,6 +21,8 @@ const THINKING_BUDGET: Record<Exclude<ThinkingLevel, "off">, number> = {
 /** The 4.5 family and older models take a thinking budget and answer 400 to adaptive thinking. Later models are the reverse. */
 const BUDGET_THINKING_MODEL = /claude-(?:3-|(?:opus|sonnet|haiku)-4-(?:[15](?!\d)|\d{8}))/;
 
+/** Claude 5 and later think when the request names no thinking. */
+const DEFAULT_THINKING_MODEL = /^claude-[a-z]+-(?:[5-9]|\d{2,})(?!\d)/;
 /** `output_config.effort` per unified level, for the models with adaptive thinking. */
 const EFFORT: Record<Exclude<ThinkingLevel, "off">, string> = {
   minimal: "low",
@@ -193,6 +195,10 @@ function buildRequestBody(request: ProviderRequest): Record<string, unknown> {
       };
       body.output_config = { effort: noXhigh ? "high" : EFFORT[request.thinkingLevel] };
     }
+  } else if (request.thinkingLevel === undefined && DEFAULT_THINKING_MODEL.test(request.model)) {
+    // Live (long sessions, Haiku 5.5): with no level these models still think, and with no binding a pruned history
+    // failed each later request with a 400. This is the default thinking, with the binding.
+    body.thinking = { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } };
   }
 
   return body;

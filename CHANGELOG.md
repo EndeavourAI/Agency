@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Fixed: a Claude 5 session with no thinking level failed every request after old tool results were pruned**:
+  these models think by default, and the earlier fix bound their thinking blocks only when a level was set. The
+  request now names the default thinking with the binding. In 16 scripted long sessions, 4 of 8 with pruning hit
+  the 400 and failed each later turn.
 - **The doubt gate and the missing-file note apply to headless runs only**: with a user present, the answer goes
   to the user, who decides. Replayed over 2,148 real Claude Code turns, the doubt gate would have fired on 7% of
   tool turns, mostly for checks the model cannot do ("I haven't run it in-game"), and the missing-file note on paths

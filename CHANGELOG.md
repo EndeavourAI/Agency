@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Claude Code runs in Harbor with a fast install**: `packages/eval/harbor/claude_code_fast.py` is Harbor's Claude
+  Code agent with one change: on a glibc x64 container it uploads the native `claude` binary (`CLAUDE_BINARY`)
+  instead of installing Node.js and Claude Code in every container. Setup took 4 s instead of about 5 minutes, so a
+  head-to-head no longer spends most of its time on installs. Other containers take Harbor's own install.
 - **A turn that ends while a file the task named is missing is sent back once**: when the model stops and a file
   that the prompt names (an absolute path, or a relative one with a folder in it) does not exist in a folder that
   does, it is told to make it, as a best effort is better than none, or to say in one line why not. On

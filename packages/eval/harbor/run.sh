@@ -14,5 +14,6 @@ source=(-d terminal-bench@2.0)
 [ -n "${DATASET:-}" ] && source=(-p "$DATASET")
 harbor run "${source[@]}" "${include[@]}" \
   -a "${AGENT:-agency_agent:Agency}" -m "${MODEL:-anthropic/claude-haiku-5-5}" -n "${N:-2}" -k "${K:-1}" \
-  --agent-setup-timeout-multiplier 4 --job-name "$JOB" -o "$jobs" -y
+  --agent-setup-timeout-multiplier 4 --job-name "$JOB" -o "$jobs" -y \
+  -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError --retry-include AgentSetupTimeoutError
 python3 "$here/report.py" "$jobs/$JOB"

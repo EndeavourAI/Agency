@@ -8,6 +8,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+# run.sh retries these same types; keep the two lists equal.
 INFRA = ("RuntimeError", "NetworkConnectionError", "AgentSetupTimeoutError")
 
 

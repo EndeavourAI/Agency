@@ -184,9 +184,12 @@ export function createBashTool(
       "environment variables do not persist either. Pass background: true for " +
       // Live: a model started a server that the task needed after the run with background: true, which stops it.
       "long-running processes (dev servers, watchers) instead of waiting for them to exit; they stop when the " +
-      "session ends, so start one that must outlive it with `nohup ... &`. Pass " +
-      "timeout (milliseconds) to kill a command that may hang. A command with no timeout that runs " +
-      `over ${Math.round(detachMs / 1000)} seconds moves to the background and keeps running.` +
+      "session ends, so start one that must outlive it with `nohup ... &`. " +
+      // Live (Terminal-Bench): a model stopped a long search as too slow, another waited with `sleep 110` loops.
+      "To wait for long work (a build, a test suite, a big query, a search), pass timeout in milliseconds, up to " +
+      "600000: the command stays in the foreground until it ends or the timeout kills it. A command with no timeout " +
+      `that runs over ${Math.round(detachMs / 1000)} seconds moves to the background and keeps running; wait for ` +
+      "one with process_output and wait, not with sleep loops." +
       (offline ? BASH_SANDBOX_NOTE : ""),
     inputSchema: {
       type: "object",
@@ -271,10 +274,14 @@ export function createBashTool(
       const wrapped = shell.wrapCommand(input.command);
       const argv = [shell.command, ...shell.buildArgs(wrapped)];
 
-      const timeout =
+      const asked =
         typeof input.timeout === "number" && Number.isFinite(input.timeout) && input.timeout > 0
           ? input.timeout
           : undefined;
+      // A wait past the end of the turn's time would leave the run with no answer at all.
+      const left =
+        ctx.deadlineAt === undefined ? undefined : Math.max(1_000, ctx.deadlineAt - Date.now() - 5_000);
+      const timeout = asked !== undefined && left !== undefined && asked > left ? left : asked;
 
       // Shared result finishing for both backends: marker parse, the
       // sandbox bound on persisted cwd, and the stderr/exit/cancel labels.

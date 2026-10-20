@@ -52,6 +52,18 @@ describe("bash: timeout + spill + progress (A6)", () => {
     expect(result.isError).toBe(true);
   }, 30_000);
 
+  test("a timeout past the end of the turn's time is cut to the time left", async () => {
+    const { deps, manager, root } = setup();
+    const tool = createBashTool(deps, resolveShell(process.platform), { cwd: root }, manager);
+    const started = Date.now();
+    const result = await tool.handler(
+      { command: `bun -e "setTimeout(() => {}, 30000)"`, timeout: 60_000 },
+      { signal, deadlineAt: Date.now() + 7_000 },
+    );
+    expect(result.content).toContain("[timeout:");
+    expect(Date.now() - started).toBeLessThan(10_000);
+  }, 30_000);
+
   test("a command with no timeout that runs too long moves to the background and keeps running", async () => {
     const { deps, manager, root } = setup();
     const tool = createBashTool(deps, resolveShell(process.platform), { cwd: root }, manager, 1_000);

@@ -154,7 +154,7 @@ describe("anthropicAdapter", () => {
       const http: HttpClient = {
         fetch: async (_url, init) => {
           captured = init?.body as string;
-          beta = (init?.headers as Record<string, string>)["anthropic-beta"];
+          beta = (init?.headers as Record<string, string> | undefined)?.["anthropic-beta"];
           return sseResponse("");
         },
       };

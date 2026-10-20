@@ -1,4 +1,4 @@
-"""Per-task pass rate, time and cost of Harbor jobs, side by side. Usage: report.py job-dir [job-dir ...]
+"""Per-task pass rate, time and cost of Harbor jobs, side by side. Usage: report.py [label=]job-dir[,job-dir] ...
 
 A trial that failed on the machine (a network or Docker fault) is left out of the rate and counted apart.
 """
@@ -35,8 +35,18 @@ def trials(job: Path) -> dict[str, list[dict]]:
     return by_task
 
 
-def main(dirs: list[str]) -> None:
-    jobs = {Path(d).name: trials(Path(d)) for d in dirs}
+def merged(spec: str) -> tuple[str, dict[str, list[dict]]]:
+    """`label=dir1,dir2` merges the trials of several jobs under one label; a bare dir is its own label."""
+    label, _, dirs = spec.rpartition("=") if "=" in spec else (Path(spec).name, "", spec)
+    by_task: dict[str, list[dict]] = {}
+    for d in dirs.split(","):
+        for task, runs in trials(Path(d)).items():
+            by_task.setdefault(task, []).extend(runs)
+    return label, by_task
+
+
+def main(specs: list[str]) -> None:
+    jobs = dict(merged(spec) for spec in specs)
     tasks = sorted({t for job in jobs.values() for t in job})
     print("task".ljust(28) + "".join(f"{name[:24]:>26}" for name in jobs))
     for task in tasks:

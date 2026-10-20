@@ -39,6 +39,26 @@ export function verifyReminder(files: readonly string[]): string {
   );
 }
 
+/** The model's own word that it left a check out: "I did not run a chess engine to confirm this." */
+const UNCHECKED =
+  /\b(?:I|we)\s+(?:did not|didn't|could not|couldn't|was unable to|have not|haven't|cannot|can't)\s+(?:yet\s+)?(?:run|test|check|verify|confirm|validate|execute|compile|try)\b/i;
+
+/** The sentence of `answer` that says a check was left out, if one does. */
+export function uncheckedClaim(answer: string): string | undefined {
+  return answer
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((sentence) => sentence.replace(/^[\s*_>#-]+/, "").trim())
+    .find((sentence) => UNCHECKED.test(sentence));
+}
+
+/** Live (Terminal-Bench, Haiku 5.5): 2 of 3 failed tasks ended with such a sentence and nearly all steps unused. */
+export function doubtReminder(sentence: string): string {
+  return (
+    `Your answer says: "${sentence}" Do that check now with the tools, fix what it shows, ` +
+    "then answer. If it cannot be done here, say why in one line and stop."
+  );
+}
+
 /**
  * Verify before done, as a harness rule: a turn that changed code since its last passing check is sent back once
  * before it ends. Measured on SWT-Bench, keeping only patches that pass a check roughly doubled precision.
@@ -47,6 +67,7 @@ export function attachVerifyGate(bus: EventBus, root?: string): () => void {
   // The files that each turn changed since its last passing check.
   const changed = new Map<string, Set<string>>();
   const reminded = new Set<string>();
+  const doubted = new Set<string>();
   const offAfter = bus.on("tool.execute.after", (payload) => {
     const p = payload as AgencyEvents["tool.execute.after"];
     if (p.turnId === undefined || p.result.isError) return;
@@ -70,6 +91,12 @@ export function attachVerifyGate(bus: EventBus, root?: string): () => void {
     const p = payload as AgencyEvents["turn.stop"];
     // A worker reports to its lead, which checks the whole change.
     if (p.turnId === undefined || p.taskDepth > 0) return;
+    const unchecked = doubted.has(p.turnId) ? undefined : uncheckedClaim(p.lastAssistantMessage ?? "");
+    if (unchecked !== undefined) {
+      doubted.add(p.turnId);
+      throw new HookBlock(doubtReminder(unchecked));
+    }
+    doubted.delete(p.turnId);
     const files = changed.get(p.turnId);
     // Live: in 6 of 12 headless runs with no tests or project file, the model spent calls to find no check.
     if (

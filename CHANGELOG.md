@@ -8,6 +8,14 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **An answer that says it skipped a check is sent back once to do it**: on Terminal-Bench with Haiku 5.5, 2 of
+  the first 4 failed tasks ended with the model's own word that it had not checked its answer ("I did not run a
+  chess engine to confirm this", "I could not confirm the reference's word size") and nearly all steps unused. The
+  verify gate now sends such an answer back once with that sentence, to do the check or say why it cannot be
+  done. Live, chess-best-move then took 11 calls instead of 3, wrote a mate-in-one search, found the second move
+  it had missed and passed. The system prompt asks the model to name what it did not verify, so the reminder fires
+  on about two answers in three (11 of 17 finished runs); each costs one more request. `verifyGate: false` turns it
+  off with the rest of the gate.
 - **A Harbor agent for Terminal-Bench**: `packages/eval/harbor/agency_agent.py` runs Agency in Harbor
   (`harbor run -d terminal-bench@2.0 --agent-import-path agency_agent:Agency -m anthropic/<model>`). It uploads
   the release binary that fits the container (x64 or arm64, glibc or musl, with `libstdc++` added on Alpine), runs

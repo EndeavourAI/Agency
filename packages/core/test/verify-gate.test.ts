@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { attachVerifyGate, EventBus, HookBlock } from "../src/index.ts";
+import { uncheckedClaim } from "../src/verify-gate.ts";
 
 const after = (bus: EventBus, tool: string, input: Record<string, unknown>, isError = false) =>
   bus.emit("tool.execute.after", { tool, input, result: { content: "", isError }, turnId: "t1" });
@@ -98,4 +99,36 @@ test("a passing command that runs a test file by its name is a check", async () 
     after(bus, "bash", { command });
     expect(await stop(bus)).toEqual([]);
   }
+});
+
+test("an answer that says a check was left out is sent back once to do it", async () => {
+  const bus = new EventBus();
+  attachVerifyGate(bus);
+  const answer =
+    "The move is e4.\n\nI did not check every other move for mate. I also did not run a chess engine to confirm this.";
+  const ask = async () => {
+    const { errors } = await bus.emitCollect("turn.stop", {
+      turnId: "t1",
+      taskDepth: 0,
+      stopHookActive: false,
+      lastAssistantMessage: answer,
+    });
+    return errors.filter((e): e is HookBlock => e instanceof HookBlock).map((e) => e.message);
+  };
+  const first = await ask();
+  expect(first).toHaveLength(1);
+  expect(first[0]).toContain('"I did not check every other move for mate."');
+  expect(await ask()).toEqual([]);
+});
+
+test("only the model's own word that it skipped a check counts", () => {
+  expect(uncheckedClaim("- I could not confirm the reference's word size from the example.")).toBe(
+    "I could not confirm the reference's word size from the example.",
+  );
+  for (const answer of [
+    "Done. All 12 tests pass.",
+    "I did not change the tests.",
+    "The tests did not run before the fix; now they pass.",
+  ])
+    expect(uncheckedClaim(answer)).toBeUndefined();
 });

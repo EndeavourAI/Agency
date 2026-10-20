@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The doubt gate and the missing-file note apply to headless runs only**: with a user present, the answer goes
+  to the user, who decides. Replayed over 2,148 real Claude Code turns, the doubt gate would have fired on 7% of
+  tool turns, mostly for checks the model cannot do ("I haven't run it in-game"), and the missing-file note on paths
+  named in passing.
+- **The test guard leaves out files git does not track**: deleting a scratch test the model wrote itself
+  (`zz_debug_test.go`, seen in real sessions) weakens no suite. `pending(` counts as a skip only with a reason text.
 - **The notes at the end of a turn go back in one message**: an unrun test of a changed file, a missing output,
   the headless task review and each stop hook's reason now reach the model together. Sent one at a time, each cost
   a phase of its own: 4.4 model calls on average in 99 recorded Terminal-Bench runs.

@@ -102,20 +102,22 @@ test("a passing command that runs a test file by its name is a check", async () 
   }
 });
 
-test("an answer that says a check was left out is sent back once to do it", async () => {
+test("a headless answer that says a check was left out is sent back once; with a user present it ends", async () => {
   const bus = new EventBus();
   attachVerifyGate(bus);
   const answer =
     "The move is e4.\n\nI did not check every other move for mate. I also did not run a chess engine to confirm this.";
-  const ask = async () => {
+  const ask = async (headless = true) => {
     const { errors } = await bus.emitCollect("turn.stop", {
       turnId: "t1",
       taskDepth: 0,
       stopHookActive: false,
       lastAssistantMessage: answer,
+      headless,
     });
     return errors.filter((e): e is HookBlock => e instanceof HookBlock).map((e) => e.message);
   };
+  expect(await ask(false)).toEqual([]);
   const first = await ask();
   expect(first).toHaveLength(1);
   expect(first[0]).toContain('"I did not check every other move for mate."');
@@ -181,7 +183,6 @@ test("the guard sees a change through any command: sed, rm, focus, an always-tru
   for (const git of [false, true]) {
     const root = mkdtempSync(join(tmpdir(), "agency-tg-"));
     try {
-      if (git) execFileSync("git", ["init", "-q"], { cwd: root });
       mkdirSync(join(root, "tests"));
       writeFileSync(join(root, "tests", "test_a.py"), "def test_a():\n    assert a() == 1\n");
       writeFileSync(join(root, "tests", "test_b.py"), "def test_b():\n    assert b() == 1\n");
@@ -191,11 +192,18 @@ test("the guard sees a change through any command: sed, rm, focus, an always-tru
       );
       writeFileSync(join(root, "pytest.ini"), "[pytest]\n");
       writeFileSync(join(root, "d.test.ts"), "test('d', () => { expect(d()).toBe(1); });");
+      if (git) {
+        execFileSync("git", ["init", "-q"], { cwd: root });
+        execFileSync("git", ["add", "."], { cwd: root });
+        // Scratch that git does not track: deleting it weakens nothing.
+        writeFileSync(join(root, "zz_debug_test.go"), 'func TestZZ(t *testing.T) { t.Errorf("x") }');
+      }
       const bus = new EventBus();
       attachTestGuard(bus, root);
       bus.emit("tool.execute.before", { tool: "bash", input: { command: "…" }, turnId: "t1" });
       writeFileSync(join(root, "tests", "test_a.py"), "def test_a():\n    assert True\n");
       rmSync(join(root, "tests", "test_b.py"));
+      if (git) rmSync(join(root, "zz_debug_test.go"));
       writeFileSync(
         join(root, "c.test.ts"),
         "test.only('c', () => { expect(c()).toBe(1); });\ntest('d', () => {});",
@@ -213,6 +221,7 @@ test("the guard sees a change through any command: sed, rm, focus, an always-tru
       ])
         expect(note).toContain(part);
       expect(note).not.toContain("d.test.ts");
+      expect(note).not.toContain("zz_debug_test.go");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

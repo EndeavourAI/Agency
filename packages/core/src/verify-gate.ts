@@ -94,7 +94,9 @@ export function attachVerifyGate(bus: EventBus, root?: string): () => void {
     const p = payload as AgencyEvents["turn.stop"];
     // A worker reports to its lead, which checks the whole change.
     if (p.turnId === undefined || p.taskDepth > 0) return;
-    const unchecked = doubted.has(p.turnId) ? undefined : uncheckedClaim(p.lastAssistantMessage ?? "");
+    // Real sessions: 7% of tool turns said so, mostly of a check the model cannot do ("not run it in-game"); a user reads it.
+    const unchecked =
+      !p.headless || doubted.has(p.turnId) ? undefined : uncheckedClaim(p.lastAssistantMessage ?? "");
     if (unchecked !== undefined) {
       doubted.add(p.turnId);
       throw new HookBlock(doubtReminder(unchecked));
@@ -147,7 +149,7 @@ const KINDS = {
   assertions:
     /\b[Aa]ssert\w*|\bexpect\s*\(|\bt\.(?:Error|Fatal)f?\s*\(|\brequire\.\w+\s*\(|\.should\b|\bXCTAssert/g,
   skipped:
-    /\.(?:skip|todo|only)\s*\(|\b(?:xit|xdescribe|xtest|fit|fdescribe)\s*\(|@pytest\.mark\.(?:skip|xfail)|@unittest\.skip|\bpytest\.skip\s*\(|#\[ignore\]|\bt\.Skip\w*\s*\(|@Disabled\b|@Ignore\b|\[Ignore\]|\bpending\s*\(/g,
+    /\.(?:skip|todo|only)\s*\(|\b(?:xit|xdescribe|xtest|fit|fdescribe)\s*\(|@pytest\.mark\.(?:skip|xfail)|@unittest\.skip|\bpytest\.skip\s*\(|#\[ignore\]|\bt\.Skip\w*\s*\(|@Disabled\b|@Ignore\b|\[Ignore\]|\bpending\s*\(\s*["'`]/g,
   "always true":
     /\bassert\s+(?:True|1)\b|\.toBeTruthy\(\)|\.toBeDefined\(\)|\bexpect\(\s*true\s*\)|\bassert!\(\s*true\s*\)/g,
   excluded:
@@ -155,7 +157,7 @@ const KINDS = {
 } as const;
 type Kind = keyof typeof KINDS;
 type Counts = Record<Kind, number>;
-type Scanned = { counts: Counts; hash: string };
+type Scanned = { counts: Counts; hash: string; tracked?: boolean };
 const LESS: readonly Kind[] = ["tests", "assertions"];
 
 function countsOf(text: string): Counts {
@@ -164,23 +166,28 @@ function countsOf(text: string): Counts {
   return counts;
 }
 
-/** Every path under `root`: git's list (tracked and new) in a repository, else a walk that skips build folders. */
-function listFiles(root: string): string[] {
+/**
+ * Every path under `root`, true when git tracks it: git's list (tracked and new) in a repository, else a walk that
+ * skips build folders, where each file counts as tracked.
+ */
+function listFiles(root: string): Map<string, boolean> {
   try {
-    return execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
+    // `-t` tags each path: `?` is a file that git does not track.
+    const out = execFileSync("git", ["ls-files", "-z", "-t", "--cached", "--others", "--exclude-standard"], {
       cwd: root,
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
       timeout: 5_000,
       windowsHide: true,
       stdio: ["ignore", "pipe", "ignore"],
-    })
-      .split("\0")
-      .filter(Boolean);
+    });
+    return new Map(
+      out.split("\0").flatMap((entry) => (entry.length > 2 ? [[entry.slice(2), entry[0] !== "?"]] : [])),
+    );
   } catch {}
-  const files: string[] = [];
+  const files = new Map<string, boolean>();
   const dirs = [""];
-  while (dirs.length > 0 && files.length < MAX_LISTED_PATHS) {
+  while (dirs.length > 0 && files.size < MAX_LISTED_PATHS) {
     const dir = dirs.pop() ?? "";
     let entries: Dirent[];
     try {
@@ -192,7 +199,7 @@ function listFiles(root: string): string[] {
       const path = dir === "" ? entry.name : `${dir}/${entry.name}`;
       if (entry.isDirectory()) {
         if (!SKIP_DIRS.has(entry.name)) dirs.push(path);
-      } else files.push(path);
+      } else files.set(path, true);
     }
   }
   return files;
@@ -201,7 +208,7 @@ function listFiles(root: string): string[] {
 /** Each test file and runner config under `root`; an unchanged file comes from `cache`. ponytail: the first 5,000. */
 function scanTests(root: string, cache: Map<string, Scanned & { stamp: string }>): Map<string, Scanned> {
   const scan = new Map<string, Scanned>();
-  for (const path of listFiles(root)) {
+  for (const [path, tracked] of listFiles(root)) {
     if (scan.size >= MAX_SCANNED) break;
     if (!TEST_PATH.test(path) && !RUNNER_CONFIG.test(path)) continue;
     try {
@@ -214,7 +221,7 @@ function scanTests(root: string, cache: Map<string, Scanned & { stamp: string }>
         file = { counts: countsOf(text), hash: createHash("sha1").update(text).digest("hex"), stamp };
         cache.set(path, file);
       }
-      scan.set(path, file);
+      scan.set(path, { ...file, tracked });
     } catch {}
   }
   return scan;
@@ -229,12 +236,16 @@ function weakening(before: Counts, after: Counts): string | undefined {
   return how.length === 0 ? undefined : how.join(", ");
 }
 
-/** The weakened files between two scans; a deleted file whose text a new file holds was moved, not dropped. */
+/**
+ * The weakened files between two scans. A deleted file whose text a new file holds was moved, and one that git does not
+ * track was scratch: in real sessions, models deleted their own diagnostic tests (`zz_debug_test.go`).
+ */
 export function weakenedTests(before: Map<string, Scanned>, after: Map<string, Scanned>): string[] {
   const added = new Set([...after].filter(([path]) => !before.has(path)).map(([, file]) => file.hash));
   return [...before].flatMap(([path, file]) => {
     const now = after.get(path);
-    if (now === undefined) return added.has(file.hash) || !TEST_PATH.test(path) ? [] : [`${path} (deleted)`];
+    if (now === undefined)
+      return added.has(file.hash) || !file.tracked || !TEST_PATH.test(path) ? [] : [`${path} (deleted)`];
     const how = weakening(file.counts, now.counts);
     return how === undefined ? [] : [`${path} (${how})`];
   });

@@ -256,6 +256,8 @@ export interface RunTurnOptions {
   verifyEdits?: boolean;
   /** A headless task: before the first end, a turn that used tools re-checks the task's requirements once. */
   reviewTask?: boolean;
+  /** No one reads the result before it counts (`-p`, the SDK): the notes that stand in for that reader apply. */
+  headless?: boolean;
 }
 
 const NEVER_ABORTED = new AbortController().signal;
@@ -763,7 +765,8 @@ export async function runTurn(
           const note =
             options.reviewTask && worked
               ? reviewNote(text.join("\n"), missing)
-              : missing.length > 0
+              : // Real sessions: a user names files in passing (`/package.json`) and reads the answer anyway.
+                options.headless && missing.length > 0
                 ? missingNote(missing)
                 : undefined;
           if (note !== undefined) notes.push(note);
@@ -775,6 +778,7 @@ export async function runTurn(
             taskDepth: options.taskDepth ?? 0,
             stopHookActive: stopBlocked,
             lastAssistantMessage: turn.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(""),
+            headless: options.headless === true,
           });
           const reasons = errors.filter((e): e is HookBlock => e instanceof HookBlock).map((e) => e.message);
           if (reasons.length > 0) stopBlocked = true;

@@ -190,9 +190,10 @@ test("the files a task names that do not exist, in a folder that does, are its m
     expect(missingOutputs(`write it to ${root}/src/out.json`, root)).toEqual([`${root}/src/out.json`]);
 });
 
-test("a turn that ends while a file the task named is missing is sent back once", async () => {
+test("a headless turn that ends while a file the task named is missing is sent back once", async () => {
   const root = repo();
   const seen: ProviderRequest[] = [];
+  let headless = false;
   const adapter: ProviderAdapter = {
     family: "fake",
     async *stream(request): AsyncIterable<StreamEvent> {
@@ -201,24 +202,33 @@ test("a turn that ends while a file the task named is missing is sent back once"
       yield { type: "message_stop", stopReason: "end_turn", usage: { inputTokens: 1, outputTokens: 1 } };
     },
   };
-  await runTurn(
-    adapter,
-    new Scheduler({ maxAttempts: 1 }),
-    { fetch: async () => new Response() },
-    {
-      identity: { type: "user" },
-      capabilities: FULL_CAPABILITIES,
-      systemPrompt: "sys",
-      model: "m",
-      apiKey: "k",
-      cwd: root,
-      verifyEdits: true,
-      session: [{ role: "user", content: [{ type: "text", text: "Write the answer to src/solution.txt" }] }],
-      tools: [],
-    },
-  );
-  expect(seen).toHaveLength(2);
-  const note = seen[1]?.messages.at(-1)?.content[0];
+  const run = () =>
+    runTurn(
+      adapter,
+      new Scheduler({ maxAttempts: 1 }),
+      { fetch: async () => new Response() },
+      {
+        identity: { type: "user" },
+        capabilities: FULL_CAPABILITIES,
+        systemPrompt: "sys",
+        model: "m",
+        apiKey: "k",
+        cwd: root,
+        verifyEdits: true,
+        headless,
+        session: [
+          { role: "user", content: [{ type: "text", text: "Write the answer to src/solution.txt" }] },
+        ],
+        tools: [],
+      },
+    );
+  // With a user present, the answer ends the turn: the user reads it.
+  await run();
+  expect(seen).toHaveLength(1);
+  headless = true;
+  await run();
+  expect(seen).toHaveLength(3);
+  const note = seen[2]?.messages.at(-1)?.content[0];
   expect(note?.type === "text" ? note.text : "").toContain(
     "the task names src/solution.txt, and it does not exist",
   );

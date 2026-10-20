@@ -797,6 +797,7 @@ export async function executeTurn(
               cwd: options.workspaceRoot,
               prefetchNamedFiles: true,
               verifyEdits: true,
+              headless: params.nonInteractive === true,
               // A headless root turn (a benchmark, CI): no one reviews the result before it counts.
               ...(params.nonInteractive === true &&
               config.verifyGate !== false &&

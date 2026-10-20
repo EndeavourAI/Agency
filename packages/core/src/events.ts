@@ -78,6 +78,8 @@ export interface AgencyEvents {
     stopHookActive: boolean;
     /** The text of the reply that ends the turn. */
     lastAssistantMessage?: string;
+    /** No one reads the result before it counts (`-p`, the SDK). */
+    headless?: boolean;
   };
   event: { event: string; payload: unknown };
 }

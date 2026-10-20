@@ -183,6 +183,8 @@ describe("createBashTool", () => {
     );
     expect(Date.now() - start).toBeLessThan(2_000);
     expect(result.content).toContain("started background process");
+    // process_output is deferred: the notice gives its call, so the first call has the right arguments.
+    expect(result.content).toContain(`process_output {"id": "`);
   });
 
   test("a background command runs in the sandbox of the backend, and a backend that cannot hold one refuses it", async () => {

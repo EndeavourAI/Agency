@@ -102,7 +102,8 @@ export const en = {
     '{tool} rejected: the line "{line}" stands for code that the text leaves out, and writing it would delete that code. Send the whole text, or change only the lines that differ.',
   "tool.edit.no_change":
     "edit rejected: it would leave {path} as it is, so nothing was written. Read the lines again and send the oldText and newText that differ.",
-  "tool.bash.background_started": "started background process {id} (pid {pid})",
+  "tool.bash.background_started":
+    'started background process {id} (pid {pid}). Read its output with process_output {"id": "{id}", "wait": <seconds, at most 600>}',
   "tool.bash.background_refused":
     "background: true is not available with this sandbox backend: the command would run outside the sandbox. Run it in the foreground.",
   "tool.bash.truncated": "[truncated: output exceeded {bytes} bytes; full output saved to {path}]",
@@ -110,7 +111,7 @@ export const en = {
   "tool.bash.cancelled": "[cancelled: command aborted before completion]",
   "tool.bash.timeout": "[timeout: command exceeded {ms}ms and was killed]",
   "tool.bash.detached":
-    "[still running after {seconds} s: moved to the background as process {id}. process_output with wait reads the rest; process_kill stops it]",
+    '[still running after {seconds} s: moved to the background as process {id}. Read the rest with process_output {"id": "{id}", "wait": <seconds, at most 600>}; process_kill {"id": "{id}"} stops it]',
   "tool.bash.exit_code": "[exit code: {code}]",
   "tool.bash.network_ask":
     "Run with the network, outside the network limit of the sandbox (local sockets open too): {command}",

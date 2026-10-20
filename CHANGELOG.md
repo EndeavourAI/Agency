@@ -8,6 +8,11 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The notice of a background command gives the call that reads it**: `process_output` is loaded on demand, so the
+  model does not see its arguments. Live on Terminal-Bench (query-optimize, Haiku 5.5), a command that bash moved to
+  the background was read with `process_output {wait: "true"}`, which failed, then `tool_search`, then `call_tool`:
+  three calls for one read. The notice now shows `process_output {"id": "…", "wait": <seconds, at most 600>}` and
+  `process_kill {"id": "…"}`.
 - **A headless run is told that no one will answer**: in `-p` and SDK turns the system prompt now says that no one
   reads a question before the run ends, so the model picks the most reasonable option, names it, and finishes.
   Live on Terminal-Bench (crack-7z-hash, Haiku 5.5), a run stopped after 16 calls to ask for "permission to run a

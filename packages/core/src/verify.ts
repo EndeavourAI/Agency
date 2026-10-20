@@ -147,12 +147,12 @@ export function missingNote(paths: string[]): string {
 const TASK_QUOTE = 2_000;
 
 /**
- * Live (Terminal-Bench): runs that worked well still failed a requirement stated once in the task (the source must be
- * in /app, from the Debian package). One look back at the task before the end, with the missing files folded in.
+ * Live (Terminal-Bench): runs that worked well still failed a requirement stated once in the task (source in /app).
+ * One look back before the end; checks in one reply and none repeated, as it took 1 to 5 more calls in a pilot.
  */
 export function reviewNote(task: string, missing: string[]): string {
   const quoted = task.length > TASK_QUOTE ? `${task.slice(0, TASK_QUOTE)} […]` : task;
   const files =
     missing.length === 0 ? "" : ` These files that it names do not exist yet: ${missing.join(", ")}.`;
-  return `[harness: before you finish, check the result against the task once more. The task was:\n\n${quoted}\n\nFor each concrete requirement (file names and paths, formats, where files must be, what must be running), confirm with a command that it holds now, and fix what does not.${files} Then give your final answer.]`;
+  return `[harness: before you finish, check the result against the task once more. The task was:\n\n${quoted}\n\nFor each concrete requirement (file names and paths, formats, where files must be, what must be running) that you have not checked since your last change, confirm that it holds now, with all such commands in one reply, and fix what does not.${files} Then give your final answer.]`;
 }

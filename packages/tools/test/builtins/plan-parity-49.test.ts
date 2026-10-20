@@ -149,7 +149,7 @@ describe("non-interactive force-deny", () => {
     const { question, signal } = setup({ nonInteractive: true });
     const result = await question.handler({ question: "proceed?" }, { signal });
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("non-interactive");
+    expect(result.content).toContain("No one will answer");
   });
 
   test("interactive question still works", async () => {

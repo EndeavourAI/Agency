@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A question in a headless run is answered with "no one will answer"**: the `question` tool of a `-p` or SDK turn
+  said that the answer would come in the next message, so the model ended its turn to wait and the run ended with
+  no answer. A headless turn's `question` now says that no one will answer, to choose the most reasonable option,
+  name it in the final answer, and go on.
 - **A fixed Terminal-Bench set and a report**: `packages/eval/harbor/tasks.txt` names 35 Terminal-Bench 2.0 tasks
   (easy to hard), `run.sh` runs them through Harbor with Agency or another agent (`AGENT=claude-code`), and
   `report.py` prints the pass rate, time and cost of each task for several jobs side by side. A trial that failed

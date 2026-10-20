@@ -119,6 +119,33 @@ describe("daemon with real built-in tools", () => {
     expect(readFileSync(join(root, "existing.ts"), "utf8")).toBe("const x = 1;\n");
   });
 
+  test("a question in a headless turn is told that no one will answer, so the model goes on", async () => {
+    const root = tempRepo();
+    const daemon = await createAgentDaemon({
+      workspaceRoot: root,
+      instanceFile: join(root, ".agency", "instance.json"),
+      adapterFor: () => scriptedToolCallAdapter("question", { question: "Run the long attack?" }),
+      http: noopHttp,
+      configDir: configAllowing({}),
+    });
+    daemons.push(daemon);
+    const client = await connectToDaemon(daemon.server.port, "127.0.0.1", { token: daemon.server.token });
+    clients.push(client);
+
+    const result = (await client.call("run_turn", {
+      turnId: "tq",
+      provider: "anthropic",
+      model: "test-model",
+      apiKey: "key",
+      systemPrompt: "sys",
+      session: [],
+      nonInteractive: true,
+    })) as RunTurnRpcResult;
+
+    const toolResult = result.messages[1]?.content[0] as { content: string };
+    expect(toolResult.content).toContain("No one will answer");
+  });
+
   test("a scripted 'bash' tool call actually runs a real command", async () => {
     const root = tempRepo();
     const daemon = await createAgentDaemon({

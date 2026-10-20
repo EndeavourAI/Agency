@@ -32,6 +32,7 @@ import type { TurnTiming } from "@agency/telemetry";
 import {
   BASH_HOST_NOTE,
   BASH_SANDBOX_NOTE,
+  createQuestionTool,
   modelCommandEnv,
   resolveConfiguredShell,
   type SessionScope,
@@ -661,6 +662,9 @@ export async function executeTurn(
           // Live: under `bun test*` a model ran `npx bun test` first, was refused, and only then wrote `bun test`.
           const allowedCommands = sessionGate.allowedPatterns("bash").slice(0, 10);
           const offeredTools = leadTools.map((t) => {
+            // Live: a headless run's question got "the answer comes in your next message", and the run ended there.
+            if (t.name === "question" && params.nonInteractive === true)
+              return { ...t, handler: createQuestionTool({ nonInteractive: true }).handler };
             if (t.name !== "bash") return t;
             // Live: under allow-all a model read "no network" and did not try to install pytest.
             let description =

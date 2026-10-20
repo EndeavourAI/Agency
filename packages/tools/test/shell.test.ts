@@ -70,6 +70,11 @@ describe("parseShellOutput", () => {
     expect(result.cwd).toBe("/home/user/project");
   });
 
+  test("a line that progress output rewrote keeps only what a terminal shows", () => {
+    const raw = `Downloading 10%\rDownloading 55%\rDownloading 100%\r\ndone\r\nnext\n${EXIT_MARKER}0\n`;
+    expect(parseShellOutput(raw, "/fallback").output).toBe("Downloading 100%\ndone\nnext");
+  });
+
   test("parses a nonzero exit code", () => {
     const raw = `some output\n${EXIT_MARKER}7\n${CWD_MARKER}/x\n`;
     expect(parseShellOutput(raw, "/fallback").exitCode).toBe(7);

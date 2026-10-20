@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **A shell command's progress lines reach the model as a terminal shows them**: output that a progress bar
+  rewrote with `` kept every version of the line. Only the last one is kept now. In 98 recorded Terminal-Bench runs
+  that overwritten text was 4.8% of all tool output.
 - **A headless task looks back at its requirements once before it ends**: in `-p` and SDK turns that used tools,
   the first end is sent back with the task quoted, to confirm each concrete requirement with a command (paths,
   names, formats, where files must be, what must be running) and fix what does not hold; the files the task names

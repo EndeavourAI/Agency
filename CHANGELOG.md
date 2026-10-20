@@ -8,6 +8,10 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The system prompt asks to leave only the asked-for files**: when a task asks for specific output files, the
+  model builds and tests in a temporary folder and removes what it made beside those outputs before it finishes.
+  On Terminal-Bench, polyglot-c-py and polyglot-rust-c failed because the check wanted only the source file and
+  found the compiled test binaries next to it.
 - **A trimmed old tool result no longer ends a run with a 400**: on models with preserved thinking (Haiku 5.5,
   Sonnet 5.5, Opus 5.5, Fable 5.1) each thinking block is bound to the history before it, and Agency trims old
   tool results to save input. When a trim came before a replayed thinking block, the API refused the request

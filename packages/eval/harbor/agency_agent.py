@@ -73,7 +73,7 @@ class Agency(BaseInstalledAgent):
         await self.exec_as_root(environment, command=f"mkdir -p {ROOT}")
         await environment.upload_file(local, str(BINARY))
         await self.exec_as_root(environment, command=f"chmod 755 {BINARY} && {BINARY} --version")
-        # `run` goes as the agent user, and Agency's home is under this folder.
+        # `run` goes as the agent user, which must own this folder.
         if environment.default_user is not None:
             owner = shlex.quote(str(environment.default_user))
             await self.exec_as_root(environment, command=f"chown -R {owner} {ROOT}")
@@ -86,7 +86,8 @@ class Agency(BaseInstalledAgent):
         log = self.environment_logs_dir / OUTPUT
         env = {
             **self.model_connection.env,
-            "AGENCY_HOME": f"{ROOT}/home",
+            # In the trial's log folder: the session and trace outlive the container, also after a timeout.
+            "AGENCY_HOME": f"{self.environment_logs_dir}/home",
             "AGENCY_AGENTS_HOME": f"{ROOT}/agents",
         }
         steps = os.environ.get("AGENCY_MAX_STEPS", "300")

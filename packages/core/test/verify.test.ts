@@ -8,6 +8,7 @@ import type { HttpClient } from "@agency/net";
 import type { ProviderAdapter, ProviderRequest, StreamEvent } from "@agency/providers";
 import { Scheduler } from "@agency/providers";
 import type { Message } from "@agency/schema";
+import { EventBus, HookBlock } from "../src/events.ts";
 import { runTurn } from "../src/loop.ts";
 import { buildTestMap, parseLcov } from "../src/testmap.ts";
 import { missingOutputs, untestedEdits, untestedNote } from "../src/verify.ts";
@@ -273,4 +274,67 @@ test("a headless turn that used tools looks back at the task once before it ends
     "The task was:\n\nBuild it from the Debian source in the root.",
   );
   expect(await run(false)).toHaveLength(2);
+});
+
+test("the notes of one end go back together: a second end costs no extra round trip per note", async () => {
+  // Live (Terminal-Bench): each note sent alone cost a phase of its own, 4.4 model calls on average.
+  const root = repo();
+  const seen: ProviderRequest[] = [];
+  const adapter: ProviderAdapter = {
+    family: "fake",
+    async *stream(request): AsyncIterable<StreamEvent> {
+      seen.push(request);
+      const usage = { inputTokens: 1, outputTokens: 1 };
+      if (seen.length === 1) {
+        yield { type: "tool_call_start", id: "c1", name: "edit" };
+        yield {
+          type: "tool_call_delta",
+          id: "c1",
+          inputJsonDelta: JSON.stringify({ path: "src/render.ts" }),
+        };
+        yield { type: "tool_call_end", id: "c1" };
+        yield { type: "message_stop", stopReason: "tool_use", usage };
+        return;
+      }
+      yield { type: "text_delta", text: "done" };
+      yield { type: "message_stop", stopReason: "end_turn", usage };
+    },
+  };
+  const bus = new EventBus();
+  let blocked = false;
+  bus.on("turn.stop", () => {
+    if (blocked) return;
+    blocked = true;
+    throw new HookBlock("a stop hook says no");
+  });
+  await runTurn(
+    adapter,
+    new Scheduler({ maxAttempts: 1 }),
+    { fetch: async () => new Response() },
+    {
+      identity: { type: "user" },
+      capabilities: FULL_CAPABILITIES,
+      systemPrompt: "sys",
+      model: "m",
+      apiKey: "k",
+      cwd: root,
+      verifyEdits: true,
+      reviewTask: true,
+      eventBus: bus,
+      session: [{ role: "user", content: [{ type: "text", text: "Change render and write src/out.txt" }] }],
+      tools: [
+        {
+          name: "edit",
+          description: "edit",
+          inputSchema: { type: "object", properties: { path: { type: "string" } } },
+          handler: async () => ({ content: "edited" }),
+        },
+      ],
+    },
+  );
+  expect(seen).toHaveLength(3);
+  const note = seen[2]?.messages.at(-1)?.content[0];
+  const text = note?.type === "text" ? note.text : "";
+  for (const part of ["test/render.test.ts", "The task was", "src/out.txt", "a stop hook says no"])
+    expect(text).toContain(part);
 });

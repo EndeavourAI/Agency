@@ -743,13 +743,14 @@ export async function runTurn(
         // A stop hook can refuse the end of the turn: its reason goes to the model. The step limit bounds this.
         const canGoOn =
           stopReason === "end_turn" && !options.signal?.aborted && iteration + 1 < maxToolIterations;
+        // All notes of this end go back in one message. Live (Terminal-Bench): a note sent alone cost 4.4 model calls.
+        const notes: string[] = [];
         // Live: a model changed a file, ran only its own new test, and ended with the test of that file broken.
         if (canGoOn && options.verifyEdits && !verifyNoted && options.cwd !== undefined) {
           const unrun = untestedEdits(messages.slice(turnStart), options.cwd);
           if (unrun.length > 0) {
             verifyNoted = true;
-            await append({ role: "user", content: [{ type: "text", text: untestedNote(unrun) }] }, "harness");
-            continue;
+            notes.push(untestedNote(unrun));
           }
         }
         if (canGoOn && options.verifyEdits && !outputsNoted && options.cwd !== undefined) {
@@ -765,10 +766,7 @@ export async function runTurn(
               : missing.length > 0
                 ? missingNote(missing)
                 : undefined;
-          if (note !== undefined) {
-            await append({ role: "user", content: [{ type: "text", text: note }] }, "harness");
-            continue;
-          }
+          if (note !== undefined) notes.push(note);
         }
         if (canGoOn && options.eventBus?.emitCollect) {
           const { errors } = await options.eventBus.emitCollect("turn.stop", {
@@ -779,14 +777,12 @@ export async function runTurn(
             lastAssistantMessage: turn.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(""),
           });
           const reasons = errors.filter((e): e is HookBlock => e instanceof HookBlock).map((e) => e.message);
-          if (reasons.length > 0) {
-            stopBlocked = true;
-            await append(
-              { role: "user", content: [{ type: "text", text: reasons.join("\n\n") }] },
-              "harness",
-            );
-            continue;
-          }
+          if (reasons.length > 0) stopBlocked = true;
+          notes.push(...reasons);
+        }
+        if (notes.length > 0) {
+          await append({ role: "user", content: [{ type: "text", text: notes.join("\n\n") }] }, "harness");
+          continue;
         }
         // A message sent while the model gave its last answer would wait for the next turn: answer it now.
         if (canGoOn && options.drainSteering) {

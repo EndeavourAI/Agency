@@ -8,6 +8,12 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The notes at the end of a turn go back in one message**: an unrun test of a changed file, a missing output,
+  the headless task review and each stop hook's reason now reach the model together. Sent one at a time, each cost
+  a phase of its own: 4.4 model calls on average in 99 recorded Terminal-Bench runs.
+- **The model runs a check it would list as not run before it answers**: the system prompt asked it to name what
+  was not verified, and the doubt gate then sent that answer back. 46 of 99 recorded runs went back that way, and
+  32 of them changed nothing.
 - **A turn that weakened tests is sent back once** (`testGuard`, on by default): when an `edit` or `write` deleted
   a test file, took assertions out of one or added a skip, the end of the turn names each file and asks to restore
   them and fix the code instead, unless the task asked for it. A model can make a failing check pass that way.

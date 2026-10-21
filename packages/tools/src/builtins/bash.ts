@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { isReadOnlyCommand } from "@agency/guard";
 import { t } from "@agency/i18n";
@@ -46,6 +47,38 @@ const PROGRESS_TICK_MS = 2_000;
  * run to a clean exit 0.
  */
 const POSIX_KILL_FLUSH_MS = 250;
+
+/** A `pkill -f` pattern that Agency's own command line contains (a -p prompt names the task's files) ends this run. */
+export function selfKillPattern(command: string, ownCmdlines: readonly string[]): string | undefined {
+  for (const [, args = ""] of command.matchAll(/\bpkill\b([^;&|\n]*)/g)) {
+    const words = [...args.matchAll(/'([^']*)'|"([^"]*)"|(\S+)/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? "");
+    if (!words.some((w) => w === "--full" || /^-[a-zA-Z]*f/.test(w))) continue;
+    const pattern = words.find((w) => !w.startsWith("-"));
+    if (pattern === undefined) continue;
+    let matches: (line: string) => boolean;
+    try {
+      const re = new RegExp(pattern);
+      matches = (line) => re.test(line);
+    } catch {
+      matches = (line) => line.includes(pattern);
+    }
+    if (ownCmdlines.some(matches)) return pattern;
+  }
+  return undefined;
+}
+
+/** Agency's command line and its parents' (a `bash -c` wrapper repeats the prompt); argv alone off Linux. */
+function ownCommandLines(): string[] {
+  const lines = [process.argv.join(" ")];
+  try {
+    let pid = process.pid;
+    for (let i = 0; i < 8 && pid > 1; i++) {
+      lines.push(readFileSync(`/proc/${pid}/cmdline`, "utf8").replaceAll("\0", " "));
+      pid = Number(readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]?.split(" ")[1]);
+    }
+  } catch {}
+  return lines;
+}
 
 export interface BashState {
   cwd: string;
@@ -218,6 +251,11 @@ export function createBashTool(
 
     async handler(input, ctx) {
       deps.sandbox.checkCommand(input.command);
+      const killer = /\bpkill\b/.test(input.command)
+        ? selfKillPattern(input.command, ownCommandLines())
+        : undefined;
+      if (killer !== undefined)
+        return { content: t("tool.bash.self_kill", { pattern: killer }), isError: true as const };
       // Models name the folder of a command unasked, as Codex has them do: it runs there, in the workspace only.
       const named = str(input.workdir) || str(input.cwd);
       const cwd = named

@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { FULL_CAPABILITIES, SandboxBoundary } from "@agency/guard";
 import { AgencyError, ErrorCode } from "@agency/schema";
-import { BASH_SANDBOX_NOTE, type BashState, createBashTool } from "../../src/builtins/bash.ts";
+import {
+  BASH_SANDBOX_NOTE,
+  type BashState,
+  createBashTool,
+  selfKillPattern,
+} from "../../src/builtins/bash.ts";
 import type { ToolDeps } from "../../src/contract.ts";
 import { ProcessManager } from "../../src/process-manager.ts";
 import { resolveConfiguredShell, resolveShell } from "../../src/shell.ts";
@@ -541,3 +546,39 @@ describe.skipIf(process.platform !== "win32" || Bun.which("bash") === null)(
     }, 60_000);
   },
 );
+
+describe("selfKillPattern", () => {
+  // Live (Terminal-Bench): `pkill -f pystan_analysis.py` matched the task text in Agency's own argv and ended the run.
+  const own = [
+    "/installed-agent/agency -p Fix /app/pystan_analysis.py and save the results --model x",
+    "bash -c agency",
+  ];
+
+  test("finds a pkill -f pattern that matches Agency's own command line", () => {
+    expect(selfKillPattern("cd /app && pkill -f pystan_analysis.py; ls", own)).toBe("pystan_analysis.py");
+    expect(selfKillPattern(String.raw`pkill --full 'pystan_analysis\.py'`, own)).toBe(
+      String.raw`pystan_analysis\.py`,
+    );
+    expect(selfKillPattern("pkill -9 -f pystan", own)).toBe("pystan");
+  });
+
+  test("the bash tool refuses such a pkill and runs nothing", async () => {
+    const { tool } = setup();
+    // A marker in argv only: should the guard fail, pkill finds no real process with it.
+    process.argv.push("--agency-selfkill-marker-5c2e");
+    try {
+      const result = await tool.handler({ command: "pkill -f agency-selfkill-marker-5c2e" }, { signal });
+      expect(result.isError).toBe(true);
+      expect(result.content).toContain("not run");
+    } finally {
+      process.argv.pop();
+    }
+  });
+
+  test("lets kills through that cannot reach Agency", () => {
+    expect(selfKillPattern("pkill -f uvicorn", own)).toBeUndefined();
+    expect(selfKillPattern("pkill pystan_analysis.py", own)).toBeUndefined();
+    expect(selfKillPattern("pgrep -f pystan_analysis.py", own)).toBeUndefined();
+    expect(selfKillPattern("kill 4242", own)).toBeUndefined();
+  });
+});

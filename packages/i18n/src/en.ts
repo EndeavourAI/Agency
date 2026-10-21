@@ -117,6 +117,8 @@ export const en = {
     "Run with the network, outside the network limit of the sandbox (local sockets open too): {command}",
   "tool.bash.network_refused":
     "not run: the user did not allow the network for this command. Do the work without the network, or say that the task needs it.",
+  "tool.bash.self_kill":
+    'not run: the pattern "{pattern}" of this pkill also matches Agency\'s own process (its prompt is on its command line), so it would end this run. Find the PIDs with `pgrep -af`, then kill only those with `kill <pid>`.',
   "tool.bash.cwd_reset":
     "[the next command starts in the project root again: a cd lasts for its own command only, so write `cd dir && command`]",
   "tool.grep.no_matches": "no matches",

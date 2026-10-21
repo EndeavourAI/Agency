@@ -142,6 +142,13 @@ describe("parseArgv", () => {
     expect(parsed.args).toEqual(["--weird-provider"]);
   });
 
+  test("a prompt that starts with a dash is a prompt, not an option", () => {
+    const task = "- You are given a PyTorch state dictionary";
+    expect(parseArgv(["-p", task, "--model", "openai/fake-1"]).print).toBe(task);
+    expect(parseArgv(["-p", "--format", "json", task]).print).toBe(task);
+    expect(parseArgv(["-p", "-v"]).version).toBe(true);
+  });
+
   test("rejects unknown options, missing values, and bad formats", () => {
     expect(() => parseArgv(["--bogus"])).toThrow("Unknown option");
     expect(() => parseArgv(["--model"])).toThrow("needs a value");

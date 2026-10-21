@@ -347,6 +347,11 @@ export interface EntrypointDeps {
   err?: (line: string) => void;
 }
 
+/** "- fix the bug" starts with a dash but is a prompt: a flag is one word, up to `=` or its end. */
+function isFlag(arg: string): boolean {
+  return arg === "--" || /^--?[A-Za-z0-9][\w-]*(=|$)/.test(arg);
+}
+
 function splitFlag(arg: string): [string, string | undefined] {
   const eq = arg.indexOf("=");
   if (eq === -1) return [arg, undefined];
@@ -434,7 +439,7 @@ export function parseArgv(argv: string[]): ParsedArgv {
       positionals.push(...argv.slice(i + 1));
       break;
     }
-    if (!arg.startsWith("-") || arg === "-") {
+    if (!isFlag(arg)) {
       positionals.push(arg);
       continue;
     }
@@ -486,8 +491,7 @@ export function parseArgv(argv: string[]): ParsedArgv {
       case "-p":
       case "--print": {
         const next = argv[i + 1];
-        if (inline === undefined && (next === undefined || (next.startsWith("-") && next !== "-")))
-          promptLater = true;
+        if (inline === undefined && (next === undefined || isFlag(next))) promptLater = true;
         else parsed.print = value();
         break;
       }

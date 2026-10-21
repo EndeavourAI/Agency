@@ -105,8 +105,10 @@ export type AnyToolSpec = ToolSpec<Record<string, unknown>>;
 /** The model is told one time when this number of tool steps is left, and when this share of the cost limit is spent. */
 const LOW_STEPS = 5;
 const COST_NOTE_SHARE = 0.8;
-/** The model is told the time left once this share of `maxSeconds` is used. */
-const TIME_NOTE_SHARE = 0.75;
+/** The model is told to finish once 90 s, or a tenth of a long limit, is left: a note at 75% stopped work early. */
+export function timeNoteDue(elapsed: number, limit: number): boolean {
+  return limit - elapsed <= Math.max(90, limit / 10);
+}
 /** The same failure of the same call this many times in a turn gets a note to the model. */
 const REPEATED_FAILURES = 3;
 const SERIAL_READS = 3;
@@ -901,7 +903,7 @@ export async function runTurn(
       }
       const timeLimit = options.budget?.maxSeconds;
       const elapsed = (Date.now() - startedAt) / 1000;
-      if (!timeNoted && timeLimit !== undefined && elapsed >= timeLimit * TIME_NOTE_SHARE) {
+      if (!timeNoted && timeLimit !== undefined && timeNoteDue(elapsed, timeLimit)) {
         timeNoted = true;
         // Live (Terminal-Bench): a run spent its 900 s waiting on a slow query and was stopped with nothing written.
         notes.push(

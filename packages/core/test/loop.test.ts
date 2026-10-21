@@ -4,7 +4,7 @@ import type { HttpClient } from "@agency/net";
 import type { ProviderAdapter, StreamEvent, Usage } from "@agency/providers";
 import { Scheduler } from "@agency/providers";
 import type { Message } from "@agency/schema";
-import { runTurn, type ToolSpec, validateToolInput } from "../src/loop.ts";
+import { runTurn, type ToolSpec, timeNoteDue, validateToolInput } from "../src/loop.ts";
 
 const noopHttp: HttpClient = { fetch: async () => new Response() };
 const user = { type: "user" as const };
@@ -455,6 +455,15 @@ describe("runTurn", () => {
     const toolResult = result.messages[1]!.content[0] as { content: string };
     expect(toolResult.content).toContain("minutes of this run are left. Finish now");
     expect(result.budgetExceeded).toBe(true);
+  });
+
+  test("the time note comes when little time is left, not at a share of the limit", () => {
+    // Live (Terminal-Bench gpt2-codegolf, tune-mjcf): a note at 75% of 795 s stopped work with a third of it left.
+    expect(timeNoteDue(596, 795)).toBe(false);
+    expect(timeNoteDue(710, 795)).toBe(true);
+    expect(timeNoteDue(3000, 3600)).toBe(false);
+    expect(timeNoteDue(3250, 3600)).toBe(true);
+    expect(timeNoteDue(0.05, 0.1)).toBe(true);
   });
 
   test("stops and reports budgetExceeded once the token budget is hit, after closing out pending tool calls", async () => {

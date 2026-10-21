@@ -177,9 +177,9 @@ describe("anthropicAdapter", () => {
     // The 4.6 models have no xhigh level.
     expect(await bodyFor("claude-sonnet-4-6", "xhigh")).toEqual({ thinking: adaptive, effort: "high" });
     expect(await bodyFor("claude-opus-5", "off")).toEqual({ thinking: undefined, effort: undefined });
-    // With no level, Claude 5 thinks anyway: the request names that default only to bind its blocks.
-    const bound = { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } };
-    expect(await bodyFor("claude-haiku-5-5", undefined)).toEqual({ thinking: bound, effort: undefined });
+    // With no level, Claude 5 thinks anyway: the request binds its blocks and asks for the summary, whose deltas
+    // keep the stream alive (a silent think of over 300 s tripped the stall limit).
+    expect(await bodyFor("claude-haiku-5-5", undefined)).toEqual({ thinking: adaptive, effort: undefined });
     for (const model of ["claude-sonnet-4-6", "claude-haiku-4-5", "MiniMax-M3"])
       expect(await bodyFor(model, undefined)).toEqual({ thinking: undefined, effort: undefined });
     // The 4.5 family and older models answer 400 to adaptive thinking: they keep the budget.

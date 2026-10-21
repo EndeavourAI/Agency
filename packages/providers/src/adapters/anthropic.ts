@@ -196,9 +196,13 @@ function buildRequestBody(request: ProviderRequest): Record<string, unknown> {
       body.output_config = { effort: noXhigh ? "high" : EFFORT[request.thinkingLevel] };
     }
   } else if (request.thinkingLevel === undefined && DEFAULT_THINKING_MODEL.test(request.model)) {
-    // Live (long sessions, Haiku 5.5): with no level these models still think, and with no binding a pruned history
-    // failed each later request with a 400. This is the default thinking, with the binding.
-    body.thinking = { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } };
+    // Live: with no level these models still think; unbound, a pruned history 400ed each later request, and a hidden
+    // think sent nothing for 300 s and tripped the stall limit (regex-chess). The summary streams every few seconds.
+    body.thinking = {
+      type: "adaptive",
+      display: "summarized",
+      block_binding: { prefix_mismatch_behavior: "drop_block" },
+    };
   }
 
   return body;

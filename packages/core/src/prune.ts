@@ -17,6 +17,8 @@ export interface CacheSeen {
   cached: number;
   written: number;
   rule?: PruneRule;
+  /** Set once a request nears the model's long-prompt price step: thinking is not sent back from then on. */
+  thinkingDropped?: boolean;
 }
 
 // Replay of 108 stored research sessions against age 10/20K: input -30% with no batch; with a cache priced at
@@ -48,6 +50,27 @@ export function seeCache(
         : (readPrice ?? 1) <= 0.1
           ? CHEAP_READ_CACHE
           : READ_CACHE;
+}
+
+// Replay of 49 Haiku 5.5 benchmark sessions: old thinking was 80% of each prompt over the 100K step and 57% of the
+// cost; not sending it after 80% of the step cost 52% less. The server's clear_thinking spares the current tool loop.
+const THINKING_STOP_SHARE = 0.8;
+
+/** Marks `seen` once a request and its reply pass 80% of `overTokens`, the prompt size that is priced higher. */
+export function seeSize(seen: CacheSeen, tokens: number, overTokens: number | undefined): void {
+  if (overTokens !== undefined && tokens > overTokens * THINKING_STOP_SHARE) seen.thinkingDropped = true;
+}
+
+/** The history without thinking blocks: with none sent, no later block is bound to a changed prefix. */
+export function withoutThinking(messages: Message[]): Message[] {
+  return messages.flatMap((message) => {
+    const content = message.content.filter(
+      (block) => block.type !== "thinking" && block.type !== "redacted_thinking",
+    );
+    if (content.length === message.content.length) return [message];
+    // A reply of thinking alone would be empty, which strict providers reject.
+    return content.length > 0 ? [{ ...message, content }] : [];
+  });
 }
 
 /** Before the rule is fixed, the one that prunes least. */

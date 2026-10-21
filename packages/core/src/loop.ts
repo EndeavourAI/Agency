@@ -36,7 +36,15 @@ import { permissionsFromRules } from "./config/claude-permissions.ts";
 import { type AgencyEvents, HookBlock, HookStop } from "./events.ts";
 import { temperatureFor } from "./model-sampling.ts";
 import { namedFiles } from "./prefetch.ts";
-import { type CacheSeen, dedupeReads, pruneRule, pruneStaleResults, seeCache } from "./prune.ts";
+import {
+  type CacheSeen,
+  dedupeReads,
+  pruneRule,
+  pruneStaleResults,
+  seeCache,
+  seeSize,
+  withoutThinking,
+} from "./prune.ts";
 import {
   compactMessages,
   countMessageTokens,
@@ -453,6 +461,7 @@ export async function runTurn(
     const runOne = async (model: string): Promise<CollectedTurn> => {
       // By the model of this request: a fallback of another family gets its own names.
       const dialect = dialectFor(model, options.toolDialect);
+      const history = options.keepToolResults ? messages : pruneStaleResults(messages, pruneRule(cacheSeen));
       const request: ProviderRequest = {
         model,
         apiKey: options.apiKey,
@@ -460,10 +469,7 @@ export async function runTurn(
         ...(options.systemSegments !== undefined ? { systemSegments: options.systemSegments } : {}),
         // A copy: the loop changes `messages` in place, and the request is kept for a later compaction.
         messages: wireMessages(
-          withContext(
-            options.keepToolResults ? messages : pruneStaleResults(messages, pruneRule(cacheSeen)),
-            options.context,
-          ),
+          withContext(cacheSeen.thinkingDropped ? withoutThinking(history) : history, options.context),
           dialect,
         ),
         tools: wireTools(toolDefs(), dialect),
@@ -665,6 +671,7 @@ export async function runTurn(
         price?.input ? (price.cachedInput ?? price.input) / price.input : undefined,
       );
       requestTokens = turn.usage.inputTokens + turn.usage.outputTokens;
+      seeSize(cacheSeen, requestTokens, price?.longPrompt?.overTokens);
       // A compaction that left the request at the trigger size cannot help: the next ones would each cost a summary.
       if (folded && requestTokens >= triggerTokens(compactionThreshold)) proactiveFolds = false;
       const turnCost = costOf(turn.usage, options.pricePerMTok);

@@ -620,6 +620,44 @@ describe("runTurn", () => {
     expect(result.usage.costUsd).toBeCloseTo(2 * (0.006 + 0.0005), 9);
   });
 
+  test("thinking is not sent back once a request nears the long-prompt step, and stays out", async () => {
+    const sent: boolean[] = [];
+    const inputs = [50_000, 85_000, 60_000, 60_000];
+    const thinker: ProviderAdapter = {
+      family: "fake",
+      async *stream(request): AsyncIterable<StreamEvent> {
+        const call = sent.length;
+        sent.push(request.messages.some((m) => m.content.some((b) => b.type === "thinking")));
+        yield { type: "thinking_delta", text: "reasoning" };
+        yield { type: "thinking_signature", signature: `sig-${call}` };
+        if (call < 3) {
+          yield { type: "tool_call_start", id: `call_${call}`, name: "read" };
+          yield { type: "tool_call_end", id: `call_${call}` };
+        } else yield { type: "text_delta", text: "done" };
+        const stopReason = call < 3 ? "tool_use" : "end_turn";
+        yield {
+          type: "message_stop",
+          stopReason,
+          usage: { inputTokens: inputs[call]!, outputTokens: 1_000 },
+        };
+      },
+    };
+    await runTurn(thinker, new Scheduler(), noopHttp, {
+      identity: user,
+      capabilities: FULL_CAPABILITIES,
+      systemPrompt: "sys",
+      tools: [
+        { name: "read", description: "reads", inputSchema: {}, handler: async () => ({ content: "x" }) },
+      ],
+      model: "test-model",
+      apiKey: "key",
+      session: [],
+      pricePerMTok: { input: 0.1, output: 0.5, longPrompt: { overTokens: 100_000, input: 0.5, output: 2.5 } },
+    });
+    // 51K is under 80% of the step; 86K passes it, and a smaller request after does not bring thinking back.
+    expect(sent).toEqual([false, true, false, false]);
+  });
+
   test("maxToolIterations caps a runaway tool-calling loop and says so", async () => {
     let calls = 0;
     const spec: ToolSpec = {

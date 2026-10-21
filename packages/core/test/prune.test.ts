@@ -1,6 +1,14 @@
 import { expect, test } from "bun:test";
 import type { Message } from "@agency/schema";
-import { type CacheSeen, dedupeReads, pruneRule, pruneStaleResults, seeCache } from "../src/prune.ts";
+import {
+  type CacheSeen,
+  dedupeReads,
+  pruneRule,
+  pruneStaleResults,
+  seeCache,
+  seeSize,
+  withoutThinking,
+} from "../src/prune.ts";
 
 const AGE_10: Parameters<typeof pruneStaleResults>[1] = { age: 10, batchTokens: 20_000 };
 
@@ -164,4 +172,34 @@ test("a cache read at a tenth of the input price or less keeps 20K batches", () 
   expect(pruneRule(seen(0.1))).toEqual({ age: 6, batchTokens: 20_000 });
   expect(pruneRule(seen(0.25))).toEqual({ age: 6, batchTokens: 10_000 });
   expect(pruneRule(seen(undefined))).toEqual({ age: 6, batchTokens: 10_000 });
+});
+
+test("a session stops sending thinking at 80% of a long-prompt step, and a model with no step never does", () => {
+  const seen: CacheSeen = { requests: 0, input: 0, cached: 0, written: 0 };
+  seeSize(seen, 500_000, undefined);
+  expect(seen.thinkingDropped).toBeUndefined();
+  seeSize(seen, 80_000, 100_000);
+  expect(seen.thinkingDropped).toBeUndefined();
+  seeSize(seen, 80_001, 100_000);
+  expect(seen.thinkingDropped).toBe(true);
+  const messages: Message[] = [
+    { role: "user", content: [{ type: "text", text: "go" }] },
+    {
+      role: "assistant",
+      content: [
+        { type: "thinking", text: "plan", signature: "s" },
+        { type: "redacted_thinking", data: "d" },
+        { type: "tool_call", id: "c0", name: "read", input: {} },
+      ],
+    },
+  ];
+  expect(withoutThinking(messages)[1]?.content).toEqual([
+    { type: "tool_call", id: "c0", name: "read", input: {} },
+  ]);
+  expect(withoutThinking(messages)[0]).toBe(messages[0]);
+  const thoughtOnly: Message = {
+    role: "assistant",
+    content: [{ type: "thinking", text: "cut", signature: "s" }],
+  };
+  expect(withoutThinking([...messages, thoughtOnly])).toHaveLength(2);
 });

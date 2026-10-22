@@ -164,11 +164,14 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
   }
 
   async function loadStatus(sessionId: string): Promise<void> {
-    const [status, todos] = await Promise.all([
+    const [status, todos, git] = await Promise.all([
       call<{ status: WireStatus; line?: string | null }>("status_get", { sessionId }).catch(() => undefined),
       call<{ todos: WireTodo[] }>("todo_read", { sessionId }).catch(() => undefined),
+      // The changes of the details pane; the review screen loads the diff itself.
+      call<WireGitStatus>("git_status").catch(() => undefined),
     ]);
     const events: Event[] = [];
+    if (git) events.push({ type: "git_loaded", git });
     if (status)
       events.push({ type: "status_loaded", sessionId, status: status.status, line: status.line ?? null });
     if (todos) events.push({ type: "todos_loaded", sessionId, todos: todos.todos });

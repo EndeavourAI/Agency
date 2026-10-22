@@ -1,0 +1,893 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`home logo, wordmark, the box, the hints, the recent list and the footer 1`] = `
+"  agency                                                                                                                                ctrl+p 4 sessions  dev
+
+
+
+
+                                                                              ░▒░░
+                                                                             ▒▓▓▒▒▒
+                                                                            ▒▒█▓▒▓▓▓
+                                                                           ▓▓██▓▒▓▓▓█░
+                                                                         ░▓▓▓██▓▒▓▓▓██░
+                                                                        ▒▓▓▓███▓▒▓▓▓▒██▒
+                                                                       ▒▓▓▒████▓▒▓▓▓▓▒██▓
+                                                                     ░▓▓▓▓█████▓▒▓▓▓▓▓▓███░
+                                                                    ░▓▓▓▓██████▓▒▓▓▓▓▓▓████▒
+                                                                   ▒▓▓▓▓▓██████▓▒▓▓▓▓▓▓▓████▓
+                                                                  ▓▓▓▓▓▒███████▒▒▓▓▓▓▓▓▓▒█████
+                                                                ░▓▓▓▓▓▒▓▓▓▓▓▓▓▓▒▓███▓▒▓▓▓▓█████░
+                                                               ▒▓▓▓▒▒░░     ▒▒▓▒▓█▓▒     ░▒▒▓███▒
+                                                              ▒▒░         ░▒▓▓▓▒▒▓▓▓▓░         ░▒▒
+                                                                             ░▒▒▒▒░
+
+                                                                    agency  v0.1.0 · ~/Agency
+
+
+                                    ┌──────────────────────────────────────────────────────────────────────────────────────┐
+                                    │ › What should Agency work on? @ for files, / for commands                            │
+                                    └──────────────────────────────────────────────────────────────────────────────────────┘
+                                     build · Sonnet 5.5 · high                                 enter start  ctrl+p commands
+
+
+                                       recent                                                          when     cost  result
+                                    ✓  Retry infra faults                                               now    $1.75    done
+                                    ✓  TUI concepts                                                      4m    $0.40    done
+                                    ✓  Tune stop gates                                                   1d    $0.90    done
+                                    ✓  Sample: failed turn                                               3d    $0.30    done
+
+
+
+
+                                                                                                                       daemon ready · 4 sessions · $3.35 total
+"
+`;
+
+exports[`home 24 rows drop the logo; nothing else moves out of reach 1`] = `
+"  agency                                                ctrl+p 4 sessions  dev
+
+
+
+
+
+                            agency  v0.1.0 · ~/Agency
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │ › What should Agency work on? @ for files, / for commands                │
+  └──────────────────────────────────────────────────────────────────────────┘
+   build · Sonnet 5.5                            enter start  ctrl+p commands
+
+     recent                                              when     cost  result
+  ✓  Retry infra faults                                   now    $1.75    done
+  ✓  TUI concepts                                          4m    $0.40    done
+  ✓  Tune stop gates                                       1d    $0.90    done
+  ✓  Sample: failed turn                                   3d    $0.30    done
+
+
+
+
+
+                                       daemon ready · 4 sessions · $3.35 total
+"
+`;
+
+exports[`empty and offline home empty: the guide in words, go to in the top bar 1`] = `
+"  agency                                                                                                                                          ctrl+p go to
+
+
+
+
+
+                                                                              ░▒░░
+                                                                             ▒▓▓▒▒▒
+                                                                            ▒▒█▓▒▓▓▓
+                                                                           ▓▓██▓▒▓▓▓█░
+                                                                         ░▓▓▓██▓▒▓▓▓██░
+                                                                        ▒▓▓▓███▓▒▓▓▓▒██▒
+                                                                       ▒▓▓▒████▓▒▓▓▓▓▒██▓
+                                                                     ░▓▓▓▓█████▓▒▓▓▓▓▓▓███░
+                                                                    ░▓▓▓▓██████▓▒▓▓▓▓▓▓████▒
+                                                                   ▒▓▓▓▓▓██████▓▒▓▓▓▓▓▓▓████▓
+                                                                  ▓▓▓▓▓▒███████▒▒▓▓▓▓▓▓▓▒█████
+                                                                ░▓▓▓▓▓▒▓▓▓▓▓▓▓▓▒▓███▓▒▓▓▓▓█████░
+                                                               ▒▓▓▓▒▒░░     ▒▒▓▒▓█▓▒     ░▒▒▓███▒
+                                                              ▒▒░         ░▒▓▓▓▒▒▓▓▓▓░         ░▒▒
+                                                                             ░▒▒▒▒░
+
+                                                                    agency  v0.1.0 · ~/Agency
+
+
+                                    ┌──────────────────────────────────────────────────────────────────────────────────────┐
+                                    │ › What should Agency work on? @ for files, / for commands                            │
+                                    └──────────────────────────────────────────────────────────────────────────────────────┘
+                                     build · Sonnet 5.5 · high                                 enter start  ctrl+p commands
+
+
+                                       No sessions yet. Describe a task above and press enter. Agency keeps every session
+                                                                     running in the daemon.
+
+
+
+
+
+
+                                                                                                                                                  daemon ready
+"
+`;
+
+exports[`empty and offline home offline: no prompt, the way back, the footer in red 1`] = `
+"  agency                                                                                                                         ✗ daemon unreachable  r retry
+
+
+
+
+                                                                              ░▒░░
+                                                                             ▒▓▓▒▒▒
+                                                                            ▒▒█▓▒▓▓▓
+                                                                           ▓▓██▓▒▓▓▓█░
+                                                                         ░▓▓▓██▓▒▓▓▓██░
+                                                                        ▒▓▓▓███▓▒▓▓▓▒██▒
+                                                                       ▒▓▓▒████▓▒▓▓▓▓▒██▓
+                                                                     ░▓▓▓▓█████▓▒▓▓▓▓▓▓███░
+                                                                    ░▓▓▓▓██████▓▒▓▓▓▓▓▓████▒
+                                                                   ▒▓▓▓▓▓██████▓▒▓▓▓▓▓▓▓████▓
+                                                                  ▓▓▓▓▓▒███████▒▒▓▓▓▓▓▓▓▒█████
+                                                                ░▓▓▓▓▓▒▓▓▓▓▓▓▓▓▒▓███▓▒▓▓▓▓█████░
+                                                               ▒▓▓▓▒▒░░     ▒▒▓▒▓█▓▒     ░▒▒▓███▒
+                                                              ▒▒░         ░▒▓▓▓▒▒▓▓▓▓░         ░▒▒
+                                                                             ░▒▒▒▒░
+
+                                                                    agency  v0.1.0 · ~/Agency
+
+
+                                    ┌──────────────────────────────────────────────────────────────────────────────────────┐
+                                    │ Waiting for the daemon. Start it with agency daemon start.                           │
+                                    └──────────────────────────────────────────────────────────────────────────────────────┘
+                                     build · Sonnet 5.5 · high                                 enter start  ctrl+p commands
+
+
+                                       recent                                                          when     cost  result
+                                    ✓  Retry infra faults                                               now    $1.75    done
+                                    ✓  TUI concepts                                                      4m    $0.40    done
+                                    ✓  Tune stop gates                                                   1d    $0.90    done
+                                    ✓  Sample: failed turn                                               3d    $0.30    done
+
+
+
+
+                                                                                                                ✗ daemon unreachable · run agency daemon start
+"
+`;
+
+exports[`main: the ledger of a session 160x40: compaction marker, steel band, steps, answer, closing row, live turn, details, statusLine 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+                                                                                                                       │  tasks                    2 of 4 done
+                                                                                                                       │  ✓  Rebuild Linux binary
+                                                                                                                       │  ✓  Retry infra faults
+                                                                                                                       │  ▸  Count start timeouts
+                                                                                                                       │  ○  Compare per task
+                                                                                                                       │
+  ─────────────────────────── compacted · 6 earlier turns summarized · 148K → 31K tokens ────────────────────────────  │  context                          56%
+                                                                                                                       │  112K of 200K · compacts at 180K
+  ▌› Make the 54 task runs faster without changing results.                                                            │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                                                                                                                       │
+     read   packages/eval/harbor/run.sh                                                                                │  changes                ctrl+r review
+     run    harbor run --help | grep -E "retr|concurren"                                                               │  run.sh                         +2 −1
+     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  report.py                      +1 −1
+     run    dry run with no matching task                                                                              │
+                                                                                                                       │  run
+     Retries replace the failed trial in place, so both arms keep the same task set:                                   │  model    Sonnet 5.5
+                                                                                                                       │  cost     $1.75 · 91% cached
+      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │  branch   dev
+                                                                                                                       │
+     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │
+     • a task that fails twice still counts as a fail                                                                  │
+                                                                                                                       │
+     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │
+                                                                                                                       │
+  ▌› Also count environment start timeouts as machine faults.                                                          │
+                                                                                                                       │
+     read   packages/eval/harbor/report.py                                                                             │
+     edit   packages/eval/harbor/report.py                                                                             │
+                                                                                                                       │
+     The start timeout is an environment fault like the others, so it goes in the same INFRA                           │
+     list. Editing report.py now▍                                                                                      │
+                                                                                                                       │
+     •◦◦ edit packages/eval/harbor/report.py                                                         reasoning · 1:42  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ › Message Agency. @ for files, / for commands                                                                   │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs                                   esc stop  ctrl+p commands   │
+"
+`;
+
+exports[`main: the ledger of a session focus: details hidden, the column centred at 120 columns, context rides in the hint row 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+
+
+
+
+
+
+                    ────────────────────────────── compacted · 6 earlier turns summarized · 148K → 31K tokens ──────────────────────────────
+
+                    ▌› Make the 54 task runs faster without changing results.
+
+                       read   packages/eval/harbor/run.sh
+                       run    harbor run --help | grep -E "retr|concurren"
+                       edit   packages/eval/harbor/run.sh +2 −1
+                       run    dry run with no matching task
+
+                       Retries replace the failed trial in place, so both arms keep the same task set:
+
+                        harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError
+
+                       • AgentSetupTimeoutError is a machine fault too, so it retries
+                       • a task that fails twice still counts as a fail
+
+                       ✓ done · 4 steps                                                                   copy · thought 7s · 40s · 86 tok/s
+
+                    ▌› Also count environment start timeouts as machine faults.
+
+                       read   packages/eval/harbor/report.py
+                       edit   packages/eval/harbor/report.py
+
+                       The start timeout is an environment fault like the others, so it goes in the same INFRA
+                       list. Editing report.py now▍
+
+                       •◦◦ edit packages/eval/harbor/report.py                                                              reasoning · 1:42
+
+                    ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+                    │ › Message Agency. @ for files, / for commands                                                                        │
+                    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                     build · Sonnet 5.5 · high · 56% ctx · 2/4 tasks  │  ci passing · 2 open PRs                  esc stop  ctrl+p commands
+"
+`;
+
+exports[`main: the ledger of a session narrow 80x24: no details, no effort, context and tasks in the hint row, no history hint 1`] = `
+"  agency  Retry infra faults                                ctrl+p 3 more  dev
+
+
+      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkCon…
+
+     • AgentSetupTimeoutError is a machine fault too, so it retries
+     • a task that fails twice still counts as a fail
+
+     ✓ done · 4 steps                       copy · thought 7s · 40s · 86 tok/s
+
+  ▌› Also count environment start timeouts as machine faults.
+
+     read   packages/eval/harbor/report.py
+     edit   packages/eval/harbor/report.py
+
+     The start timeout is an environment fault like the others, so it goes in
+     the same INFRA list. Editing report.py now▍
+
+     •◦◦ edit packages/eval/harbor/report.py                  reasoning · 1:42
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │ › Message Agency. @ for files, / for commands                            │
+  └──────────────────────────────────────────────────────────────────────────┘
+   build · Sonnet 5.5 · 56% ctx · 2/4 tasks         esc stop  ctrl+p commands
+"
+`;
+
+exports[`palette, approval and themes palette: sessions first, then commands with their keys 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+                                                                                                                       │  tasks                    2 of 4 done
+                                                                                                                       │  ✓  Rebuild Linux binary
+                                                                                                                          ✓  Retry infra faults
+                                        go to ─────────────────────────────────────────────────────────── ↑↓ enter · esc  ▸  Count start timeouts
+                                                                                                                          ○  Compare per task
+                                        › session or /command
+  ─────────────────────────── compacte                                                                                    context                          56%
+                                        sessions                                                                          112K of 200K · compacts at 180K
+  ▌› Make the 54 task runs faster with  ●  Retry infra faults                                         Agency  $1.75  now  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                                        ✓  TUI concepts                                                Agency  $0.40  4m
+     read   packages/eval/harbor/run.s  ✓  Tune stop gates                                             Agency  $0.90  1d  changes                ctrl+r review
+     run    harbor run --help | grep -  ✓  Sample: failed turn                                         Agency  $0.30  3d  run.sh                         +2 −1
+     edit   packages/eval/harbor/run.s                                                                                    report.py                      +1 −1
+     run    dry run with no matching t  commands
+                                        /model        Choose a model and effort                                           run
+     Retries replace the failed trial   /review       Review and commit changes                                   ctrl+r  model    Sonnet 5.5
+                                        /focus        Hide the details panel                                              cost     $1.75 · 91% cached
+      harbor run -r 2 --retry-include   /new          Start a new session                                         ctrl+n  branch   dev
+                                        /details      Show or hide session details                                ctrl+d
+     • AgentSetupTimeoutError is a mac  /mode         Switch between build, plan and auto                            tab
+     • a task that fails twice still c  /turns        Pick a turn to copy it or open its reasoning                     ↑
+                                        /settings     Open settings                                               ctrl+,
+     ✓ done · 4 steps
+                                                                                                                       │
+  ▌› Also count environment start timeouts as machine faults.                                                          │
+                                                                                                                       │
+     read   packages/eval/harbor/report.py                                                                             │
+     edit   packages/eval/harbor/report.py                                                                             │
+                                                                                                                       │
+     The start timeout is an environment fault like the others, so it goes in the same INFRA                           │
+     list. Editing report.py now▍                                                                                      │
+                                                                                                                       │
+     •◦◦ edit packages/eval/harbor/report.py                                                         reasoning · 1:42  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ › Message Agency. @ for files, / for commands                                                                   │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs                                   esc stop  ctrl+p commands   │
+"
+`;
+
+exports[`palette, approval and themes approval: the ask takes over the prompt; brass for the one primary action 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+                                                                                                                       │  tasks                    2 of 4 done
+  ─────────────────────────── compacted · 6 earlier turns summarized · 148K → 31K tokens ────────────────────────────  │  ✓  Rebuild Linux binary
+                                                                                                                       │  ✓  Retry infra faults
+  ▌› Make the 54 task runs faster without changing results.                                                            │  ▸  Count start timeouts
+                                                                                                                       │  ○  Compare per task
+     read   packages/eval/harbor/run.sh                                                                                │
+     run    harbor run --help | grep -E "retr|concurren"                                                               │  context                          56%
+     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  112K of 200K · compacts at 180K
+     run    dry run with no matching task                                                                              │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                                                                                                                       │
+     Retries replace the failed trial in place, so both arms keep the same task set:                                   │  changes                ctrl+r review
+                                                                                                                       │  run.sh                         +2 −1
+      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │  report.py                      +1 −1
+                                                                                                                       │
+     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │  run
+     • a task that fails twice still counts as a fail                                                                  │  model    Sonnet 5.5
+                                                                                                                       │  cost     $1.75 · 91% cached
+     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │  branch   dev
+                                                                                                                       │
+  ▌› Also count environment start timeouts as machine faults.                                                          │
+                                                                                                                       │
+     read   packages/eval/harbor/report.py                                                                             │
+     edit   packages/eval/harbor/report.py                                                                             │
+                                                                                                                       │
+     The start timeout is an environment fault like the others, so it goes in the same INFRA                           │
+     list. Editing report.py now▍                                                                                      │
+                                                                                                                       │
+     •◦◦ edit packages/eval/harbor/report.py                                                         reasoning · 1:42  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ ? Run  bash scripts/dry-run.sh   no rule allows it yet                                                          │  │
+  │  y allow once    a always for this command    n deny                                                            │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ Answer the request above: y, a or n.                                                                            │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs                                   esc stop  ctrl+p commands   │
+"
+`;
+
+exports[`palette, approval and themes night: every colour of the canvas theme 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+                                                                                                                       │  tasks                    2 of 4 done
+                                                                                                                       │  ✓  Rebuild Linux binary
+                                                                                                                       │  ✓  Retry infra faults
+                                                                                                                       │  ▸  Count start timeouts
+                                                                                                                       │  ○  Compare per task
+                                                                                                                       │
+  ─────────────────────────── compacted · 6 earlier turns summarized · 148K → 31K tokens ────────────────────────────  │  context                          56%
+                                                                                                                       │  112K of 200K · compacts at 180K
+  ▌› Make the 54 task runs faster without changing results.                                                            │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                                                                                                                       │
+     read   packages/eval/harbor/run.sh                                                                                │  changes                ctrl+r review
+     run    harbor run --help | grep -E "retr|concurren"                                                               │  run.sh                         +2 −1
+     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  report.py                      +1 −1
+     run    dry run with no matching task                                                                              │
+                                                                                                                       │  run
+     Retries replace the failed trial in place, so both arms keep the same task set:                                   │  model    Sonnet 5.5
+                                                                                                                       │  cost     $1.75 · 91% cached
+      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │  branch   dev
+                                                                                                                       │
+     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │
+     • a task that fails twice still counts as a fail                                                                  │
+                                                                                                                       │
+     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │
+                                                                                                                       │
+  ▌› Also count environment start timeouts as machine faults.                                                          │
+                                                                                                                       │
+     read   packages/eval/harbor/report.py                                                                             │
+     edit   packages/eval/harbor/report.py                                                                             │
+                                                                                                                       │
+     The start timeout is an environment fault like the others, so it goes in the same INFRA                           │
+     list. Editing report.py now▍                                                                                      │
+                                                                                                                       │
+     •◦◦ edit packages/eval/harbor/report.py                                                         reasoning · 1:42  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ › Message Agency. @ for files, / for commands                                                                   │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs                                   esc stop  ctrl+p commands   │
+"
+`;
+
+exports[`palette, approval and themes light: every colour of the canvas theme 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+                                                                                                                       │  tasks                    2 of 4 done
+                                                                                                                       │  ✓  Rebuild Linux binary
+                                                                                                                       │  ✓  Retry infra faults
+                                                                                                                       │  ▸  Count start timeouts
+                                                                                                                       │  ○  Compare per task
+                                                                                                                       │
+  ─────────────────────────── compacted · 6 earlier turns summarized · 148K → 31K tokens ────────────────────────────  │  context                          56%
+                                                                                                                       │  112K of 200K · compacts at 180K
+  ▌› Make the 54 task runs faster without changing results.                                                            │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                                                                                                                       │
+     read   packages/eval/harbor/run.sh                                                                                │  changes                ctrl+r review
+     run    harbor run --help | grep -E "retr|concurren"                                                               │  run.sh                         +2 −1
+     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  report.py                      +1 −1
+     run    dry run with no matching task                                                                              │
+                                                                                                                       │  run
+     Retries replace the failed trial in place, so both arms keep the same task set:                                   │  model    Sonnet 5.5
+                                                                                                                       │  cost     $1.75 · 91% cached
+      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │  branch   dev
+                                                                                                                       │
+     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │
+     • a task that fails twice still counts as a fail                                                                  │
+                                                                                                                       │
+     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │
+                                                                                                                       │
+  ▌› Also count environment start timeouts as machine faults.                                                          │
+                                                                                                                       │
+     read   packages/eval/harbor/report.py                                                                             │
+     edit   packages/eval/harbor/report.py                                                                             │
+                                                                                                                       │
+     The start timeout is an environment fault like the others, so it goes in the same INFRA                           │
+     list. Editing report.py now▍                                                                                      │
+                                                                                                                       │
+     •◦◦ edit packages/eval/harbor/report.py                                                         reasoning · 1:42  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ › Message Agency. @ for files, / for commands                                                                   │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs                                   esc stop  ctrl+p commands   │
+"
+`;
+
+exports[`offline in a session the turn reads paused throughout; the box says why; messages wait 1`] = `
+"  agency  Retry infra faults                                                                                                     ✗ daemon unreachable  r retry
+
+                                                                                                                       │  tasks                    2 of 4 done
+                                                                                                                       │  ✓  Rebuild Linux binary
+                                                                                                                       │  ✓  Retry infra faults
+                                                                                                                       │  ▸  Count start timeouts
+                                                                                                                       │  ○  Compare per task
+                                                                                                                       │
+  ─────────────────────────── compacted · 6 earlier turns summarized · 148K → 31K tokens ────────────────────────────  │  context                          56%
+                                                                                                                       │  112K of 200K · compacts at 180K
+  ▌› Make the 54 task runs faster without changing results.                                                            │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                                                                                                                       │
+     read   packages/eval/harbor/run.sh                                                                                │  changes                ctrl+r review
+     run    harbor run --help | grep -E "retr|concurren"                                                               │  run.sh                         +2 −1
+     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  report.py                      +1 −1
+     run    dry run with no matching task                                                                              │
+                                                                                                                       │  run
+     Retries replace the failed trial in place, so both arms keep the same task set:                                   │  model    Sonnet 5.5
+                                                                                                                       │  cost     $1.75 · 91% cached
+      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │  branch   dev
+                                                                                                                       │
+     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │
+     • a task that fails twice still counts as a fail                                                                  │
+                                                                                                                       │
+     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │
+                                                                                                                       │
+  ▌› Also count environment start timeouts as machine faults.                                                          │
+                                                                                                                       │
+     read   packages/eval/harbor/report.py                                                                             │
+     edit   packages/eval/harbor/report.py                                                                             │
+                                                                                                                       │
+     The start timeout is an environment fault like the others, so it goes in the same INFRA                           │
+     list. Editing report.py now                                                                                       │
+                                                                                                                       │
+     · paused · waiting for the daemon                                                      reasoning (paused) · 1:42  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ Waiting for the daemon. Messages send when it is back.                                                          │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs                   ↑ history  esc esc turns  ctrl+p commands   │
+"
+`;
+
+exports[`pickers model picker: recent and by provider, the context window and the prices from the catalog, the effort row 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+                                                                                                                       │  tasks                    2 of 4 done
+                                                                                                                       │  ✓  Rebuild Linux binary
+                                                                                                                       │  ✓  Retry infra faults
+                                            model ────────────────────────────────────────────────────────────── esc   │  ▸  Count start timeouts
+                                                                                                                       │  ○  Compare per task
+                                            / search                                                                   │
+  ─────────────────────────── compacted ·                                                                              │  context                          56%
+                                                                                          ctx    in /MTok  out /MTok   │  112K of 200K · compacts at 180K
+  ▌› Make the 54 task runs faster without                                                                              │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                                            recent                                                                     │
+     read   packages/eval/harbor/run.sh     ●  Sonnet 5.5                                 1M     $2.00     $10.00      │  changes                ctrl+r review
+     run    harbor run --help | grep -E "r     Haiku 5.5                                  200K   $0.10     $0.50       │  run.sh                         +2 −1
+     edit   packages/eval/harbor/run.sh +2                                                                             │  report.py                      +1 −1
+     run    dry run with no matching task   anthropic                                                                  │
+                                               Haiku 5.5                                  200K   $0.10     $0.50       │  run
+     Retries replace the failed trial in p  ●  Sonnet 5.5                                 1M     $2.00     $10.00      │  model    Sonnet 5.5
+                                               Opus 5.5                                   1M     $4.00     $20.00      │  cost     $1.75 · 91% cached
+      harbor run -r 2 --retry-include Runt                                                                             │  branch   dev
+                                            openai                                                                     │
+     • AgentSetupTimeoutError is a machine     GPT-5.2                                    400K   $5.00     $20.00      │
+     • a task that fails twice still count                                                                             │
+                                            google                                                                     │
+     ✓ done · 4 steps                          Gemini 3 Pro                               1M     $2.50     $10.00      │
+                                                                                                                       │
+  ▌› Also count environment start timeouts  openrouter                                                                 │
+                                               DeepSeek V4                                128K   $0.50     $2.00       │
+     read   packages/eval/harbor/report.py     Laguna S 2.1                               128K   $0.00     $0.00       │
+     edit   packages/eval/harbor/report.py                                                                             │
+                                            effort                                      low   medium   high   xhigh    │
+     The start timeout is an environment f                                                                             │
+     list. Editing report.py now▍                                                                                      │
+                                                                                                                       │
+     •◦◦ edit packages/eval/harbor/report.py                                                         reasoning · 1:42  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ › Message Agency. @ for files, / for commands                                                                   │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs                                   esc stop  ctrl+p commands   │
+"
+`;
+
+exports[`pickers no keys: the picker opens with the way to add one, no table 1`] = `
+"  agency                                                                                                                                ctrl+p 4 sessions  dev
+
+
+
+
+                                            model ────────────────────────────────────────────────────────────── esc
+
+                                            / search
+
+
+                                            No provider has a key yet. Run agency auth login <provider>, then open
+                                            this list again.
+
+                                            effort                                      low   medium   high   xhigh
+
+                                                                  ▓▓▓▓▓▒███████▒▒▓▓▓▓▓▓▓▒█████
+                                                                ░▓▓▓▓▓▒▓▓▓▓▓▓▓▓▒▓███▓▒▓▓▓▓█████░
+                                                               ▒▓▓▓▒▒░░     ▒▒▓▒▓█▓▒     ░▒▒▓███▒
+                                                              ▒▒░         ░▒▓▓▓▒▒▓▓▓▓░         ░▒▒
+                                                                             ░▒▒▒▒░
+
+                                                                    agency  v0.1.0 · ~/Agency
+
+
+                                    ┌──────────────────────────────────────────────────────────────────────────────────────┐
+                                    │ › What should Agency work on? @ for files, / for commands                            │
+                                    └──────────────────────────────────────────────────────────────────────────────────────┘
+                                     build · sonnet · high                                     enter start  ctrl+p commands
+
+
+                                       recent                                                          when     cost  result
+                                    ✓  Retry infra faults                                               now    $1.75    done
+                                    ✓  TUI concepts                                                      4m    $0.40    done
+                                    ✓  Tune stop gates                                                   1d    $0.90    done
+                                    ✓  Sample: failed turn                                               3d    $0.30    done
+
+
+
+
+                                                                                                                       daemon ready · 4 sessions · $3.35 total
+"
+`;
+
+exports[`completion in the box @ lists files: name first, directory dimmed, the pick on a quiet fill, the box joined below 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+                                                                                                                       │  tasks                    2 of 4 done
+                                                                                                                       │  ✓  Rebuild Linux binary
+                                                                                                                       │  ✓  Retry infra faults
+                                                                                                                       │  ▸  Count start timeouts
+  ─────────────────────────── compacted · 6 earlier turns summarized · 148K → 31K tokens ────────────────────────────  │  ○  Compare per task
+                                                                                                                       │
+  ▌› Make the 54 task runs faster without changing results.                                                            │  context                          56%
+                                                                                                                       │  112K of 200K · compacts at 180K
+     read   packages/eval/harbor/run.sh                                                                                │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     run    harbor run --help | grep -E "retr|concurren"                                                               │
+     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  changes                ctrl+r review
+     run    dry run with no matching task                                                                              │  run.sh                         +2 −1
+                                                                                                                       │  report.py                      +1 −1
+     Retries replace the failed trial in place, so both arms keep the same task set:                                   │
+                                                                                                                       │  run
+      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │  model    Sonnet 5.5
+                                                                                                                       │  cost     $1.75 · 91% cached
+     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │  branch   dev
+     • a task that fails twice still counts as a fail                                                                  │
+                                                                                                                       │
+     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │
+                                                                                                                       │
+  ▌› Also count environment start timeouts as machine faults.                                                          │
+                                                                                                                       │
+     read   packages/eval/harbor/report.py                                                                             │
+     edit   packages/eval/harbor/report.py                                                                             │
+                                                                                                                       │
+     The start timeout is an environment fault like the others, so it goes in the same INFRA                           │
+     list. Editing report.py now▍                                                                                      │
+                                                                                                                       │
+     •◦◦ edit packages/eval/harbor/report.py                                                         reasoning · 1:42  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ report.py                 packages/eval/harbor                                                                  │  │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤  │
+  │ › fix @rep                                                                                                      │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs                                   esc stop  ctrl+p commands   │
+"
+`;
+
+exports[`completion in the box / lists commands and skills, prefix first, with their kind on the right 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+  ─────────────────────────── compacted · 6 earlier turns summarized · 148K → 31K tokens ────────────────────────────  │  tasks                    2 of 4 done
+                                                                                                                       │  ✓  Rebuild Linux binary
+  ▌› Make the 54 task runs faster without changing results.                                                            │  ✓  Retry infra faults
+                                                                                                                       │  ▸  Count start timeouts
+     read   packages/eval/harbor/run.sh                                                                                │  ○  Compare per task
+     run    harbor run --help | grep -E "retr|concurren"                                                               │
+     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  context                          56%
+     run    dry run with no matching task                                                                              │  112K of 200K · compacts at 180K
+                                                                                                                       │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     Retries replace the failed trial in place, so both arms keep the same task set:                                   │
+                                                                                                                       │  changes                ctrl+r review
+      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │  run.sh                         +2 −1
+                                                                                                                       │  report.py                      +1 −1
+     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │
+     • a task that fails twice still counts as a fail                                                                  │  run
+                                                                                                                       │  model    Sonnet 5.5
+     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │  cost     $1.75 · 91% cached
+                                                                                                                       │  branch   dev
+  ▌› Also count environment start timeouts as machine faults.                                                          │
+                                                                                                                       │
+     read   packages/eval/harbor/report.py                                                                             │
+     edit   packages/eval/harbor/report.py                                                                             │
+                                                                                                                       │
+     The start timeout is an environment fault like the others, so it goes in the same INFRA                           │
+     list. Editing report.py now▍                                                                                      │
+                                                                                                                       │
+     •◦◦ edit packages/eval/harbor/report.py                                                         reasoning · 1:42  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ /eval                     Run the harbor eval on one task                                               command │  │
+  │ /clear                    Start a new session in this project                                                   │  │
+  │ /model                    Change the model                                                                      │  │
+  │ /review                   Open the changes for review                                                           │  │
+  │ /settings                 Open settings                                                                         │  │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤  │
+  │ › /e                                                                                                            │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs                                   esc stop  ctrl+p commands   │
+"
+`;
+
+exports[`settings sections on the left, the rows of one on the right, the keys at the bottom 1`] = `
+"  agency  settings                                                                                                                          ctrl+p 3 more  dev
+
+   General                │  Theme                   agency
+   Models                 │  Log level               info
+   Permissions            │  Usage metrics           off  Nothing is sent while off.
+   Environments           │  Crash reports           off
+   Context                │
+   Tools and MCP          │
+   Hooks                  │
+   Agents and budgets     │
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   writes your user config                                                                                            ↑↓ move  → open  space change  esc back
+"
+`;
+
+exports[`outputs, shell and queue, paste and scroll outputs opened: an edit shows its diff, a read its first lines, with the pick on the closing row 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+                                                                                                                       │  tasks                    2 of 4 done
+     read   packages/eval/harbor/run.sh                                                                                │  ✓  Rebuild Linux binary
+             #!/usr/bin/env bash                                                                                       │  ✓  Retry infra faults
+             set -euo pipefail                                                                                         │  ▸  Count start timeouts
+             here="$(cd "$(dirname "$0")" && pwd)"                                                                     │  ○  Compare per task
+             source=(--path "$here/tasks")                                                                             │
+             include=(--include "\${TASKS:-*}")                                                                         │  context                          56%
+             … 1 more lines                                                                                            │  112K of 200K · compacts at 180K
+     run    harbor run --help | grep -E "retr|concurren"                                                               │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+               -n, --n-concurrent INTEGER   Trials to run at once                                                      │
+               -r, --max-retries INTEGER    Retries for a failed trial                                                 │  changes                ctrl+r review
+                   --retry-include TEXT     Exception type to retry; repeat it                                         │  run.sh                         +2 −1
+     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  report.py                      +1 −1
+             −   -a "\${AGENT}" -o "$jobs" -y                                                                           │
+             +   -a "\${AGENT}" -o "$jobs" -y \\                                                                         │  run
+             +   -r 2 --retry-include RuntimeError                                                                     │  model    Sonnet 5.5
+     run    dry run with no matching task                                                                              │  cost     $1.75 · 91% cached
+             harbor: 0 tasks match --include nothing                                                                   │  branch   dev
+             flags accepted: -r 2, --retry-include ×3                                                                  │
+             exit 0                                                                                                    │
+                                                                                                                       │
+     Retries replace the failed trial in place, so both arms keep the same task set:                                   │
+                                                                                                                       │
+      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │
+                                                                                                                       │
+     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │
+     • a task that fails twice still counts as a fail                                                                  │
+                                                                                                                       │
+     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │
+                                                                                                                       │
+  ▌› Also count environment start timeouts as machine faults.                                                          │
+                                                                                                                       │
+     ✗ interrupted · you pressed esc                                                                      copy · 102s  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ › Message Agency. @ for files, / for commands                                                                   │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs         ↑↓ turn  enter output  c copy  t thinking  esc back   │
+"
+`;
+
+exports[`outputs, shell and queue, paste and scroll shell and queue: a ! block with its output below the stopped turn, a dashed queued row, the shell prompt 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+  ─────────────────────────── compacted · 6 earlier turns summarized · 148K → 31K tokens ────────────────────────────  │  tasks                    2 of 4 done
+                                                                                                                       │  ✓  Rebuild Linux binary
+  ▌› Make the 54 task runs faster without changing results.                                                            │  ✓  Retry infra faults
+                                                                                                                       │  ▸  Count start timeouts
+     read   packages/eval/harbor/run.sh                                                                                │  ○  Compare per task
+     run    harbor run --help | grep -E "retr|concurren"                                                               │
+     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  context                          56%
+     run    dry run with no matching task                                                                              │  112K of 200K · compacts at 180K
+                                                                                                                       │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     Retries replace the failed trial in place, so both arms keep the same task set:                                   │
+                                                                                                                       │  changes                ctrl+r review
+      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │  run.sh                         +2 −1
+                                                                                                                       │  report.py                      +1 −1
+     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │
+     • a task that fails twice still counts as a fail                                                                  │  run
+                                                                                                                       │  model    Sonnet 5.5
+     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │  cost     $1.75 · 91% cached
+                                                                                                                       │  branch   dev
+  ▌› Also count environment start timeouts as machine faults.                                                          │
+                                                                                                                       │
+     ✗ interrupted · you pressed esc                                                                      copy · 102s  │
+                                                                                                                       │
+  ▌! git status                                                                                                        │
+                                                                                                                       │
+     On branch dev                                                                                                     │
+     Your branch is up to date with 'origin/dev'.                                                                      │
+                                                                                                                       │
+     Changes not staged for commit:                                                                                    │
+             modified:   packages/eval/harbor/report.py                                                                │
+                                                                                                                       │
+     done · sent to the agent as data                                                                                  │
+                                                                                                                       │
+  ┆ › also check the 529 path                                                         turn stopped · enter sends it ┆  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ ! git log --oneline -3                                                                                          │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   shell · runs in ~/Agency · the output goes to the agent as data         ↑ history  esc esc turns  ctrl+p commands   │
+"
+`;
+
+exports[`outputs, shell and queue, paste and scroll paste and scroll: an image chip over the box, and the marker that says how far below the end the view is 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+                                                                                                                       │  tasks                    2 of 4 done
+                                                                                                                       │  ✓  Rebuild Linux binary
+                                                                                                                       │  ✓  Retry infra faults
+                                                                                                                       │  ▸  Count start timeouts
+                                                                                                                       │  ○  Compare per task
+                                                                                                                       │
+                                                                                                                       │  context                          56%
+                                                                                                                       │  112K of 200K · compacts at 180K
+                                                                                                                       │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                                                                                                                       │
+                                                                                                                       │  changes                ctrl+r review
+                                                                                                                       │  run.sh                         +2 −1
+  ─────────────────────────── compacted · 6 earlier turns summarized · 148K → 31K tokens ────────────────────────────  │  report.py                      +1 −1
+                                                                                                                       │
+  ▌› Make the 54 task runs faster without changing results.                                                            │  run
+                                                                                                                       │  model    Sonnet 5.5
+     read   packages/eval/harbor/run.sh                                                                                │  cost     $1.75 · 91% cached
+     run    harbor run --help | grep -E "retr|concurren"                                                               │  branch   dev
+     edit   packages/eval/harbor/run.sh +2 −1                                                                          │
+     run    dry run with no matching task                                                                              │
+                                                                                                                       │
+     Retries replace the failed trial in place, so both arms keep the same task set:                                   │
+                                                                                                                       │
+      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │
+                                                                                                                       │
+     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │
+     • a task that fails twice still counts as a fail                                                                  │
+                                                                                                                       │
+     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │
+                                                                                                                       │
+  ───────────────────────────────────── ↓ 1 newer block below · ctrl+end latest ─────────────────────────────────────  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ ▣ image 1 · 184 KB ×                                                                          backspace removes │  │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤  │
+  │ › the grid breaks at this width                                                                                 │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs                                 pgdn newer  ctrl+end latest   │
+"
+`;
+
+exports[`outputs, shell and queue, paste and scroll a failed turn says stopped once, with the error band and enter to retry 1`] = `
+"  agency  Sample: failed turn                                                                                                               ctrl+p 3 more  dev
+
+                                                                                                                       │  tasks
+                                                                                                                       │  No task list yet. The agent writes
+                                                                                                                       │  one for longer work.
+                                                                                                                       │
+                                                                                                                       │  context
+                                                                                                                       │  no data yet
+                                                                                                                       │
+                                                                                                                       │  changes                ctrl+r review
+                                                                                                                       │  No changes.
+                                                                                                                       │
+                                                                                                                       │  run
+                                                                                                                       │  model    —
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+  ▌› Pathfinding stalls near chunk borders.                                                                            │
+                                                                                                                       │
+      The provider is overloaded (HTTP 529). Nothing was lost.                                           enter retry   │
+                                                                                                                       │
+     ✗ stopped                                                                                              copy · 5s  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ › Message Agency. @ for files, / for commands                                                                   │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high                                               ↑ history  esc esc turns  ctrl+p commands   │
+"
+`;

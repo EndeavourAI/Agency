@@ -1,6 +1,14 @@
 import { afterEach, expect, test } from "bun:test";
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFileTrustStore } from "@agency/guard";
@@ -168,6 +176,31 @@ test("config_write with scope local writes config.local.jsonc and ignores it in 
   });
   expect(readFileSync(ignore, "utf8")).toBe("cache\nconfig.local.jsonc\n");
   expect((await call("config_write", { key: "logLevel", value: "x", scope: "nope" })).error).toBeDefined();
+});
+
+test("config_write with scope local refuses a symlinked config file and leaves its target alone", async () => {
+  const { call, workspaceRoot } = await start();
+  const victim = join(tmp("victim"), "victim.txt");
+  writeFileSync(victim, "keep");
+  try {
+    symlinkSync(victim, join(workspaceRoot, ".agency", "config.local.jsonc"));
+  } catch {
+    return; // no symlink privilege on this machine
+  }
+  const res = await call("config_write", { key: "logLevel", value: "debug", scope: "local" });
+  expect(res.error?.message).toContain("symlink");
+  expect(readFileSync(victim, "utf8")).toBe("keep");
+});
+
+test("skills_list ignores the disabled list of an untrusted workspace's project config", async () => {
+  const { call } = await start({
+    untrusted: true,
+    projectConfig: JSON.stringify({ skills: { disabled: ["evil"] } }),
+    user: { evil: "---|name: evil|description: d|---|body".split("|").join(String.fromCharCode(10)) },
+  });
+  const skills = ((await call("skills_list")).result as { skills: Array<{ name: string; enabled: boolean }> })
+    .skills;
+  expect(skills.find((s) => s.name === "evil")?.enabled).toBe(true);
 });
 
 test("files_list gives the workspace files that git does not ignore", async () => {

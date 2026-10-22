@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import {
   configDir,
@@ -102,6 +102,9 @@ export function registerSettingsHandlers(
     const file = local
       ? join(options.workspaceRoot, ".agency", PROJECT_LOCAL_CONFIG)
       : join(userDir(), "config.jsonc");
+    // A hostile repo can plant a symlink here; writing through it would overwrite another file.
+    if (local && [dirname(file), file].some((p) => existsSync(p) && lstatSync(p).isSymbolicLink()))
+      throw invalid(`config_write: refusing to write through a symlink at ${file}`);
     if (local) ignoreLocalConfig(dirname(file));
     const previous = existsSync(file) ? readFileSync(file, "utf8") : undefined;
     const text = previous ?? "{}";
@@ -111,7 +114,11 @@ export function registerSettingsHandlers(
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, applyEdits(text, edits), "utf8");
     try {
-      loadConfig({ globalDir: userDir(), env: process.env, projectRoot: options.workspaceRoot });
+      loadConfig({
+        globalDir: userDir(),
+        env: process.env,
+        ...(ctx.trustStore.isTrusted(options.workspaceRoot) ? { projectRoot: options.workspaceRoot } : {}),
+      });
     } catch (error) {
       if (previous === undefined) rmSync(file, { force: true });
       else writeFileSync(file, previous, "utf8");
@@ -207,7 +214,11 @@ export function registerSettingsHandlers(
     let disabled = ctx.config.skills?.disabled ?? [];
     try {
       disabled =
-        loadConfig({ globalDir: userDir(), env: process.env, projectRoot: root }).skills?.disabled ?? [];
+        loadConfig({
+          globalDir: userDir(),
+          env: process.env,
+          ...(trusted ? { projectRoot: root } : {}),
+        }).skills?.disabled ?? [];
     } catch {}
     const pluginStore = userPluginStore(options.configDir);
     const skills = discoverSkills(

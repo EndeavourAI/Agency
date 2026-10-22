@@ -8,6 +8,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Fixed: an image sent with `session_send` reached the model twice**: the daemon stored it in the prompt and added it
+  again at the start of the turn. A contract test now drives a whole TUI session over the HTTP gateway.
 - **`git_status` and `git_diff`**: branch, ahead and behind, the last commit and changed files with line counts; the diff
   against HEAD plus the text of untracked files. They take over from the archived desktop host.
 - **`session_list` for the resume picker**: each row has `lastPrompt`, `branch` (kept on the usage entry of a turn) and

@@ -445,7 +445,6 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
       ...(p.tools === undefined ? {} : { tools: p.tools }),
       maxToolIterations: p.maxToolIterations,
       nonInteractive: p.nonInteractive,
-      ...(p.images?.length ? { images: p.images } : {}),
     };
     // Each message is stored as the turn produces it: a failed turn or a dead daemon keeps the finished steps.
     const onMessage = async (message: Message, origin?: MessageOrigin): Promise<void> => {

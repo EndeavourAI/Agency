@@ -29,6 +29,7 @@ import {
   turnRows,
 } from "./ledger.ts";
 import { modelRows, paletteRows } from "./overlays.ts";
+import { commitBox, reviewBody } from "./review.ts";
 import { clip, type Row, segsWidth } from "./rows.ts";
 import { settingsView } from "./settings.ts";
 import { Rows, ThemeCtx } from "./ui.tsx";
@@ -225,7 +226,9 @@ function Session(props: AppProps) {
   });
   const focused = useFocused(s);
   const region = createMemo(() =>
-    composerRegion(s(), c(), mainW(), focused(), "Message Agency. @ for files, / for commands"),
+    s().review.open
+      ? commitBox(s(), c(), mainW())
+      : composerRegion(s(), c(), mainW(), focused(), "Message Agency. @ for files, / for commands"),
   );
   const hint = createMemo(() => [hintRow(s(), c(), mainW())]);
   // The rows between the top bar (1), the gap under it (1), the box with its hint row: set by hand, so the transcript clips instead of pushing the box off the screen.
@@ -252,49 +255,64 @@ function Session(props: AppProps) {
     <box flexGrow={1} minHeight={0} flexDirection="row" paddingTop={1} paddingLeft={2} paddingRight={2}>
       <box flexGrow={1} flexShrink={1} minHeight={0} flexDirection="column" alignItems="center">
         <box flexGrow={1} flexShrink={1} minHeight={0} flexDirection="column" width={mainW()}>
-          <box
-            height={transcriptH()}
-            flexShrink={0}
-            flexDirection="column"
-            justifyContent="flex-end"
-            overflow="hidden"
-            paddingBottom={1}
+          <Show
+            when={!s().review.open}
+            fallback={
+              <box
+                height={transcriptH()}
+                flexShrink={0}
+                flexDirection="column"
+                paddingBottom={1}
+                overflow="hidden"
+              >
+                <Rows rows={reviewBody(s(), c(), mainW(), transcriptH() - 1)} w={mainW()} />
+              </box>
+            }
           >
-            <box flexDirection="column" flexShrink={0} gap={1}>
-              <Show when={sess()?.loading && blocks().length === 0}>
-                <Rows
-                  rows={[
-                    [
-                      {
-                        t: `${SPIN[props.tick() % SPIN.length]} Loading ${sess()?.title ?? ""}`,
-                        fg: c().muted,
-                      },
-                    ],
-                  ]}
-                  w={mainW()}
-                />
-              </Show>
-              <Index each={blocks()}>
-                {(b, i) => (
-                  <BlockView
-                    b={b()}
-                    index={i}
-                    state={s}
-                    palette={c}
-                    tick={props.tick}
-                    now={props.now}
+            <box
+              height={transcriptH()}
+              flexShrink={0}
+              flexDirection="column"
+              justifyContent="flex-end"
+              overflow="hidden"
+              paddingBottom={1}
+            >
+              <box flexDirection="column" flexShrink={0} gap={1}>
+                <Show when={sess()?.loading && blocks().length === 0}>
+                  <Rows
+                    rows={[
+                      [
+                        {
+                          t: `${SPIN[props.tick() % SPIN.length]} Loading ${sess()?.title ?? ""}`,
+                          fg: c().muted,
+                        },
+                      ],
+                    ]}
                     w={mainW()}
                   />
-                )}
-              </Index>
-              <Show when={tail().length > 0}>
-                <Rows rows={tail()} w={mainW()} />
-              </Show>
-              <Show when={ask().length > 0}>
-                <Rows rows={ask()} w={mainW()} />
-              </Show>
+                </Show>
+                <Index each={blocks()}>
+                  {(b, i) => (
+                    <BlockView
+                      b={b()}
+                      index={i}
+                      state={s}
+                      palette={c}
+                      tick={props.tick}
+                      now={props.now}
+                      w={mainW()}
+                    />
+                  )}
+                </Index>
+                <Show when={tail().length > 0}>
+                  <Rows rows={tail()} w={mainW()} />
+                </Show>
+                <Show when={ask().length > 0}>
+                  <Rows rows={ask()} w={mainW()} />
+                </Show>
+              </box>
             </box>
-          </box>
+          </Show>
           <box flexShrink={0} flexDirection="column">
             <Rows rows={region()} w={mainW()} />
             <Rows rows={hint()} w={mainW()} />

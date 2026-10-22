@@ -891,3 +891,47 @@ exports[`outputs, shell and queue, paste and scroll a failed turn says stopped o
    build · Sonnet 5.5 · high                                               ↑ history  esc esc turns  ctrl+p commands   │
 "
 `;
+
+exports[`review the changed files on the left, the diff of one on the right, the commit box below 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+  review  2 files · +3 −2                                                                                    esc back  │  tasks                    2 of 4 done
+                                                                                                                       │  ✓  Rebuild Linux binary
+  › run.sh                 +2 −1  packages/eval/harbor/run.sh                                                          │  ✓  Retry infra faults
+    report.py              +1 −1                                                                                       │  ▸  Count start timeouts
+                                  @@ -14,5 +14,6 @@                                                                    │  ○  Compare per task
+                                  14 14   harbor run "\${source[@]}" "\${include[@]}" \\                                  │
+                                  15 15     -a "\${AGENT:-agency_agent:Agency}" -m "\${MODEL}" \\                         │  context                          56%
+                                  16    −   --agent-setup-timeout-multiplier 4 --job-name "$JOB" -o "$jobs" -y         │  112K of 200K · compacts at 180K
+                                     16 +   --agent-setup-timeout-multiplier 4 --job-name "$JOB" -o "$jobs" -y \\       │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                                     17 +   -r 2 --retry-include RuntimeError                                          │
+                                  17 18   python3 "$here/report.py" "$jobs/$JOB"                                       │  changes                ctrl+r review
+                                                                                                                       │  run.sh                         +2 −1
+                                                                                                                       │  report.py                      +1 −1
+                                                                                                                       │
+                                                                                                                       │  run
+                                                                                                                       │  model    Sonnet 5.5
+                                                                                                                       │  cost     $1.75 · 91% cached
+                                                                                                                       │  branch   dev
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ ✓ 2 files changed                                                   enter commit    ctrl+enter commit and push  │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs                                   esc stop  ctrl+p commands   │
+"
+`;

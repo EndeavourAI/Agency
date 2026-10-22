@@ -711,3 +711,107 @@ describe("outputs, shell and queue, paste and scroll", () => {
     expect(m.grid.filter((r) => r.includes("stopped")).length).toBe(1);
   });
 });
+
+describe("review", () => {
+  const DIFF = [
+    "diff --git a/packages/eval/harbor/run.sh b/packages/eval/harbor/run.sh",
+    "index 1111111..2222222 100644",
+    "--- a/packages/eval/harbor/run.sh",
+    "+++ b/packages/eval/harbor/run.sh",
+    "@@ -14,5 +14,6 @@",
+    ' harbor run "${source[@]}" "${include[@]}" \\',
+    '   -a "${AGENT:-agency_agent:Agency}" -m "${MODEL}" \\',
+    '-  --agent-setup-timeout-multiplier 4 --job-name "$JOB" -o "$jobs" -y',
+    '+  --agent-setup-timeout-multiplier 4 --job-name "$JOB" -o "$jobs" -y \\',
+    "+  -r 2 --retry-include RuntimeError",
+    ' python3 "$here/report.py" "$jobs/$JOB"',
+    "diff --git a/packages/eval/harbor/report.py b/packages/eval/harbor/report.py",
+    "--- a/packages/eval/harbor/report.py",
+    "+++ b/packages/eval/harbor/report.py",
+    "@@ -8,7 +8,7 @@",
+    " # run.sh retries these same types; keep the two lists equal.",
+    '-INFRA = ("RuntimeError", "NetworkConnectionError")',
+    '+INFRA = ("RuntimeError", "NetworkConnectionError", "EnvironmentStartTimeoutError")',
+    "",
+  ].join("\n");
+
+  test("the changed files on the left, the diff of one on the right, the commit box below", async () => {
+    const d = session();
+    d.daemon({
+      type: "git_loaded",
+      git: {
+        repo: true,
+        branch: "dev",
+        files: [
+          { path: "packages/eval/harbor/run.sh", status: "M", added: 2, deleted: 1 },
+          { path: "packages/eval/harbor/report.py", status: "M", added: 1, deleted: 1 },
+        ],
+      },
+      diff: { diff: DIFF, untracked: [] },
+    });
+    d.send("\x12");
+    expect(d.state.review.open).toBe(true);
+    expect(d.last("load_review")).toBeDefined();
+    const m = await board(d);
+    expect(snap(m)).toMatchSnapshot();
+    expect(
+      m.grid.some((r) => r.includes("review") && r.includes("2 files · +3 −2") && r.includes("esc back")),
+    ).toBe(true);
+    expect(m.grid.some((r) => r.includes("› run.sh") && r.includes("+2 −1"))).toBe(true);
+    expect(m.grid.some((r) => r.includes("  report.py") && r.includes("+1 −1"))).toBe(true);
+    expect(m.grid.some((r) => r.includes("packages/eval/harbor/run.sh"))).toBe(true);
+    const add = find(m, "+ ", 3);
+    expect(m.cell(add.x + 4, add.y).bg).toBe(A.addBg);
+    const del = find(m, "− ", 3);
+    expect(m.cell(del.x + 4, del.y).bg).toBe(A.delBg);
+    expect(
+      m.grid.some(
+        (r) =>
+          r.includes("✓ 2 files changed") &&
+          r.includes("enter commit") &&
+          r.includes("ctrl+enter commit and push"),
+      ),
+    ).toBe(true);
+    const commit = find(m, "enter commit");
+    expect(m.cell(commit.x + 2, commit.y).bg).toBe(A.brand);
+    // Down picks the next file; esc closes.
+    d.send("\x1b[B");
+    expect(d.state.review.file).toBe(1);
+    const next = await board(d);
+    expect(next.grid.some((r) => r.includes("› report.py"))).toBe(true);
+    expect(next.grid.some((r) => r.includes("INFRA = ("))).toBe(true);
+    d.send("\x1b");
+    expect(d.state.review.open).toBe(false);
+  });
+
+  test("with nothing changed it says so", async () => {
+    const d = session();
+    d.daemon({
+      type: "git_loaded",
+      git: { repo: true, branch: "dev", files: [] },
+      diff: { diff: "", untracked: [] },
+    });
+    d.send("\x12");
+    const m = await board(d);
+    expect(m.grid.some((r) => r.includes("No changes yet."))).toBe(true);
+    expect(m.grid.some((r) => r.includes("✓ Nothing to commit"))).toBe(true);
+  });
+
+  test("an untracked file shows as all added", async () => {
+    const d = session();
+    d.daemon({
+      type: "git_loaded",
+      git: {
+        repo: true,
+        branch: "dev",
+        files: [{ path: "notes.txt", status: "?", added: null, deleted: null }],
+      },
+      diff: { diff: "", untracked: [{ path: "notes.txt", text: "one\ntwo\n" }] },
+    });
+    d.send("\x12");
+    const m = await board(d);
+    expect(m.grid.some((r) => r.includes("› notes.txt") && r.includes("+2"))).toBe(true);
+    expect(m.grid.some((r) => r.includes("+ one"))).toBe(true);
+    expect(m.grid.some((r) => r.includes("+ two"))).toBe(true);
+  });
+});

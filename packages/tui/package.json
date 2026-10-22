@@ -13,6 +13,11 @@
     "solid-js": "1.9.12"
   },
   "devDependencies": {
+    "@agency/cli": "workspace:*",
+    "@agency/core": "workspace:*",
+    "@agency/net": "workspace:*",
+    "@agency/providers": "workspace:*",
+    "@agency/schema": "workspace:*",
     "@xterm/headless": "6.0.0"
   },
   "scripts": {

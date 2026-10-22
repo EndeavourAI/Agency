@@ -88,7 +88,7 @@ export function modelRows(p: ProvidersResult): ModelRow[] {
 export function createTuiClient(deps: TuiClientDeps): TuiClient {
   const { daemon, dispatch, getState, now, newId } = deps;
   /** Turns whose connection broke mid-call: decided on reconnect, not on the error. */
-  const lost = new Map<string, { sessionId: string; off: () => void }>();
+  const lost = new Map<string, { sessionId: string; off: () => void; ended: Promise<void> }>();
 
   const call = <T>(method: string, params: Record<string, unknown> = {}): Promise<T> =>
     daemon.call(method, params) as Promise<T>;
@@ -101,10 +101,25 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
     dispatch([{ type: "sessions_loaded", rows }]);
   }
 
-  async function loadLive(): Promise<string[]> {
-    const r = await call<{ turns: Array<{ turnId: string; sessionId: string }> }>("turns_list");
+  interface LiveTurn {
+    turnId: string;
+    sessionId: string;
+    approvals: Array<{
+      requestId: string;
+      tool: string;
+      title: string;
+      command?: string;
+      path?: string;
+      riskTier: string;
+      argsSummary: string;
+    }>;
+  }
+
+  /** The turns that run now. The `sessions` channel keeps this current afterwards, so only a start or a reconnect asks. */
+  async function loadLive(): Promise<LiveTurn[]> {
+    const r = await call<{ turns: LiveTurn[] }>("turns_list");
     dispatch([{ type: "live_turns", sessionIds: [...new Set(r.turns.map((t) => t.sessionId))] }]);
-    return r.turns.map((t) => t.turnId);
+    return r.turns;
   }
 
   async function loadSlash(): Promise<void> {
@@ -180,11 +195,7 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
 
   /** After a turn: refresh what it changed, then send the next queued prompt if the turn ended by itself. */
   async function afterTurn(sessionId: string): Promise<void> {
-    await Promise.all([
-      loadStatus(sessionId),
-      loadSessions().catch(() => undefined),
-      loadLive().catch(() => []),
-    ]);
+    await Promise.all([loadStatus(sessionId), loadSessions().catch(() => undefined)]);
     if (getState().sessionId === sessionId) runOut(drainQueue(getState(), { now: now(), newId }));
   }
 
@@ -211,7 +222,12 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
       : { provider: splitRef(state.defaultModel ?? "").provider, model: ref };
     const row = state.models.find((m) => m.ref === ref);
     daemon.subscribe(`turn.${e.turnId}`);
+    let ended: () => void = () => {};
+    const endedP = new Promise<void>((r) => {
+      ended = r;
+    });
     const off = daemon.on(`turn.${e.turnId}`, (payload) => {
+      if ((payload as WireEvent).type === "turn_end") ended();
       dispatch([
         {
           type: "turn_event",
@@ -260,7 +276,7 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
     } catch (err) {
       if (LOST.test(message(err))) {
         // The turn goes on in the daemon without us: keep the subscription for the reconnect.
-        lost.set(e.turnId, { sessionId: e.sessionId, off });
+        lost.set(e.turnId, { sessionId: e.sessionId, off, ended: endedP });
         keepListening = true;
         return;
       }
@@ -410,18 +426,14 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
     );
   }
 
-  /** Waits out a turn that kept running while we were away, then settles it from the session file. */
-  async function watch(turnId: string, sessionId: string, off: () => void): Promise<void> {
-    for (;;) {
-      await new Promise((r) => setTimeout(r, 300));
-      let live: string[];
-      try {
-        live = await loadLive();
-      } catch {
-        return; // gone again: the next reconnect resyncs
-      }
-      if (!live.includes(turnId)) break;
-    }
+  /** Waits for the turn_end of a turn that kept running while we were away, then settles it from the session file. */
+  async function watch(
+    turnId: string,
+    sessionId: string,
+    off: () => void,
+    ended: Promise<void>,
+  ): Promise<void> {
+    await ended;
     off();
     daemon.unsubscribe(`turn.${turnId}`);
     dispatch([{ type: "turn_finished", sessionId, turnId, at: now(), outcome: {} }]);
@@ -430,11 +442,12 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
   }
 
   async function resync(): Promise<void> {
-    const live = await loadLive().catch(() => [] as string[]);
+    const live = await loadLive().catch(() => [] as LiveTurn[]);
+    const liveIds = new Set(live.map((t) => t.turnId));
     for (const [turnId, rec] of [...lost]) {
       lost.delete(turnId);
-      if (live.includes(turnId)) {
-        void watch(turnId, rec.sessionId, rec.off);
+      if (liveIds.has(turnId)) {
+        void watch(turnId, rec.sessionId, rec.off, rec.ended);
         continue;
       }
       rec.off();
@@ -443,6 +456,37 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
         { type: "turn_finished", sessionId: rec.sessionId, turnId, at: now(), outcome: { cancelled: true } },
       ]);
     }
+    // An ask that the daemon still waits on and the screen lost (answered nowhere, shown nowhere) comes back.
+    for (const t of live)
+      for (const a of t.approvals) {
+        const turn = getState().bySession[t.sessionId]?.blocks.find(
+          (b) => b.kind === "turn" && b.id === t.turnId,
+        );
+        if (turn?.kind !== "turn" || turn.approval) continue;
+        dispatch([
+          {
+            type: "turn_event",
+            sessionId: t.sessionId,
+            turnId: t.turnId,
+            at: now(),
+            event: {
+              type: "approval_requested",
+              requestId: a.requestId,
+              sessionId: t.sessionId,
+              turnId: t.turnId,
+              riskTier: a.riskTier,
+              source: "turns_list",
+              argsSummary: a.argsSummary,
+              request: {
+                tool: a.tool,
+                title: a.title,
+                ...(a.command !== undefined ? { command: a.command } : {}),
+                ...(a.path !== undefined ? { path: a.path } : {}),
+              },
+            },
+          },
+        ]);
+      }
     const sid = getState().sessionId;
     // A turn that still runs keeps its block: the reload keeps running turns and adds what the file holds.
     await Promise.all([loadSessions().catch(() => undefined), sid ? openSession(sid) : Promise.resolve()]);
@@ -451,6 +495,12 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
   return {
     async bootstrap() {
       dispatch([{ type: "conn", status: "online" }]);
+      daemon.on("sessions", (payload) => {
+        const p = payload as { type: string; sessionId: string };
+        if (p.type === "turn_start" || p.type === "turn_end")
+          dispatch([{ type: "session_live", sessionId: p.sessionId, live: p.type === "turn_start" }]);
+      });
+      daemon.subscribe("sessions");
       const history = call<{ prompts: Array<string | { text: string }> }>("history_list", { limit: 200 })
         .then((r) =>
           dispatch([

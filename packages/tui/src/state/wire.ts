@@ -23,6 +23,9 @@ export interface WireApprovalRequest {
 export type WireEvent =
   | { type: "text_delta"; text: string }
   | { type: "thinking_delta"; text: string }
+  | { type: "thinking_end"; ms: number }
+  | { type: "turn_end"; stopReason: string; cancelled: boolean; error?: { code: string; message: string } }
+  | { type: "approval_resolved"; requestId: string; decision: "once" | "always" | "reject" }
   | { type: "tool_start"; id: string; name: string; input?: Record<string, unknown> }
   | { type: "tool_progress"; id: string; name: string; message: string }
   | { type: "tool_result"; id: string; content: string; isError: boolean; images?: unknown[] }
@@ -46,7 +49,15 @@ export type WireEvent =
       runCacheHitRate: number;
       perAgent?: Record<string, number>;
     }
-  | { type: "compaction"; phase: "start" | "end"; sessionId: string }
+  | {
+      type: "compaction";
+      phase: "start" | "end";
+      sessionId: string;
+      /** Only on a compaction that happened: the turns folded into the summary and the size before and after. */
+      replaced?: number;
+      tokensBefore?: number;
+      tokensAfter?: number;
+    }
   | { type: "fallback"; from: string; to: string; reason: string }
   | {
       type: "approval_requested";
@@ -82,6 +93,8 @@ export interface WireStatus {
   costUsd: number;
   contextTokens: number;
   contextLimit: number | null;
+  /** Tokens at which the session compacts. */
+  compactAt?: number | null;
   cacheHitRate: number | null;
   branch: string | null;
 }

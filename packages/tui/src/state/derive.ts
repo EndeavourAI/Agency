@@ -6,6 +6,7 @@ import { completionItems } from "../input/completion.ts";
 import { diffStats, stepDiff } from "../render-model/diff.ts";
 import { stepOutput } from "../render-model/output.ts";
 import { truncate } from "../render-model/width.ts";
+import { formatCost } from "./format.ts";
 import { pickable } from "./reduce.ts";
 import { COMMANDS, rowValue, type SettingRow } from "./settings.ts";
 import type { AppState, Block, ImageChip, ModelRow, SessionState, Step, Turn } from "./types.ts";
@@ -161,7 +162,13 @@ export function turnFoot(t: Turn, copied: string | null): TurnFoot {
   const stats = [wall, rate > 0 ? `${rate} tok/s` : ""].filter(Boolean).join(" · ");
   return {
     copyLabel: copied === t.id ? "✓ copied" : "copy",
-    thought: t.thoughtOpen ? "hide thought" : t.thinking ? `thought ${sec(t.ttftMs + t.streamMs)}` : "",
+    thought: t.thoughtOpen
+      ? "hide thought"
+      : t.thinking
+        ? t.thoughtMs > 0
+          ? `thought ${sec(t.thoughtMs)}`
+          : "thought"
+        : "",
     stats: stats ? `· ${stats}` : "",
   };
 }
@@ -187,14 +194,6 @@ export function settingValue(state: AppState, row: SettingRow): string | boolean
   if (row.key === "theme") return state.theme;
   if (row.key === "effort") return state.effort;
   return rowValue(row, state.settings.config);
-}
-
-export const formatCost = (usd: number): string => `$${usd.toFixed(2)}`;
-
-export function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`;
-  if (n >= 1000) return `${Math.round(n / 1000)}K`;
-  return String(n);
 }
 
 /** Context used, 0 to 100, or null while the limit is unknown. */

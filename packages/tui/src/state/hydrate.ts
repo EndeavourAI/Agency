@@ -36,6 +36,7 @@ export function hydrate(entries: readonly WireEntry[]): Hydrated {
       answer: emptyMd,
       text: "",
       thinking: "",
+      thoughtMs: 0,
       thoughtOpen: false,
       status: "waiting",
       usage: { inputTokens: 0, outputTokens: 0 },

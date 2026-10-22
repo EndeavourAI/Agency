@@ -2,6 +2,7 @@ import { completionFor, insertCompletion } from "../input/completion.ts";
 import * as C from "../input/composer.ts";
 import { emptyMd, finishMd, pushMd } from "../render-model/markdown.ts";
 import type { ComposerOp, DaemonEvent, Event, UiEvent } from "./events.ts";
+import { formatTokens } from "./format.ts";
 import { hydrate } from "./hydrate.ts";
 import { SETTINGS, setPath } from "./settings.ts";
 import {
@@ -122,6 +123,7 @@ export function emptyTurn(id: string, prompt: string, at: number): Turn {
     answer: emptyMd,
     text: "",
     thinking: "",
+    thoughtMs: 0,
     thoughtOpen: false,
     status: "running",
     usage: { inputTokens: 0, outputTokens: 0 },
@@ -153,6 +155,11 @@ function reduceWire(t: Turn, s: SessionState, e: WireEvent): { t: Turn; s: Sessi
       return { t: { ...t, answer: pushMd(t.answer, e.text), text: t.text + e.text, answered: true }, s };
     case "thinking_delta":
       return { t: { ...t, thinking: t.thinking + e.text }, s };
+    case "thinking_end":
+      return { t: { ...t, thoughtMs: t.thoughtMs + e.ms }, s };
+    case "approval_resolved":
+      // Answered elsewhere, timed out or cancelled: the ask is gone whoever settled it.
+      return t.approval?.requestId === e.requestId ? { t: { ...t, approval: null }, s } : { t, s };
     case "tool_start": {
       const step: Step = {
         id: e.id,
@@ -246,6 +253,13 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
       return { ...state, sessions: e.rows };
     case "live_turns":
       return { ...state, liveSessions: e.sessionIds };
+    case "session_live":
+      return {
+        ...state,
+        liveSessions: e.live
+          ? [...new Set([...state.liveSessions, e.sessionId])]
+          : state.liveSessions.filter((id) => id !== e.sessionId),
+      };
     case "session_loading":
       return withSession(state, e.sessionId, (s) => ({ ...s, loading: true }));
     case "session_loaded": {
@@ -319,18 +333,40 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
         if (e.event.type !== "compaction" || e.event.phase !== "end") return updated;
         // The summary happens before the model request of this turn, so its marker sits above the turn.
         const at = updated.blocks.findIndex((b) => b.kind === "turn" && b.id === e.turnId);
+        const w = e.event;
+        const sized =
+          w.type === "compaction" && w.tokensBefore !== undefined && w.tokensAfter !== undefined
+            ? ` · ${formatTokens(w.tokensBefore)} → ${formatTokens(w.tokensAfter)} tokens`
+            : "";
+        const n = w.type === "compaction" ? (w.replaced ?? 0) : 0;
         const marker: Block = {
           kind: "event",
           id: `compact-${e.turnId}`,
-          text: "compacted · earlier turns summarized",
+          text: `compacted · ${n > 0 ? `${n} earlier turn${n === 1 ? "" : "s"}` : "earlier turns"} summarized${sized}`,
         };
         return { ...updated, blocks: [...updated.blocks.slice(0, at), marker, ...updated.blocks.slice(at)] };
       });
-      return mode && e.sessionId === state.sessionId ? { ...next, mode } : next;
+      const ended = e.event.type === "turn_end" ? e.event : null;
+      const out = ended
+        ? reduceDaemon(next, {
+            type: "turn_finished",
+            sessionId: e.sessionId,
+            turnId: e.turnId,
+            at: e.at,
+            outcome: {
+              stopReason: ended.stopReason,
+              ...(ended.cancelled ? { cancelled: true } : {}),
+              ...(ended.error ? { error: ended.error } : {}),
+            },
+          })
+        : next;
+      return mode && e.sessionId === state.sessionId ? { ...out, mode } : out;
     }
     case "turn_finished":
       return withSession(state, e.sessionId, (s) => {
         const done = withTurn(s, e.turnId, (t) => {
+          // The daemon says it twice, on the turn stream and as the answer of session_send: the first one counts.
+          if (t.status === "done" || t.status === "error") return t;
           if (t.status === "denied" || t.status === "stopped") return settle(t, t.status, e.at);
           if (e.outcome.error) return settle({ ...t, error: e.outcome.error }, "error", e.at);
           if (t.error) return settle(t, "error", e.at);
@@ -716,6 +752,7 @@ const DAEMON_TYPES = new Set<string>([
   "conn",
   "sessions_loaded",
   "live_turns",
+  "session_live",
   "session_loading",
   "session_loaded",
   "status_loaded",

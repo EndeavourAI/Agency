@@ -102,7 +102,8 @@ describe("replaying a recorded daemon stream", () => {
     expect(t?.stopReason).toBe("end_turn");
     expect(current(state)?.runningTurnId).toBeNull();
     expect(turnStamp(t as Turn, false)).toMatchObject({ glyph: "✓", label: "done", note: " · 3 steps" });
-    expect(turnFoot(t as Turn, null).thought).toMatch(/^thought \d+s$/);
+    // The recording predates thinking_end: the time is unknown, and the label does not invent one.
+    expect(turnFoot(t as Turn, null).thought).toBe("thought");
   });
 
   test("an edit step opens to the diff of its input", () => {
@@ -223,9 +224,77 @@ describe("events outside the happy path", () => {
   test("compaction shows while it runs and leaves a marker above the turn", () => {
     let s = run(begin(), [ev({ type: "compaction", phase: "start", sessionId: SID })]);
     expect(current(s)?.compacting).toBe(true);
-    s = run(s, [ev({ type: "compaction", phase: "end", sessionId: SID })]);
+    s = run(s, [
+      ev({
+        type: "compaction",
+        phase: "end",
+        sessionId: SID,
+        replaced: 6,
+        tokensBefore: 148_000,
+        tokensAfter: 31_000,
+      }),
+    ]);
     expect(current(s)?.compacting).toBe(false);
     expect(current(s)?.blocks.map((b) => b.kind)).toEqual(["event", "turn"]);
+    expect(current(s)?.blocks[0]).toMatchObject({
+      text: "compacted · 6 earlier turns summarized · 148K → 31K tokens",
+    });
+  });
+
+  test("thinking_end adds the real reasoning time to the closing row", () => {
+    const s = run(begin(), [
+      ev({ type: "thinking_delta", text: "hmm" }),
+      ev({ type: "thinking_end", ms: 3400 }),
+      ev({ type: "thinking_end", ms: 600 }),
+    ]);
+    expect(turn(s).thoughtMs).toBe(4000);
+    expect(turnFoot(turn(s), null).thought).toBe("thought 4s");
+  });
+
+  test("turn_end on the turn stream settles the turn once; the answer of session_send changes nothing", () => {
+    const end = (e: Partial<Extract<WireEvent, { type: "turn_end" }>> = {}) =>
+      ev({ type: "turn_end", stopReason: "end_turn", cancelled: false, ...e });
+    let s = run(begin(), [ev({ type: "text_delta", text: "Done.\n" }), end()]);
+    expect(turn(s).status).toBe("done");
+    expect(current(s)?.runningTurnId).toBeNull();
+    const endedAt = turn(s).endedAt;
+    s = run(s, [
+      { type: "turn_finished", sessionId: SID, turnId: "t1", at: 99, outcome: { stopReason: "end_turn" } },
+    ]);
+    expect(turn(s).endedAt).toBe(endedAt);
+    s = run(begin(), [end({ stopReason: "error", error: { code: "x", message: "boom" } })]);
+    expect(turn(s)).toMatchObject({ status: "error", error: { message: "boom" } });
+    s = run(begin(), [end({ cancelled: true })]);
+    expect(turn(s).status).toBe("stopped");
+  });
+
+  test("approval_resolved clears an ask that another client answered", () => {
+    const ask = ev({
+      type: "approval_requested",
+      requestId: "r1",
+      sessionId: SID,
+      turnId: "t1",
+      riskTier: "dangerous",
+      source: "x",
+      argsSummary: "command=git push",
+      request: { tool: "bash", title: "git push", command: "git push" },
+    });
+    let s = run(begin(), [ask]);
+    expect(turn(s).approval?.requestId).toBe("r1");
+    s = run(s, [ev({ type: "approval_resolved", requestId: "other", decision: "once" })]);
+    expect(turn(s).approval?.requestId).toBe("r1");
+    s = run(s, [ev({ type: "approval_resolved", requestId: "r1", decision: "once" })]);
+    expect(turn(s).approval).toBeNull();
+  });
+
+  test("the sessions channel keeps the list of running sessions", () => {
+    let s = run(begin(), [
+      { type: "session_live", sessionId: "a", live: true },
+      { type: "session_live", sessionId: "a", live: true },
+    ]);
+    expect(s.liveSessions).toEqual(["a"]);
+    s = run(s, [{ type: "session_live", sessionId: "a", live: false }]);
+    expect(s.liveSessions).toEqual([]);
   });
 
   test("an error from the provider ends the turn as stopped, with the reason kept", () => {

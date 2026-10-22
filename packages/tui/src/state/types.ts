@@ -64,6 +64,8 @@ export interface Turn {
   /** The raw answer text, for copy. */
   text: string;
   thinking: string;
+  /** Reasoning time from the daemon (thinking_end); 0 when unknown, as in a session loaded from its file. */
+  thoughtMs: number;
   thoughtOpen: boolean;
   status: TurnStatus;
   stopReason?: string;

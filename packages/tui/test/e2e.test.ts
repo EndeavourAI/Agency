@@ -145,8 +145,12 @@ describe("a person drives a real daemon", () => {
       await live.until("an approval", () => showAsk(live.state));
       live.send("y");
     }
+    // The sessions channel marks the session as running without any polling.
+    expect(live.state.liveSessions).toContain(sessionId);
     await live.until("turn done", () => live.turns()[0]?.status === "done");
     await live.settle();
+    await live.until("session idle", () => !live.state.liveSessions.includes(sessionId));
+    expect(live.turns()[0]?.thoughtMs).toBeGreaterThan(0);
     const t = live.turns()[0] as Turn;
     expect(t.steps.map((s) => [s.tool, s.status])).toEqual([
       ["read", "ok"],

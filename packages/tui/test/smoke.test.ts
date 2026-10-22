@@ -96,6 +96,7 @@ const wire = (d: Driver, turnId: string, event: WireEvent, at = 2000): void =>
 function finished(d: Driver, turnId: string, prompt: string, withEdit = true): void {
   d.daemon({ type: "turn_started", sessionId: SID, turnId, prompt, images: [], at: 1000 });
   wire(d, turnId, { type: "thinking_delta", text: "check the flags first" });
+  wire(d, turnId, { type: "thinking_end", ms: 11000 });
   if (withEdit) {
     wire(d, turnId, {
       type: "tool_start",

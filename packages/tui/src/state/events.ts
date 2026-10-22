@@ -34,6 +34,7 @@ export type DaemonEvent =
   | { type: "conn"; status: Connection }
   | { type: "sessions_loaded"; rows: WireSessionRow[] }
   | { type: "live_turns"; sessionIds: string[] }
+  | { type: "session_live"; sessionId: string; live: boolean }
   | { type: "session_loading"; sessionId: string }
   | { type: "session_loaded"; sessionId: string; entries: WireEntry[]; tipId: string | null }
   | { type: "status_loaded"; sessionId: string; status: WireStatus; line: string | null }

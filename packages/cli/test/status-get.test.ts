@@ -107,6 +107,22 @@ test("status_get has every field of the status", async () => {
   expect(line).toBeUndefined();
 });
 
+test("effort set by the client persists over a turn that omits it", async () => {
+  const client = await setup();
+  await client.call("session_send", {
+    sessionId: "s1",
+    provider: "anthropic",
+    model: "claude-test",
+    systemPrompt: "sys",
+    userText: "again",
+    permissionMode: "allow-edits",
+  });
+  const { status } = (await client.call("status_get", { sessionId: "s1" })) as {
+    status: { effort: string | null };
+  };
+  expect(status.effort).toBe("high");
+});
+
 test("the statusLine command gets the status JSON on stdin and its output comes back", async () => {
   const script = join(tmp("script"), "line.js");
   writeFileSync(

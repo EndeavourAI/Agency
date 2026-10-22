@@ -1,9 +1,12 @@
 import { join } from "node:path";
 import {
   announceHook,
+  type Config,
+  configDir,
   getSessionTitle,
   isReminderText,
   listPrompts,
+  loadConfig,
   loadTraceSpansSync,
   type MessageEntry,
   promptHistoryFile,
@@ -263,7 +266,19 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
 
   handlers.client_config = async () => {
     const client: Record<string, unknown> = {};
-    for (const key of CLIENT_CONFIG_KEYS) if (config[key] !== undefined) client[key] = config[key];
+    // From the files, not the config of the start: a config_write shows without a restart.
+    let fresh: Config = config;
+    try {
+      fresh = loadConfig({
+        globalDir: ctx.options.configDir ?? configDir(),
+        env: process.env,
+        ...(ctx.trustStore.isTrusted(ctx.options.workspaceRoot)
+          ? { projectRoot: ctx.options.workspaceRoot }
+          : {}),
+        ...(ctx.options.managedPath ? { managedPath: ctx.options.managedPath } : {}),
+      });
+    } catch {}
+    for (const key of CLIENT_CONFIG_KEYS) if (fresh[key] !== undefined) client[key] = fresh[key];
     return { config: client };
   };
 

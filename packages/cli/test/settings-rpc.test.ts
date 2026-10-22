@@ -251,6 +251,12 @@ test("client_config gives the client keys, and the project value wins over the u
   });
 });
 
+test("client_config reflects a config_write without a restart", async () => {
+  const { call } = await start({ configText: '{ "theme": "dark" }' });
+  await call("config_write", { key: "theme", value: "solar" });
+  expect((await call("client_config")).result?.config).toEqual({ theme: "solar" });
+});
+
 test("session_list rows carry the last prompt, the branch and the cost, and a query narrows them", async () => {
   const { call, keychain, workspaceRoot } = await start();
   execSync("git init -q -b picker-branch", { cwd: workspaceRoot });

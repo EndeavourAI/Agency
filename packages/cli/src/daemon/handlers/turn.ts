@@ -544,10 +544,9 @@ export async function executeTurn(
               ];
         // An approved plan moves the rest of the turn, and the agents it starts, to allow-edits.
         let turnMode: PermissionMode = params.permissionMode ?? "ask";
-        ctx.sessionSettings.set(sessionId, {
-          mode: turnMode,
-          ...(params.thinkingLevel === undefined ? {} : { effort: params.thinkingLevel }),
-        });
+        // Effort is the client's last choice: a turn that omits it does not reset it. Mode stays per turn, as "ask" is the safe default.
+        const effort = params.thinkingLevel ?? ctx.sessionSettings.get(sessionId)?.effort;
+        ctx.sessionSettings.set(sessionId, { mode: turnMode, ...(effort === undefined ? {} : { effort }) });
         const planExitTools = (gate: PermissionsGate): CoreToolSpec[] =>
           turnMode !== "plan" || params.nonInteractive === true
             ? []

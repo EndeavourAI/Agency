@@ -88,8 +88,16 @@ export function createTurnApproval(
     };
     broadcast(eventStream, payload);
     if (params.sessionId !== undefined) broadcast(`session.${sessionId}`, payload);
+    const settle = (decision: string): void => {
+      const resolved = { type: "approval_resolved" as const, requestId: id, decision };
+      broadcast(eventStream, resolved);
+      if (params.sessionId !== undefined) broadcast(`session.${sessionId}`, resolved);
+    };
+    const refused = `${request.tool} ${command ?? path ?? title}`;
     if (params.nonInteractive === true) {
       approvals.respond(id, "reject");
+      ctx.turnDenials.set(params.turnId, refused);
+      settle("reject");
       reply("reject", "non-interactive");
       return "reject";
     }
@@ -101,12 +109,11 @@ export function createTurnApproval(
       ctx.hookRun,
     ).catch(() => {});
     const decision = await promise;
-    if (decision === "reject")
-      ctx.turnDenials.set(params.turnId, `${request.tool} ${command ?? path ?? title}`);
+    // A cancelled turn or a timed-out ask also settles as reject, but no person refused anything.
+    if (decision === "reject" && approvals.closeReason(id) === "answered")
+      ctx.turnDenials.set(params.turnId, refused);
     // Every way an ask settles lands here: a client that did not answer it learns that it is gone.
-    const resolved = { type: "approval_resolved" as const, requestId: id, decision };
-    broadcast(eventStream, resolved);
-    if (params.sessionId !== undefined) broadcast(`session.${sessionId}`, resolved);
+    settle(decision);
     reply(decision, approvals.closeReason(id) ?? "answered");
     return decision;
   };

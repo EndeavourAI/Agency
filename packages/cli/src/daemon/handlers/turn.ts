@@ -436,7 +436,11 @@ export async function executeTurn(
             };
           }
           collectedTraceEvents.push(event);
-          broadcast(eventStream, event);
+          // A provider error can echo the key that was sent.
+          broadcast(
+            eventStream,
+            event.type === "error" ? { ...event, message: redactor.redact(event.message) } : event,
+          );
         };
         const isNewSession = todoStore.load(sessionId).length === 0 && params.session.length > 0;
         if (isNewSession) {

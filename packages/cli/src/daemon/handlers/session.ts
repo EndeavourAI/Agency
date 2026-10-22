@@ -336,12 +336,13 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
       });
       return result;
     } catch (error) {
-      const failure = error instanceof AgencyError ? { code: error.code, message: error.message } : undefined;
+      const text = ctx.redactor.redact(error instanceof Error ? error.message : String(error));
+      const failure = error instanceof AgencyError ? { code: error.code, message: text } : undefined;
       broadcast(`turn.${turnId}`, {
         type: "turn_end",
         stopReason: "error",
         cancelled: false,
-        error: failure ?? { code: "error", message: error instanceof Error ? error.message : String(error) },
+        error: failure ?? { code: "error", message: text },
       });
       throw error;
     } finally {
@@ -538,7 +539,8 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
       const entry: TurnEnd = {
         type: "turn_end",
         forTurn: turnId,
-        outcome: deniedBy !== undefined ? "denied" : outcome,
+        // A refusal names a turn that went on to finish; a stop or a failure keeps its own outcome.
+        outcome: deniedBy !== undefined && outcome === "done" ? "denied" : outcome,
         ...(deniedBy !== undefined ? { deniedBy } : {}),
         ...(headBefore && headAfter ? { head: { before: headBefore, after: headAfter } } : {}),
         checks: checkOutcome(produced),
@@ -554,7 +556,7 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
       if (error instanceof AgencyError && error.source === PROMPT_HOOK_SOURCE) {
         await store.rollback(p.sessionId, checkpoints.pop() ?? null);
       } else {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = ctx.redactor.redact(error instanceof Error ? error.message : String(error));
         const code = error instanceof AgencyError ? error.code : "error";
         await endTurn("failed", { stopReason: "error", error: { code, message } });
       }
@@ -569,8 +571,9 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
     if (compactionUsage.inputTokens > 0)
       result = { ...result, usage: addUsage(result.usage, compactionUsage) };
     const branch = ctx.git(ctx.options.workspaceRoot, ["branch", "--show-current"])?.trim();
-    const end = await endTurn(result.cancelled ? "stopped" : result.error ? "failed" : "done", {
-      stopReason: result.stopReason,
+    const stopped = result.cancelled || result.budgetExceeded;
+    const end = await endTurn(stopped ? "stopped" : result.error ? "failed" : "done", {
+      stopReason: result.budgetExceeded && !result.cancelled ? "budget" : result.stopReason,
       ...(result.error ? { error: result.error } : {}),
     });
     const parentId = await appendUsageEntry(store, p.sessionId, tip, {

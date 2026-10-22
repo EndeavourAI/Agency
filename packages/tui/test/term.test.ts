@@ -138,3 +138,23 @@ describe("theme contrast (WCAG, truecolor)", () => {
     }
   });
 });
+
+describe("what goes on to the renderer", () => {
+  test("replies and focus reports do, keys do not", async () => {
+    const { isReply } = await import("../src/term/terminal.ts");
+    for (const s of [
+      "\x1b[?0u",
+      "\x1b[?62;4c",
+      "\x1b[?2026;2$y",
+      "\x1b[24;80R",
+      "\x1b[I",
+      "\x1b[O",
+      "\x1bP>|kitty\x1b\\",
+      "\x1b_Gi=1;OK\x1b\\",
+      "\x1b]10;rgb:ff/ff/ff\x07",
+    ])
+      expect([s, isReply(s)]).toEqual([s, true]);
+    for (const s of ["a", "\x1b", "\x1b[1;5F", "\x1b[44;5u", "\x1b[A", "\x1bP", "\x1b]", "\x1b[1;5R"])
+      expect([s, isReply(s)]).toEqual([s, false]);
+  });
+});

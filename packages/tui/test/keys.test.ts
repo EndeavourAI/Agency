@@ -156,3 +156,30 @@ describe("keymap", () => {
     }
   });
 });
+
+describe("byte streams recorded from terminals", () => {
+  // One line per terminal and key: what it sends with its keyboard mode on, and what a legacy terminal sends instead.
+  const kitty: Array<[string, string, string]> = [
+    ["kitty, flags 1", "\x1b[44;5u", "ctrl+,"],
+    ["WezTerm, flags 1", "\x1b[13;5u", "ctrl+enter"],
+    ["Ghostty, flags 1", "\x1b[27u", "escape"],
+    ["foot, flags 1", "\x1b[98;3u", "alt+b"],
+    ["kitty, flags 1", "\x1b[99;5u", "ctrl+c"],
+    ["kitty, flags 1", "\x1b[9;2u", "shift+tab"],
+    ["kitty, flags 1", "\x1b[127;3u", "alt+backspace"],
+  ];
+  test("with the Kitty flags on, the keys that legacy cannot tell apart arrive as CSI u", () => {
+    for (const [from, bytes, id] of kitty) expect([from, ids(bytes)]).toEqual([from, [id]]);
+  });
+
+  test("legacy Windows Terminal: ctrl+, is a comma, ctrl+enter is LF, esc waits alone", () => {
+    expect(ids(",")).toEqual([","]);
+    expect(ids("\n")).toEqual(["ctrl+j"]);
+    expect(ids("\x1b")).toEqual(["escape"]);
+  });
+
+  test("the answer to the probe never becomes a key, whatever its flags", () => {
+    for (const reply of ["\x1b[?0u", "\x1b[?1u", "\x1b[?31u", "\x1b[?62;4c"])
+      expect(ids(`${reply}a`)).toEqual(["a"]);
+  });
+});

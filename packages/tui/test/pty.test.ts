@@ -177,3 +177,43 @@ describe("leaving the terminal as it was", () => {
     expect(full).toBeGreaterThan(plain * 3);
   }, 120_000);
 });
+
+describe("the keyboard", () => {
+  const pushes = (out: string): number => out.split(`${ESC}[>1u`).length - 1;
+
+  test("a terminal that answers the Kitty probe gets the flags and ctrl+, opens settings", async () => {
+    const p = await launch();
+    try {
+      await p.until("home", (r) => has(r, "What should Agency work on?"), 45_000);
+      expect(p.out).toContain(`${ESC}[?u`);
+      expect(pushes(p.out)).toBe(0);
+      p.send(`${ESC}[?0u${ESC}[?62;4c`);
+      const end = Date.now() + 10_000;
+      while (pushes(p.out) === 0 && Date.now() < end) await Bun.sleep(50);
+      expect(pushes(p.out)).toBe(1);
+      p.send(`${ESC}[44;5u`);
+      await p.until("settings", (r) => has(r, "General") && has(r, "Theme"));
+      p.send(ESC);
+      await Bun.sleep(150);
+      p.send("\x03");
+      await Bun.sleep(100);
+      p.send("\x03");
+      await p.exited;
+      expect(p.out).toContain(`${ESC}[<u`);
+    } finally {
+      await p.stop();
+    }
+  }, 90_000);
+
+  test("a legacy terminal never gets the flags: ctrl+, is a comma in the prompt", async () => {
+    const p = await launch();
+    try {
+      await p.until("home", (r) => has(r, "What should Agency work on?"), 45_000);
+      p.send(",");
+      await p.until("the comma", (r) => has(r, "› ,"));
+      expect(pushes(p.out)).toBe(0);
+    } finally {
+      await p.stop();
+    }
+  }, 90_000);
+});

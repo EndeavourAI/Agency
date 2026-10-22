@@ -18,6 +18,11 @@ export interface Terminal {
 /** Alternate screen off, cursor on, bracketed paste off, mouse and Kitty keyboard modes off, attributes reset. */
 export const RESTORE =
   "\x1b[?1049l\x1b[?25h\x1b[?2004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[<u\x1b[0m";
+/** Answers to our queries (DA1, DECRPM, Kitty flags, OSC, DCS, APC, cursor position) and focus reports: not keys. */
+export const isReply = (sequence: string): boolean =>
+  sequence.startsWith("\x1b") &&
+  /^(?:\[(?:\?|[IO]$|(?!1;[2-9]\d*R)\d+;\d+R$)|[P_\]].)/.test(sequence.slice(1));
+
 /** A lone ESC waits this long for the rest of a sequence before it counts as the escape key. */
 const ESC_MS = 25;
 
@@ -46,13 +51,17 @@ export async function openTerminal(o: TerminalOptions): Promise<Terminal> {
     targetFps: 60,
     maxFps: 60,
     useMouse: false,
-    // The decoder owns every byte that is not a paste, so the legacy codes work and Kitty only when the terminal sends them.
+    // The Kitty flags are pushed once the terminal answers the renderer's `CSI ? u` probe: ctrl+, and ctrl+enter then
+    // arrive as `CSI u`. A terminal that does not answer stays on the legacy codes.
+    useKittyKeyboard: { disambiguate: true, alternateKeys: false, events: false },
+    // The decoder reads every key byte. A terminal reply or a focus report also goes on to the renderer, which learns
+    // the terminal's capabilities from them.
     prependInputHandlers: [
       (sequence) => {
         clearTimeout(escTimer);
         emit(decoder.push(sequence));
         escTimer = setTimeout(() => emit(decoder.flush()), ESC_MS);
-        return true;
+        return !isReply(sequence);
       },
     ],
   });

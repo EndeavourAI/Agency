@@ -9,6 +9,7 @@ function approval(params: Partial<RunTurnParams>) {
     broadcast: () => {},
     eventBus: { emit: () => {} },
     redactor: new Redactor(),
+    turnDenials: new Map(),
   } as unknown as DaemonContext;
   return createTurnApproval(ctx, { turnId: "t1", ...params } as RunTurnParams, "s1", "turn.t1");
 }

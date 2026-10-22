@@ -819,3 +819,90 @@ describe("review", () => {
     expect(m.grid.some((r) => r.includes("+ two"))).toBe(true);
   });
 });
+
+describe("small checks of the canvas smoke", () => {
+  test("an orbit marks a session that runs elsewhere, and only then", async () => {
+    const d = session();
+    const quiet = await board(d);
+    expect(quiet.grid[0]).not.toMatch(/[◜◝◞◟] ctrl\+p/);
+    d.daemon({ type: "live_turns", sessionIds: [SID, "tui"] });
+    const m = await board(d, { tick: 2 });
+    expect(m.grid[0]).toContain("◞ ctrl+p 3 more");
+    const mark = find(m, "◞");
+    expect(m.cell(mark.x, mark.y).fg).toBe(A.brand);
+    await m.tick(3);
+    expect(m.grid[0]).toContain("◟ ctrl+p 3 more");
+  });
+
+  test("the live turn names what it does once: reasoning and the clock, no esc in the stamp", async () => {
+    const m = await board(session());
+    const row = m.grid.find((r) => r.includes("•◦◦")) as string;
+    expect(row).toContain("reasoning · 1:42");
+    expect(row).not.toContain("esc");
+  });
+
+  test("subagent work opens to its workers", async () => {
+    const d = session({}, false);
+    d.daemon({
+      type: "turn_finished",
+      sessionId: SID,
+      turnId: "t2",
+      at: NOW,
+      outcome: { stopReason: "end_turn" },
+    });
+    d.daemon({
+      type: "turn_started",
+      sessionId: SID,
+      turnId: "t3",
+      prompt: "Tune the stop gates.",
+      images: [],
+      at: NOW,
+    });
+    d.daemon({
+      type: "turn_event",
+      sessionId: SID,
+      turnId: "t3",
+      at: NOW,
+      event: {
+        type: "tool_start",
+        id: "a1",
+        name: "delegate",
+        input: { task: "replay 2,148 real turns in 4 workers" },
+      },
+    });
+    d.daemon({
+      type: "turn_event",
+      sessionId: SID,
+      turnId: "t3",
+      at: NOW,
+      event: {
+        type: "tool_result",
+        id: "a1",
+        content:
+          "worker 1 · 537 turns · done · 1:58\nworker 2 · 537 turns · done · 2:04\nworker 3 · 537 turns · done · 1:51\nworker 4 · 537 turns · done · 2:10",
+        isError: false,
+      },
+    });
+    d.daemon({
+      type: "turn_finished",
+      sessionId: SID,
+      turnId: "t3",
+      at: NOW,
+      outcome: { stopReason: "end_turn" },
+    });
+    d.send("\x1b");
+    d.send("\x1b");
+    d.send("\r");
+    const m = await board(d);
+    expect(m.grid.some((r) => /agent\s+replay 2,148 real turns in 4 workers/.test(r))).toBe(true);
+    expect(m.grid.filter((r) => /worker \d · 537 turns · done/.test(r))).toHaveLength(4);
+  });
+
+  test("a text paste passes through: it lands in the box as typed", async () => {
+    const d = session();
+    d.send("\x1b[200~line one\nline two\x1b[201~");
+    const m = await board(d);
+    expect(m.grid.some((r) => r.includes("› line one"))).toBe(true);
+    expect(m.grid.some((r) => r.includes("│   line two"))).toBe(true);
+  });
+});

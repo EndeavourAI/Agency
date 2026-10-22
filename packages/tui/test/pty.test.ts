@@ -92,6 +92,7 @@ describe("the TUI in a terminal", () => {
     expect(last(1049)).toBe("l");
     expect(last(25)).toBe("h");
     expect(last(2004)).toBe("l");
+    expect(last(2027)).toBe("l");
   }, 60_000);
 });
 
@@ -122,6 +123,7 @@ describe("leaving the terminal as it was", () => {
     expect(last(1049)).toBe("l");
     expect(last(25)).toBe("h");
     expect(last(2004)).toBe("l");
+    expect(last(2027)).toBe("l");
   };
 
   test("an exception that nobody catches restores the screen, says what failed and exits 1", async () => {

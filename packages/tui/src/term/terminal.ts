@@ -15,9 +15,9 @@ export interface Terminal {
   close(code?: number): Promise<never>;
 }
 
-/** Alternate screen off, cursor on, bracketed paste off, mouse and Kitty keyboard modes off, attributes reset. */
+/** Alternate screen off, cursor on, bracketed paste off, grapheme clustering off, mouse and Kitty keyboard modes off, attributes reset. */
 export const RESTORE =
-  "\x1b[?1049l\x1b[?25h\x1b[?2004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[<u\x1b[0m";
+  "\x1b[?1049l\x1b[?25h\x1b[?2004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2027l\x1b[<u\x1b[0m";
 /** Answers to our queries (DA1, DECRPM, Kitty flags, OSC, DCS, APC, cursor position) and focus reports: not keys. */
 export const isReply = (sequence: string): boolean =>
   sequence.startsWith("\x1b") &&

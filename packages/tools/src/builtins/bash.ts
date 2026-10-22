@@ -361,9 +361,11 @@ export function createBashTool(
         // surface as errors so callers react instead of continuing;
         // partial output is retained alongside the label.
         const failed = outcome.aborted || exitCode !== 0;
+        // A killed run never produced an exit code: reporting 0 would read as success.
+        const meta = outcome.aborted ? {} : { exitCode };
         return failed
-          ? { content: truncateResult(combined), isError: true as const, meta: { exitCode } }
-          : { content: truncateResult(combined), meta: { exitCode } };
+          ? { content: truncateResult(combined), isError: true as const, meta }
+          : { content: truncateResult(combined), meta };
       };
 
       const container = wrapHeld === undefined ? asContainerExecBackend(deps.sandbox) : undefined;

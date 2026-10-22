@@ -196,34 +196,35 @@ function Home(props: AppProps) {
   );
 }
 
+/** Rows of one block, memoized on the block, width, palette and the few flags that reach it; only a running turn follows the clock. */
 function BlockView(props: {
   b: Block;
   index: number;
-  state: Accessor<AppState>;
   palette: Accessor<Palette>;
   tick: Accessor<number>;
   now: Accessor<number>;
+  offline: Accessor<boolean>;
+  pickAt: Accessor<number | null>;
+  copied: Accessor<string | null>;
+  retry: Accessor<Block | null>;
   w: number;
 }) {
+  const picked = createMemo(() => props.pickAt() === props.index);
+  const copied = createMemo(() => (props.copied() === props.b.id ? props.b.id : null));
+  const retry = createMemo(() => props.retry() === props.b);
   const rows = createMemo((): Row[] => {
-    const st = props.state();
+    const b = props.b;
+    const running = b.kind === "turn" && b.status === "running";
     const x: LedgerCtx = {
       c: props.palette(),
       w: props.w,
-      tick: props.tick(),
-      now: props.now(),
-      offline: st.conn === "offline",
+      tick: running ? props.tick() : 0,
+      now: running ? props.now() : 0,
+      offline: props.offline(),
     };
-    const b = props.b;
     if (b.kind === "event") return eventRows(b, x);
     if (b.kind === "shell") return shellRows(b, x);
-    const sess = current(st);
-    const last = sess?.blocks.findLast((y) => y.kind === "turn");
-    return turnRows(b, x, {
-      picked: sess?.pickAt === props.index,
-      copied: st.copied,
-      canRetry: canRetry(st) && last === b,
-    });
+    return turnRows(b, x, { picked: picked(), copied: copied(), canRetry: retry() });
   });
   return <Rows rows={rows()} w={props.w} />;
 }
@@ -232,10 +233,17 @@ function Session(props: AppProps) {
   const s = props.state;
   const c = props.palette;
   const details = () => detailsShown(s());
-  const mainW = () =>
-    details() ? s().cols - 4 - DETAILS_W - DETAILS_CHROME : Math.min(s().cols - 4, MAX_COLUMN);
+  const mainW = createMemo(() =>
+    details() ? s().cols - 4 - DETAILS_W - DETAILS_CHROME : Math.min(s().cols - 4, MAX_COLUMN),
+  );
   const sess = () => current(s());
-  const blocks = createMemo(() => {
+  const offline = createMemo(() => s().conn === "offline");
+  const pickAt = createMemo(() => sess()?.pickAt ?? null);
+  const copied = createMemo(() => s().copied);
+  const retry = createMemo(() =>
+    canRetry(s()) ? (sess()?.blocks.findLast((y) => y.kind === "turn") ?? null) : null,
+  );
+  const all = createMemo(() => {
     const x = sess();
     return x ? scrolledBlocks(x) : [];
   });
@@ -248,6 +256,9 @@ function Session(props: AppProps) {
   const hint = createMemo(() => [hintRow(s(), c(), mainW())]);
   // The rows between the top bar (1), the gap under it (1), the box with its hint row: set by hand, so the transcript clips instead of pushing the box off the screen.
   const transcriptH = () => Math.max(1, s().rows - 2 - region().length - hint().length);
+  // A block is at least 1 row plus its gap, so this many fill the transcript; older ones are clipped above and never laid out.
+  const start = createMemo(() => Math.max(0, all().length - Math.ceil(transcriptH() / 2) - 2));
+  const blocks = createMemo(() => all().slice(start()));
   const ctx = (): LedgerCtx => ({
     c: c(),
     w: mainW(),
@@ -310,11 +321,14 @@ function Session(props: AppProps) {
                   {(b, i) => (
                     <BlockView
                       b={b()}
-                      index={i}
-                      state={s}
+                      index={start() + i}
                       palette={c}
                       tick={props.tick}
                       now={props.now}
+                      offline={offline}
+                      pickAt={pickAt}
+                      copied={copied}
+                      retry={retry}
                       w={mainW()}
                     />
                   )}

@@ -89,14 +89,20 @@ export function nearest256(hex: string): number {
   return dist([greyV, greyV, greyV]) < dist(cube) ? 232 + grey : 16 + 36 * r + 6 * g + b;
 }
 
-/** Truecolor hex, or the nearest of the 256 colours when the terminal does not say it does RGB. */
+const palettes = new Map<string, Palette>();
+
+/** Truecolor hex, or the nearest of the 256 colours when the terminal does not say it does RGB. Cached: views memoize rows on its identity. */
 export function palette(theme: ThemeName, truecolor: boolean): Palette {
+  const key = `${theme}:${truecolor}`;
+  const hit = palettes.get(key);
+  if (hit) return hit;
   const src = HEX[theme] ?? HEX.agency;
   const out = { scrim: null } as Palette;
   for (const k of Object.keys(src) as ColorName[])
     out[k] = truecolor ? src[k] : RGBA.fromIndex(nearest256(src[k]));
   const [r, g, b, a] = SCRIM[theme] ?? SCRIM.agency;
   if (truecolor) out.scrim = RGBA.fromInts(r, g, b, Math.round(a * 255));
+  palettes.set(key, out);
   return out;
 }
 

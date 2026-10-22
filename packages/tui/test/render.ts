@@ -28,13 +28,16 @@ export async function mount(
   o: { tick?: number; now?: number; truecolor?: boolean } = {},
 ): Promise<Mounted> {
   const { testRender } = await import("@opentui/solid");
-  const { createSignal } = await import("solid-js");
+  const { createMemo, createSignal } = await import("solid-js");
   const { App } = await import("../src/view/app.tsx");
   const [st, setSt] = createSignal(state);
   const [tick, setTick] = createSignal(o.tick ?? 0);
-  const pal = () => palette(st().theme, o.truecolor ?? true);
+
   const t = await testRender(
-    () => App({ state: st, palette: pal, tick, now: () => o.now ?? NOW, version: "0.1.0" }),
+    () => {
+      const pal = createMemo(() => palette(st().theme, o.truecolor ?? true));
+      return App({ state: st, palette: pal, tick, now: () => o.now ?? NOW, version: "0.1.0" });
+    },
     { width: state.cols, height: state.rows },
   );
   const draw = async () => {

@@ -8,6 +8,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`promptSuggestions`** (off by default): the small model proposes the next prompt after each finished turn, sent as
+  the `prompt_suggestion` event. It adds one request per turn, so it stays off until the user turns it on.
 - **`shell_run`** for the `!` mode of a TUI: the command runs through the bash tool under the permission rules, and
   its output joins the session as a user message.
 - **`history_list`**: each prompt sent with `session_send` is kept per workspace in the data folder; the method

@@ -32,6 +32,8 @@ const EVENT_TYPES: Record<string, string> = {
     "export interface CostReportEvent { type: string; totalUsd: number; tokens: number; cacheHitRate: number; perAgent: Record<string, unknown>; }",
   budget_exceeded:
     "export interface BudgetExceededEvent { type: string; spentTokens: number; spentCostUsd: number; }",
+  prompt_suggestion:
+    "export interface PromptSuggestionEvent { type: string; sessionId: string; turnId: string; text: string; }",
   heartbeat: "export interface HeartbeatEvent { type: string; }",
   fallback: "export interface FallbackEvent { type: string; from: string; to: string; reason: string; }",
   approval_requested:

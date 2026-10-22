@@ -94,6 +94,7 @@ export type GatewayEvent =
   | "cost_report"
   | "budget_exceeded"
   | "heartbeat"
+  | "prompt_suggestion"
   | "fallback"
   | "approval_requested"
   | "session.*"
@@ -209,6 +210,12 @@ export interface BudgetExceededEvent {
 }
 export interface HeartbeatEvent {
   type: string;
+}
+export interface PromptSuggestionEvent {
+  type: string;
+  sessionId: string;
+  turnId: string;
+  text: string;
 }
 export interface FallbackEvent {
   type: string;

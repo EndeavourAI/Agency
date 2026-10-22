@@ -116,6 +116,10 @@ export const EVENT_CATALOG: readonly EventDoc[] = [
   { name: "cost_report", description: "Per-run totals with tokens, hit rate, and per-agent breakdown." },
   { name: "budget_exceeded", description: "A turn stopped on a budget cap." },
   { name: "heartbeat", description: "Turn liveness marker on silent stretches." },
+  {
+    name: "prompt_suggestion",
+    description: "The small model proposes the next prompt after a turn; only with promptSuggestions on.",
+  },
   { name: "fallback", description: "Turn retried on the fallback model." },
   { name: "approval_requested", description: "An ask is pending; answer via approval_respond." },
   { name: "session.*", description: "Per-session broadcasts such as session_message." },

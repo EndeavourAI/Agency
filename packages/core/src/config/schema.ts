@@ -235,6 +235,8 @@ export const ConfigSchema = z.object({
   /** Shell commands that run on agent events, in the format of Claude Code settings. Exit code 2 blocks. */
   hooks: CommandHooksSchema.optional(),
   fallback_model: z.string().optional(),
+  /** After each finished turn, the small model proposes the next prompt (`prompt_suggestion`). Off: it costs a request per turn. */
+  promptSuggestions: z.boolean().optional(),
   /** Tool steps that one turn may take when the caller sets no limit. Absent means the loop default. */
   maxSteps: z.number().int().positive().optional(),
   /** Text for the model that writes the summary of a compaction: what the summary must keep. */

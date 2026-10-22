@@ -518,11 +518,11 @@ interface HookModelOptions {
   providers: Record<string, ProviderConfig>;
   adapterFor: (provider: string) => ProviderAdapter;
   http: HttpClient;
-  getKeychain: () => Promise<KeychainBackend>;
+  getKeychain: () => Promise<KeychainBackend | undefined>;
 }
 
 /** The model of a prompt or agent hook: that of the hook, else `small_model`, else `model`, with the key of its provider. */
-async function hookModel(opts: HookModelOptions, model: string | undefined) {
+export async function hookModel(opts: HookModelOptions, model: string | undefined) {
   const ref = parseModelRef(model ?? opts.config.small_model ?? opts.config.model ?? "");
   if (!ref) throw new Error("a prompt hook needs small_model or model in the config");
   const apiKey = await resolveApiKey({

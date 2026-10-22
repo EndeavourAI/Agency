@@ -63,6 +63,7 @@ import {
 import { applyMcpPrompt, applySlashCommand } from "./commands.ts";
 import { createTurnApproval } from "./plan.ts";
 import { generateSessionTitle } from "./session.ts";
+import { suggestNextPrompt } from "./suggest.ts";
 import { writeTurnCassette } from "./trace.ts";
 
 export function registerTurnHandlers(handlers: Record<string, MethodHandler>, ctx: DaemonContext): void {
@@ -1013,6 +1014,8 @@ export async function executeTurn(
 
         // Generate session title after first turn if none exists yet
         void generateSessionTitle(ctx, params, sessionId);
+        if (!controller.signal.aborted && ((params as { taskDepth?: number }).taskDepth ?? 0) === 0)
+          void suggestNextPrompt(ctx, params, sessionId, result.messages);
 
         const response: RunTurnRpcResult = {
           ...result,

@@ -58,6 +58,8 @@ async function start(
     status?: number;
     onIdleShutdown?: () => void;
     configText?: string;
+    projectConfig?: string;
+    localConfig?: string;
     project?: Record<string, string>;
     user?: Record<string, string>;
     untrusted?: boolean;
@@ -69,6 +71,11 @@ async function start(
   const trustStorePath = join(tmp("trust"), "trust.json");
   if (!extra.untrusted) createFileTrustStore(trustStorePath).trust(workspaceRoot);
   if (extra.configText !== undefined) writeFileSync(join(configDir, "config.jsonc"), extra.configText);
+  mkdirSync(join(workspaceRoot, ".agency"), { recursive: true });
+  if (extra.projectConfig !== undefined)
+    writeFileSync(join(workspaceRoot, ".agency", "config.jsonc"), extra.projectConfig);
+  if (extra.localConfig !== undefined)
+    writeFileSync(join(workspaceRoot, ".agency", "config.local.jsonc"), extra.localConfig);
   for (const [name, text] of Object.entries(extra.project ?? {})) {
     mkdirSync(join(workspaceRoot, ".agency", "skills", name), { recursive: true });
     writeFileSync(join(workspaceRoot, ".agency", "skills", name, "SKILL.md"), text);
@@ -118,6 +125,48 @@ test("config_write creates the user config, keeps a comment, and null removes th
   await call("config_write", { key: "logLevel", value: null });
   expect(readFileSync(configFile, "utf8")).not.toContain("logLevel");
   expect(readFileSync(configFile, "utf8")).toContain("// keep me");
+});
+
+test("a trusted workspace's project file sets the model, and the local file wins over it", async () => {
+  const projectConfig = '{ "model": "anthropic/project-model" }';
+  const project = await start({ projectConfig });
+  expect((await project.call("config_get", { key: "model" })).result?.value).toBe("anthropic/project-model");
+  const local = await start({ projectConfig, localConfig: '{ "model": "anthropic/local-model" }' });
+  expect((await local.call("config_get", { key: "model" })).result?.value).toBe("anthropic/local-model");
+});
+
+test("an untrusted workspace's project and local files are ignored", async () => {
+  const { call } = await start({
+    untrusted: true,
+    projectConfig: '{ "model": "anthropic/project-model" }',
+    localConfig: '{ "model": "anthropic/local-model" }',
+  });
+  const model = (await call("config_get", { key: "model" })).result?.value;
+  expect(model).not.toBe("anthropic/project-model");
+  expect(model).not.toBe("anthropic/local-model");
+});
+
+test("a project file cannot lower trust.required", async () => {
+  const { call } = await start({
+    configText: '{ "trust": { "required": true } }',
+    projectConfig: '{ "trust": { "required": false } }',
+    localConfig: '{ "trust": { "required": false } }',
+  });
+  expect((await call("config_get", { key: "trust" })).result?.value).toEqual({ required: true });
+});
+
+test("config_write with scope local writes config.local.jsonc and ignores it in .agency/.gitignore once", async () => {
+  const { call, workspaceRoot } = await start();
+  const ignore = join(workspaceRoot, ".agency", ".gitignore");
+  writeFileSync(ignore, "cache");
+  await call("config_write", { key: "logLevel", value: "debug", scope: "local" });
+  await call("config_write", { key: "locale", value: "de", scope: "local" });
+  expect(JSON.parse(readFileSync(join(workspaceRoot, ".agency", "config.local.jsonc"), "utf8"))).toEqual({
+    logLevel: "debug",
+    locale: "de",
+  });
+  expect(readFileSync(ignore, "utf8")).toBe("cache\nconfig.local.jsonc\n");
+  expect((await call("config_write", { key: "logLevel", value: "x", scope: "nope" })).error).toBeDefined();
 });
 
 test("config_user gives the user file alone: no project hooks, no provider keys", async () => {

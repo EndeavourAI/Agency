@@ -37,6 +37,7 @@ import {
   mergeCommandHooks,
   nestedInstructions,
   outputStyleInstructions,
+  PROJECT_LOCAL_CONFIG,
   parseEnvFile,
   SessionStore,
   storagePaths,
@@ -214,7 +215,15 @@ export async function chooseSandboxBackend(
 export async function createAgentDaemon(options: AgentDaemonOptions): Promise<AgentDaemon> {
   // First: the status runs while the daemon starts and the client connects.
   const git = warmGitRunner(options.workspaceRoot);
-  const config = loadConfig({ globalDir: options.configDir, env: process.env });
+  // A project file can set commands and rules: it loads only in a trusted workspace.
+  const trustStore: TrustStore = createFileTrustStore(
+    options.trustStorePath ?? join(dataDir(), "trust.json"),
+  );
+  const config = loadConfig({
+    globalDir: options.configDir,
+    env: process.env,
+    ...(trustStore.isTrusted(options.workspaceRoot) ? { projectRoot: options.workspaceRoot } : {}),
+  });
   const sandboxFallback = await chooseSandboxBackend(config, options.workspaceRoot);
   // fetch, websearch and the browser get the network limit of shell commands.
   const network = sandboxNetwork(config.sandbox);
@@ -268,9 +277,6 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
   // the permissions maps (allow/ask/deny, last-match-wins) and the trust
   // check; the sandbox gets the deny-pattern command policy and the
   // external_directory decision, so containment and policy are real.
-  const trustStore: TrustStore = createFileTrustStore(
-    options.trustStorePath ?? join(dataDir(), "trust.json"),
-  );
   // The permission rules of Claude Code settings come first: those of the config win on a call.
   const permissions = mergePermissions(
     loadClaudePermissions(options.workspaceRoot, trustStore.isTrusted(options.workspaceRoot), (message) =>
@@ -369,6 +375,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
   const configFingerprint = createConfigFingerprint([
     join(options.configDir ?? configDir(), "config.jsonc"),
     join(options.workspaceRoot, ".agency", "config.jsonc"),
+    join(options.workspaceRoot, ".agency", PROJECT_LOCAL_CONFIG),
     // The executable too: after an update, an idle daemon from the old binary leaves.
     process.execPath,
     // The hook and MCP folders for a new or a removed file, and each file for an edit: an edit does not change the folder.

@@ -317,7 +317,7 @@ export interface SurfaceClient {
   config_set(params?: Record<string, unknown>): Promise<unknown>;
   /** The user config file alone, without provider keys: the layer that config_write edits. */
   config_user(params?: Record<string, unknown>): Promise<unknown>;
-  /** Persist one dotted config key to the user config file, comments kept; null removes it. */
+  /** Persist one dotted config key to the user config file, or, with scope=local, to the workspace file .agency/config.local.jsonc; comments kept, null removes it. */
   config_write(params?: Record<string, unknown>): Promise<unknown>;
   /** Sum usage entries plus trace spans per session and agent (Phase 9 adds budgets and caps). */
   cost_report(params?: Record<string, unknown>): Promise<unknown>;

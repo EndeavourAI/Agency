@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Project config loads**: `.agency/config.jsonc` and the new `.agency/config.local.jsonc` (above it, kept out of
+  git; `config_write` with `scope: "local"` writes it) apply in a trusted workspace. `trust.required` comes from
+  the user layer only.
 - **The desktop app is gone**: it lives on as the git tag `archive/desktop`. Its CI step, release job and the
   `AGENCY_CONFIG_OVERLAY` config layer are removed. Its RPC methods (`config_write`, `config_user`,
   `daemon_restart`, provider keys, skills) stay as settings methods.

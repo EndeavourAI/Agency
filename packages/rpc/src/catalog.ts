@@ -27,7 +27,8 @@ export const METHOD_DOCS: Record<string, string> = {
   config_get: "Read daemon config, secrets redacted, or one top-level key.",
   config_set: "Set one runtime-safe config key in memory until restart.",
   config_user: "The user config file alone, without provider keys: the layer that config_write edits.",
-  config_write: "Persist one dotted config key to the user config file, comments kept; null removes it.",
+  config_write:
+    "Persist one dotted config key to the user config file, or, with scope=local, to the workspace file .agency/config.local.jsonc; comments kept, null removes it.",
   daemon_restart: "Leave once no turn runs, so the next client starts a daemon with the new config.",
   daemon_retire:
     "Leave now if the caller is the only client and no turn runs; a client of another build asks, then starts its own.",

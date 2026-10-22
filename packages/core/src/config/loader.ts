@@ -29,6 +29,8 @@ export interface ConfigSources {
   flags?: Partial<Record<keyof Config, unknown>>;
 }
 
+export const PROJECT_LOCAL_CONFIG = "config.local.jsonc";
+
 const ENV_KEYS: Record<string, keyof Config> = {
   AGENCY_LOG_LEVEL: "logLevel",
   AGENCY_LOCALE: "locale",
@@ -36,6 +38,9 @@ const ENV_KEYS: Record<string, keyof Config> = {
   AGENCY_SMALL_MODEL: "small_model",
   AGENCY_THEME: "theme",
 };
+
+/** Lowest first: the local file is the user's own and stays out of git. */
+const PROJECT_LAYERS = ["config.jsonc", PROJECT_LOCAL_CONFIG];
 
 const TRUTHY = new Set(["1", "true", "yes", "on"]);
 
@@ -85,6 +90,14 @@ function readLayer(path: string): Record<string, unknown> | undefined {
     throw new Error(`config at ${path} has invalid JSONC (${errors.length} error(s))`);
   }
   return parsed;
+}
+
+/** A project layer cannot lower `trust.required`: the user layer alone decides it. */
+function readProjectLayer(path: string): Record<string, unknown> | undefined {
+  const layer = readLayer(path);
+  if (!layer || !isPlainObject(layer.trust)) return layer;
+  const { required: _required, ...trust } = layer.trust;
+  return { ...layer, trust };
 }
 
 function migrateLayer(raw: Record<string, unknown>): Record<string, unknown> {
@@ -159,8 +172,10 @@ export function loadConfig(sources: ConfigSources = {}): Config {
   if (globalLayer) merged = deepMergeLayer(merged, migrateLayer(globalLayer));
 
   if (sources.projectRoot) {
-    const projectLayer = readLayer(join(sources.projectRoot, ".agency", "config.jsonc"));
-    if (projectLayer) merged = deepMergeLayer(merged, migrateLayer(projectLayer));
+    for (const name of PROJECT_LAYERS) {
+      const layer = readProjectLayer(join(sources.projectRoot, ".agency", name));
+      if (layer) merged = deepMergeLayer(merged, migrateLayer(layer));
+    }
   }
 
   merged = deepMergeLayer(merged, envOverrides(env));
@@ -177,8 +192,12 @@ export function loadConfig(sources: ConfigSources = {}): Config {
   const parsed = ConfigSchema.safeParse({ ...merged, schemaVersion: CONFIG_SCHEMA_VERSION });
   if (!parsed.success) {
     const issues = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
-    const projectPath = sources.projectRoot && join(sources.projectRoot, ".agency", "config.jsonc");
-    const files = [globalPath, projectPath, sources.managedPath].filter((path) => path && existsSync(path));
+    const projectPaths = PROJECT_LAYERS.map(
+      (name) => sources.projectRoot && join(sources.projectRoot, ".agency", name),
+    );
+    const files = [globalPath, ...projectPaths, sources.managedPath].filter(
+      (path) => path && existsSync(path),
+    );
     throw new Error(`config is not valid: ${issues.join("; ")} (files: ${files.join(", ") || "none"})`, {
       cause: parsed.error,
     });

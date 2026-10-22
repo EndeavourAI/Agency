@@ -6,6 +6,7 @@ import {
   foreignHome,
   loadConfig,
   memoryFile,
+  PROJECT_LOCAL_CONFIG,
   resolveSkillDirs,
   userPluginStore,
 } from "@agency/core";
@@ -60,6 +61,16 @@ function skillOrigin(path: string, workspaceRoot: string, userDir: string, plugi
   return "Other";
 }
 
+/** The local config file holds the user's own choices: git never sees it. */
+function ignoreLocalConfig(agencyDir: string): void {
+  const file = join(agencyDir, ".gitignore");
+  const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+  if (text.split(/\r?\n/).includes(PROJECT_LOCAL_CONFIG)) return;
+  mkdirSync(agencyDir, { recursive: true });
+  const lead = text === "" || text.endsWith("\n") ? "" : "\n";
+  writeFileSync(file, `${text}${lead}${PROJECT_LOCAL_CONFIG}\n`);
+}
+
 /** One scalar of the frontmatter, quoted when plain YAML would misread it. */
 function yamlScalar(text: string): string {
   const line = text.replace(/\s+/g, " ").trim();
@@ -80,12 +91,18 @@ export function registerSettingsHandlers(
   let restartTimer: ReturnType<typeof setInterval> | undefined;
 
   handlers.config_write = async (rawParams) => {
-    const { key, value } = (rawParams ?? {}) as { key?: unknown; value?: unknown };
+    const { key, value, scope } = (rawParams ?? {}) as { key?: unknown; value?: unknown; scope?: unknown };
+    if (scope !== undefined && scope !== "user" && scope !== "local")
+      throw invalid(`config_write: bad scope ${String(scope)}`);
     const path = requireString(key, "config_write key").split(".");
     if (path.some((part) => !/^[\w-]+$/.test(part))) throw invalid(`config_write: bad key ${String(key)}`);
     if (value === undefined) throw invalid("config_write requires value (null removes the key)");
 
-    const file = join(userDir(), "config.jsonc");
+    const local = scope === "local";
+    const file = local
+      ? join(options.workspaceRoot, ".agency", PROJECT_LOCAL_CONFIG)
+      : join(userDir(), "config.jsonc");
+    if (local) ignoreLocalConfig(dirname(file));
     const previous = existsSync(file) ? readFileSync(file, "utf8") : undefined;
     const text = previous ?? "{}";
     const edits = modify(text, path, value ?? undefined, {

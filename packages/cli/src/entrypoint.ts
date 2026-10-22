@@ -25,6 +25,7 @@ import {
   userPluginStore,
 } from "@agency/core";
 import {
+  createFileTrustStore,
   PERMISSION_MODES,
   type PermissionMode,
   runSandboxChild,
@@ -810,6 +811,13 @@ function envOf(deps: EntrypointDeps): NodeJS.ProcessEnv {
   return deps.env ?? process.env;
 }
 
+/** The project config files load only in a trusted workspace: they can set commands and rules. */
+function trustedProject(workspaceRoot: string, env: NodeJS.ProcessEnv): { projectRoot?: string } {
+  return createFileTrustStore(join(dataDir(env), "trust.json")).isTrusted(workspaceRoot)
+    ? { projectRoot: workspaceRoot }
+    : {};
+}
+
 /**
  * The flags layer for loadConfig: `--model` is taken as the config model ref,
  * with `--provider` overriding its provider part. `--provider` alone can't
@@ -1117,7 +1125,12 @@ async function runPrintMode(
       ? workspaceRootOf(parsed, deps)
       : worktreeRoot(parsed.worktree, workspaceRootOf(parsed, deps), err);
   const env = envOf(deps);
-  const config = loadConfig({ globalDir: deps.configDir, env, flags: flagsFor(parsed) });
+  const config = loadConfig({
+    globalDir: deps.configDir,
+    env,
+    ...trustedProject(workspaceRoot, env),
+    flags: flagsFor(parsed),
+  });
   const { provider, model } = resolveModelRef(config, parsed);
   await validateTurnKey(provider, config, deps);
   // Each rule of a run must hold: a rule that maps to nothing here would let through a call that the user denied.
@@ -1442,7 +1455,12 @@ async function workflowCmd(
   }
 
   const workspaceRoot = workspaceRootOf(parsed, deps);
-  const config = loadConfig({ globalDir: deps.configDir, env: envOf(deps), flags: flagsFor(parsed) });
+  const config = loadConfig({
+    globalDir: deps.configDir,
+    env: envOf(deps),
+    ...trustedProject(workspaceRoot, envOf(deps)),
+    flags: flagsFor(parsed),
+  });
   let started = 0;
   // Turns in parallel each get what is left at their start, so they can go over the total together.
   let spent = 0;

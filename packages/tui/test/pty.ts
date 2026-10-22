@@ -68,7 +68,12 @@ export async function launch(
       let last: string[] = [];
       while (Date.now() < end) {
         last = await screen();
-        if (ok(last)) return last;
+        if (ok(last)) {
+          // The renderer writes a frame in pieces: the screen counts when it still holds a moment later.
+          await Bun.sleep(80);
+          const again = await screen();
+          if (ok(again)) return again;
+        }
         await Bun.sleep(50);
       }
       throw new Error(`timed out waiting for ${what}\n${last.join("\n")}`);

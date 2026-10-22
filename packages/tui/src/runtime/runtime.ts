@@ -7,7 +7,7 @@ import type { DaemonClient } from "@agency/rpc";
 import { createTuiClient, type TuiClient, type TuiClientDeps } from "../client/index.ts";
 import { dispatchKey, dispatchPaste, type Out } from "../controller/index.ts";
 import type { InputEvent } from "../input/keys.ts";
-import { type AppState, type Event, initialState, reduce } from "../state/index.ts";
+import { type AppState, type Event, initialState, noProviders, reduce } from "../state/index.ts";
 
 export interface RuntimeOptions {
   daemon: DaemonClient;
@@ -97,7 +97,11 @@ export function createRuntime(o: RuntimeOptions): Runtime {
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
-    bootstrap: () => client.bootstrap(),
+    async bootstrap() {
+      await client.bootstrap();
+      // No provider has a key: the picker opens by itself with the way to add one.
+      if (noProviders(state)) dispatch([{ type: "model_open" }]);
+    },
     async settled() {
       while (pending.size) await Promise.all([...pending]);
     },

@@ -95,6 +95,25 @@ describe("the TUI in a terminal", () => {
   }, 60_000);
 });
 
+describe("a daemon with no provider key", () => {
+  test("the model picker opens on its own with the way to add a key", async () => {
+    const bare = await launch({ env: { AGENCY_ANTHROPIC_API_KEY: "" } });
+    try {
+      // The screen is read between two writes of the renderer: wait for the whole dialog.
+      const rows = await bare.until(
+        "the picker",
+        (r) => has(r, "No provider has a key yet.") && has(r, "effort"),
+        45_000,
+      );
+      expect(has(rows, "agency auth login <provider>")).toBe(true);
+      bare.send(ESC);
+      await bare.until("home", (r) => !has(r, "No provider has a key yet."));
+    } finally {
+      await bare.stop();
+    }
+  }, 60_000);
+});
+
 describe("leaving the terminal as it was", () => {
   const crash = join(import.meta.dir, "crash-entry.ts");
   const restored = (out: string) => {

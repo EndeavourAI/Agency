@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
-import { MAX_IMAGE_BYTES, type Run, readClipboardImage } from "../src/term/clipboard-image.ts";
+import { MAX_IMAGE_BYTES, type Run, readClipboardImage, runTool } from "../src/term/clipboard-image.ts";
 
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
 const none = { code: 1, out: new Uint8Array() };
@@ -52,6 +52,13 @@ describe("the clipboard image of each platform", () => {
     expect(await readClipboardImage("win32", async () => ({ code: 3, out: new Uint8Array() }))).toBeNull();
     expect(await readClipboardImage("freebsd", async () => none)).toBeNull();
   });
+
+  test("a helper that never exits is killed at the timeout and counts as no image", async () => {
+    const t0 = performance.now();
+    const r = await runTool(300)([process.execPath, "-e", "setTimeout(() => {}, 30000)"]);
+    expect(performance.now() - t0).toBeLessThan(10_000);
+    expect(r.code).not.toBe(0);
+  }, 20_000);
 
   test("an image over the limit is refused with its size", async () => {
     const big = new Uint8Array(MAX_IMAGE_BYTES + 1);

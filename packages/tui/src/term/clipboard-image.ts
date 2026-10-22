@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ImageChip } from "../state/types.ts";
+import { TOOL_MS } from "./clipboard.ts";
 
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
@@ -12,21 +13,29 @@ export type Run = (
 
 const isPng = (b: Uint8Array): boolean => [0x89, 0x50, 0x4e, 0x47].every((v, i) => b[i] === v);
 
-const defaultRun: Run = async (argv, env) => {
-  try {
-    const proc = Bun.spawn(argv, {
-      stdout: "pipe",
-      stderr: "ignore",
-      stdin: "ignore",
-      env: { ...process.env, ...env },
-    });
-    const out = new Uint8Array(await new Response(proc.stdout).arrayBuffer());
-    return { code: await proc.exited, out };
-  } catch {
-    // The tool is not installed: the next one gets its turn.
-    return { code: 127, out: new Uint8Array() };
-  }
-};
+/** A helper that outlives `ms` is killed and counts as no image: a stuck one must not leave the paste pending. */
+export const runTool =
+  (ms: number = TOOL_MS): Run =>
+  async (argv, env) => {
+    try {
+      const proc = Bun.spawn(argv, {
+        stdout: "pipe",
+        stderr: "ignore",
+        stdin: "ignore",
+        env: { ...process.env, ...env },
+      });
+      const timer = setTimeout(() => proc.kill(), ms);
+      try {
+        const out = new Uint8Array(await new Response(proc.stdout).arrayBuffer());
+        return { code: await proc.exited, out };
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      // The tool is not installed: the next one gets its turn.
+      return { code: 127, out: new Uint8Array() };
+    }
+  };
 
 /** PowerShell 5.1 runs in an STA thread, which the clipboard needs; `Get-Clipboard -Format Image` is null for text. */
 const WINDOWS = [
@@ -65,7 +74,7 @@ const TO_FILE: Record<string, string[][]> = {
 /** The image on the system clipboard as a chip, or null when it holds none. Throws when the image is too large. */
 export async function readClipboardImage(
   platform: string = process.platform,
-  run: Run = defaultRun,
+  run: Run = runTool(),
 ): Promise<ImageChip | null> {
   let png: Uint8Array | null = null;
   for (const argv of STDOUT[platform] ?? []) {

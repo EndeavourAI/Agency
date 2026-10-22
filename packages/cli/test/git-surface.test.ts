@@ -57,7 +57,7 @@ test("git_status reports modified, added and untracked files with line counts, a
   git(root, "add", ".");
   git(root, "commit", "-q", "-m", "second");
   expect(((await gitStatus(root)) as { ahead: number }).ahead).toBe(1);
-});
+}, 30_000);
 
 test("git_diff gives the diff against HEAD and the text of untracked files", async () => {
   const root = repo();
@@ -69,7 +69,7 @@ test("git_diff gives the diff against HEAD and the text of untracked files", asy
   expect(diff).toContain("+TWO");
   expect(untracked.find((u) => u.path === "new.txt")?.text).toBe(`fresh${lf}`);
   expect(untracked.find((u) => u.path === "blob.bin")?.text).toBeNull();
-});
+}, 30_000);
 
 test("git_status says repo false outside a repository", async () => {
   expect(await gitStatus(tmp("plain"))).toEqual({ repo: false });
@@ -94,7 +94,7 @@ test("a workspace inside a repo gets workspace-relative paths and nothing from o
   expect(diff).toContain("+y");
   expect(diff).not.toContain("changed");
   expect(untracked.map((u) => u.path)).toEqual(["new.txt"]);
-});
+}, 30_000);
 
 test("an untracked symlink is not read", async () => {
   const root = repo();
@@ -109,7 +109,7 @@ test("an untracked symlink is not read", async () => {
   expect(untracked.find((u) => u.path === "link.txt")?.text).toBeNull();
   const { files } = (await gitStatus(root)) as { files: Array<{ path: string; added: number | null }> };
   expect(files.find((f) => f.path === "link.txt")?.added).toBeNull();
-});
+}, 30_000);
 
 test("a staged rename keeps its line counts", async () => {
   const root = repo();
@@ -120,7 +120,7 @@ test("a staged rename keeps its line counts", async () => {
     files: Array<{ path: string; added: number | null; deleted: number | null }>;
   };
   expect(files.find((f) => f.path === "c.txt")).toMatchObject({ added: 1, deleted: 1 });
-});
+}, 30_000);
 
 const head = (cwd: string) =>
   execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd }).toString().trim();

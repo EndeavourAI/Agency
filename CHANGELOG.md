@@ -11,7 +11,7 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 - **`tool_result` facts**: the event carries `meta` with `exitCode` (bash), `durationMs`, `added` and `removed` (edit and
   write, counted against the old file) and `lines` (read), so a client shows "34 lines", "exit 101" and a real +N −M.
   `shell_run` returns the `exitCode` too.
-- **`git_commit`**: commits the given paths (or every change of the workspace) behind the permission rules, refuses an
+- **`git_commit`**: commits the given paths (or every change of the workspace); a deny rule or an untrusted workspace refuses it, and an ask rule is answered by the call itself. It refuses an
   unmerged index, and pushes only to the upstream of the current branch, never forced. `git_status` takes a
   `sessionId` and returns a `suggestedMessage` from the session's title or last prompt, else the changed files.
 - **How a turn ended**: every turn writes a `turn_end` entry (done, stopped, denied or failed, the commit it made as

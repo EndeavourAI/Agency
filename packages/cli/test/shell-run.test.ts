@@ -34,7 +34,7 @@ function tmp(name: string): string {
 }
 
 async function setup(
-  bashRule: "allow" | "deny",
+  bashRule: "allow" | "deny" | "ask",
   bashOutput?: (command: string) => string,
   extra: { holdFirstTurn?: boolean; onRun?: (signal: AbortSignal) => Promise<void> } = {},
 ) {
@@ -254,3 +254,14 @@ test("git_commit refuses a commit that the permission rules deny", async () => {
   await client.call("session_create", { sessionId: "s1" });
   await expect(client.call("git_commit", { sessionId: "s1", message: "m" })).rejects.toThrow("refuse");
 });
+
+test("git_commit under an ask rule commits at once: the key press that sent it is the answer", async () => {
+  const { client, workspaceRoot: ws } = await setup("ask");
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: ws, stdio: "ignore" });
+  git("init", "-q", "-b", "main");
+  writeFileSync(join(ws, "a.txt"), "one");
+  await client.call("session_create", { sessionId: "s1" });
+  const done = (await client.call("git_commit", { sessionId: "s1", message: "first" })) as { sha: string };
+  expect(done.sha).toMatch(/^[0-9a-f]+$/);
+}, 30_000);

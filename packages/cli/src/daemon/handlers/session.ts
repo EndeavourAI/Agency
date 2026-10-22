@@ -636,13 +636,8 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
       throw new AgencyError(ErrorCode.INVALID_REQUEST, "git_commit requires sessionId and message", {
         source: "session",
       });
-    const turnId = randomUUID();
-    const ask = createTurnApproval(
-      ctx,
-      { turnId, sessionId, provider: "user", model: "user", systemPrompt: "", session: [] } as RunTurnParams,
-      sessionId,
-      `turn.${turnId}`,
-    );
+    // The key that sent this is the answer to an ask: a deny rule or an untrusted workspace still refuses.
+    const ask = async (): Promise<"once"> => "once";
     const gate = gateForSession(ctx, sessionId);
     for (const command of push ? ["git commit", "git push"] : ["git commit"]) {
       if ((await gate.check({ tool: "bash", command, riskTier: "dangerous" }, ask)) === "deny")

@@ -59,13 +59,27 @@ export async function openTerminal(o: TerminalOptions): Promise<Terminal> {
   renderer.keyInput.on("paste", (e) => {
     o.onInput({ type: "paste", text: new TextDecoder().decode(e.bytes) });
   });
-  renderer.on("resize", (cols: number, rows: number) => o.onResize(cols, rows));
+  // Our own size toggle below says "resize" twice: only a size that differs from the last real one is the person's.
+  let size = `${renderer.width}x${renderer.height}`;
+  let toggling = false;
+  renderer.on("resize", (cols: number, rows: number) => {
+    if (toggling || `${cols}x${rows}` === size) return;
+    size = `${cols}x${rows}`;
+    o.onResize(cols, rows);
+  });
 
-  if (o.fullRepaint) {
-    const redraw = (renderer as unknown as { processResize(w: number, h: number, repaint: boolean): void })
-      .processResize;
-    renderer.on("frame", () => redraw.call(renderer, renderer.width, renderer.height, true));
-  }
+  // The public resize repaints every cell only when the size changes, and the private repaint flag has no public setter.
+  if (o.fullRepaint)
+    renderer.on("frame", () => {
+      if (toggling) return;
+      toggling = true;
+      try {
+        renderer.resize(renderer.width, renderer.height + 1);
+        renderer.resize(renderer.width, renderer.height - 1);
+      } finally {
+        toggling = false;
+      }
+    });
 
   let closing = false;
   const close = async (code = 0): Promise<never> => {

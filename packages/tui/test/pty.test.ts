@@ -148,16 +148,32 @@ describe("leaving the terminal as it was", () => {
     30_000,
   );
 
-  test("AGENCY_FULL_REPAINT still draws the screen and quits clean", async () => {
-    const full = await launch({ env: { AGENCY_FULL_REPAINT: "1" } });
-    try {
-      await full.until("home", (r) => has(r, "What should Agency work on?"), 45_000);
-      full.send("\x03");
-      full.send("\x03");
-      expect(await full.exited).toBe(0);
-      restored(full.out);
-    } finally {
-      await full.stop();
-    }
-  }, 60_000);
+  test("AGENCY_FULL_REPAINT sends the whole screen for one typed letter, and a plain run sends the changed cells", async () => {
+    const bytesForOneLetter = async (env: Record<string, string>): Promise<number> => {
+      const p = await launch({ env });
+      try {
+        await p.until("home", (r) => has(r, "What should Agency work on?"), 45_000);
+        await Bun.sleep(400);
+        const before = p.out.length;
+        p.send("x");
+        await p.until("the letter", (r) => r.some((l) => l.includes("x")), 10_000);
+        await Bun.sleep(400);
+        const sent = p.out.length - before;
+        // The first ctrl+c clears the letter, the second asks, the third quits.
+        for (let i = 0; i < 3; i++) {
+          p.send("\x03");
+          await Bun.sleep(100);
+        }
+        expect(await p.exited).toBe(0);
+        restored(p.out);
+        return sent;
+      } finally {
+        await p.stop();
+      }
+    };
+    const plain = await bytesForOneLetter({});
+    const full = await bytesForOneLetter({ AGENCY_FULL_REPAINT: "1" });
+    expect(full).toBeGreaterThan(120 * 36);
+    expect(full).toBeGreaterThan(plain * 3);
+  }, 120_000);
 });

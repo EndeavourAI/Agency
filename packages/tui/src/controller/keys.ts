@@ -18,8 +18,15 @@ import {
   settingValue,
 } from "../state/derive.ts";
 import type { Event } from "../state/events.ts";
-import { nextValue, SETTINGS } from "../state/settings.ts";
-import type { AppState, Block, QueueItem, Turn } from "../state/types.ts";
+import { nextValue, parseText, SETTINGS } from "../state/settings.ts";
+import {
+  type AppState,
+  type Block,
+  EFFORTS,
+  type Effort,
+  type QueueItem,
+  type Turn,
+} from "../state/types.ts";
 import type { Effect } from "./effects.ts";
 
 export interface Out {
@@ -43,7 +50,8 @@ const QUIT_TWICE_MS = 1500;
 export function activeContexts(state: AppState): Context[] {
   if (state.model.open) return ["overlay"];
   if (state.palette.open) return ["overlay", "global"];
-  if (state.view === "settings") return ["settings", "global"];
+  if (state.view === "settings")
+    return [state.settings.edit === null ? "settings" : "settingsEdit", "global"];
   if (state.conn === "offline") return ["offline", "global"];
   const s = current(state);
   if (state.view === "session") {
@@ -305,6 +313,8 @@ function run(state: AppState, command: Command, ctx: KeyContext): Out {
         return out([{ type: "palette_query", q: [...state.palette.query].slice(0, -1).join("") }]);
       if (state.model.open)
         return out([{ type: "model_query", q: [...state.model.q].slice(0, -1).join("") }]);
+      if (state.settings.edit !== null && state.view === "settings")
+        return out([{ type: "settings_edit", text: [...state.settings.edit].slice(0, -1).join("") }]);
       return out([{ type: "edit", edit: { op: "backspace" } }]);
     case "delete.forward":
       return out([{ type: "edit", edit: { op: "delete" } }]);
@@ -393,12 +403,40 @@ function run(state: AppState, command: Command, ctx: KeyContext): Out {
       const r = SETTINGS[sec]?.rows[row];
       if (!r) return none;
       if (r.kind === "model") return out([{ type: "model_open" }]);
-      if (r.kind === "text" || r.kind === "info") return none;
+      if (r.kind === "text") return out([{ type: "settings_edit", text: String(settingValue(state, r)) }]);
+      if (r.kind === "info") return none;
       const value = nextValue(r, settingValue(state, r));
       return out(
         [{ type: "settings_value", path: r.key, value }],
         [{ type: "config_write", key: r.key, value }],
       );
+    }
+    case "settings.editCommit": {
+      const r = SETTINGS[state.settings.sec]?.rows[state.settings.row ?? -1];
+      const text = state.settings.edit;
+      if (!r || text === null) return none;
+      const parsed = parseText(r.key, text);
+      if (parsed instanceof Error)
+        return out([
+          { type: "settings_edit", text: null },
+          { type: "flash", text: parsed.message, tone: "error" },
+        ]);
+      return out(
+        [
+          { type: "settings_edit", text: null },
+          { type: "settings_value", path: r.key, value: parsed },
+        ],
+        [{ type: "config_write", key: r.key, value: parsed }],
+      );
+    }
+    case "settings.editCancel":
+      return out([{ type: "settings_edit", text: null }]);
+    case "overlay.left":
+    case "overlay.right": {
+      if (!state.model.open) return none;
+      const i = EFFORTS.indexOf(state.effort);
+      const d = command === "overlay.right" ? 1 : EFFORTS.length - 1;
+      return out([{ type: "effort_set", effort: EFFORTS[(i + d) % EFFORTS.length] as Effort }]);
     }
     case "connection.retry":
       return out([], [{ type: "reconnect" }]);
@@ -431,6 +469,8 @@ export function dispatchKey(state: AppState, key: KeyEvent, ctx: KeyContext): Ou
     return state.palette.open && !PALETTE_GLOBALS.has(global) ? none : run(state, global, ctx);
   if (key.text === undefined) return none;
   // Typed text goes to whatever takes input now.
+  if (contexts[0] === "settingsEdit" && state.settings.edit !== null)
+    return out([{ type: "settings_edit", text: state.settings.edit + key.text }]);
   if (state.model.open) return out([{ type: "model_query", q: state.model.q + key.text }]);
   if (state.palette.open) return out([{ type: "palette_query", q: state.palette.query + key.text }]);
   if (contexts[0] === "composer" || contexts[0] === "completion")

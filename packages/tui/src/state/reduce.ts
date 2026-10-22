@@ -49,7 +49,7 @@ export function initialState(
     connectedProviders: [],
     defaultModel: null,
     review: { open: false, file: 0, git: null, diff: "", untracked: [], committed: null, commitMessage: "" },
-    settings: { sec: 0, row: null, config: {} },
+    settings: { sec: 0, row: null, edit: null, config: {} },
     copied: null,
     lastEsc: 0,
     lastInterrupt: 0,
@@ -591,7 +591,7 @@ function reduceUi(state: AppState, e: UiEvent): AppState {
           ...state,
           view: "settings",
           back: state.view === "settings" ? state.back : (state.view as "home" | "session"),
-          settings: { ...state.settings, sec: 0, row: null },
+          settings: { ...state.settings, sec: 0, row: null, edit: null },
           palette: { open: false, query: "", at: 0 },
         };
       return { ...state, view: e.view, palette: { open: false, query: "", at: 0 } };
@@ -735,6 +735,8 @@ function reduceUi(state: AppState, e: UiEvent): AppState {
         ...(e.path === "effort" && EFFORTS.includes(e.value as Effort) ? { effort: e.value as Effort } : {}),
         settings: { ...state.settings, config: setPath(state.settings.config, e.path, e.value) },
       };
+    case "settings_edit":
+      return { ...state, settings: { ...state.settings, edit: e.text } };
     case "flash":
       return { ...state, flash: { text: e.text, tone: e.tone } };
     case "flash_clear":

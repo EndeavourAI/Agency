@@ -117,6 +117,7 @@ export type UiEvent =
   | { type: "settings_in" }
   | { type: "settings_out" }
   | { type: "settings_value"; path: string; value: unknown }
+  | { type: "settings_edit"; text: string | null }
   | { type: "flash"; text: string; tone: "info" | "error" }
   | { type: "flash_clear" }
   | { type: "composer_sent" }

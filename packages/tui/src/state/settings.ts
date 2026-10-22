@@ -126,6 +126,17 @@ export function rowValue(row: SettingRow, config: Record<string, unknown>): stri
   return String(v);
 }
 
+const NUMBERS = new Set(["budgets.dailyUsd", "budgets.monthlyUsd", "compactionLimit"]);
+
+/** What a typed value writes: numbers for the caps and the compaction limit, null (removes the key) when empty. */
+export function parseText(key: string, text: string): string | number | null | Error {
+  const t = text.trim();
+  if (t === "") return null;
+  if (!NUMBERS.has(key)) return t;
+  const n = Number(t.replace(/[$,\s]/g, ""));
+  return Number.isFinite(n) && n >= 0 ? n : new Error(`${t} is not a number`);
+}
+
 /** The value one press of space or enter writes: toggles flip, choices step to the next option. */
 export function nextValue(row: SettingRow, v: string | boolean): unknown {
   if (row.kind === "toggle") return !v;

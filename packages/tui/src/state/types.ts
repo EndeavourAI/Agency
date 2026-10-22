@@ -176,6 +176,8 @@ export interface SettingsState {
   sec: number;
   /** Row inside the section, or null while the section list has focus. */
   row: number | null;
+  /** The text of a row that is being typed, or null. */
+  edit: string | null;
   /** Values from config_user, as nested JSON. */
   config: Record<string, unknown>;
 }

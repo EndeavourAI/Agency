@@ -9,6 +9,7 @@ export type Context =
   | "approval"
   | "review"
   | "settings"
+  | "settingsEdit"
   | "offline"
   | "global";
 
@@ -71,6 +72,10 @@ export type Command =
   | "settings.in"
   | "settings.out"
   | "settings.change"
+  | "settings.editCommit"
+  | "settings.editCancel"
+  | "overlay.left"
+  | "overlay.right"
   | "connection.retry";
 
 type Table = Readonly<Record<string, Command>>;
@@ -145,6 +150,8 @@ export const KEYMAP: Readonly<Record<Context, Table>> = {
     up: "overlay.prev",
     enter: "overlay.run",
     backspace: "delete.back",
+    left: "overlay.left",
+    right: "overlay.right",
   },
   approval: {
     y: "approve.once",
@@ -169,6 +176,7 @@ export const KEYMAP: Readonly<Record<Context, Table>> = {
     space: "settings.change",
     escape: "settings.out",
   },
+  settingsEdit: { enter: "settings.editCommit", escape: "settings.editCancel", backspace: "delete.back" },
   offline: { r: "connection.retry" },
 };
 

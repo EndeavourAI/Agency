@@ -32,7 +32,15 @@ function tmp(name: string): string {
   return dir;
 }
 
-async function setup(bashRule: "allow" | "deny", bashOutput?: (command: string) => string) {
+async function setup(
+  bashRule: "allow" | "deny",
+  bashOutput?: (command: string) => string,
+  extra: { holdFirstTurn?: boolean; onRun?: (signal: AbortSignal) => Promise<void> } = {},
+) {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   const configDir = tmp("cfg");
   writeFileSync(join(configDir, "config.jsonc"), JSON.stringify({ permissions: { bash: bashRule } }));
   const workspaceRoot = tmp("ws");
@@ -43,6 +51,7 @@ async function setup(bashRule: "allow" | "deny", bashOutput?: (command: string) 
     family: "fake",
     async *stream(request): AsyncIterable<StreamEvent> {
       requests.push(JSON.stringify(request.messages));
+      if (extra.holdFirstTurn && requests.length === 1) await held;
       yield { type: "text_delta", text: "ok" };
       yield { type: "message_stop", stopReason: "end_turn", usage: { inputTokens: 1, outputTokens: 1 } };
     },
@@ -53,8 +62,9 @@ async function setup(bashRule: "allow" | "deny", bashOutput?: (command: string) 
     description: "Runs a command.",
     inputSchema: { type: "object", properties: { command: { type: "string" } } },
     riskTier: "dangerous",
-    handler: async (input) => {
+    handler: async (input, ctx) => {
       ran.push(String(input.command));
+      await extra.onRun?.(ctx.signal);
       return { content: bashOutput?.(String(input.command)) ?? `output of ${String(input.command)}` };
     },
   };
@@ -71,7 +81,7 @@ async function setup(bashRule: "allow" | "deny", bashOutput?: (command: string) 
   daemons.push(daemon);
   const client = await connectToDaemon(daemon.server.port, "127.0.0.1", { token: daemon.server.token });
   clients.push(client);
-  return { client, requests, ran };
+  return { client, requests, ran, release };
 }
 
 test("shell_run runs the command and its output reaches the next request", async () => {
@@ -124,4 +134,81 @@ test("shell_run output cannot close its wrapper with a forged tag", async () => 
   expect(sent).toContain("<shell-output>");
   expect(sent.match(/<\/shell-output>/g)?.length).toBe(1);
   expect(sent.match(/<shell-command>/g)?.length).toBe(1);
+});
+
+const send = (client: DaemonClient, userText: string) =>
+  client.call("session_send", {
+    sessionId: "s1",
+    provider: "anthropic",
+    model: "m",
+    systemPrompt: "sys",
+    userText,
+  });
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("shell_run on an unknown session errors and creates no session", async () => {
+  const { client, ran } = await setup("allow");
+  await expect(client.call("shell_run", { sessionId: "nope", command: "echo hi" })).rejects.toThrow(
+    "unknown session",
+  );
+  expect(ran).toEqual([]);
+  await expect(client.call("session_get", { sessionId: "nope" })).rejects.toThrow();
+});
+
+test("shell_run output passes through the secret redactor", async () => {
+  const { client, requests } = await setup("allow", () => "key is test-key-shell");
+  await client.call("session_create", { sessionId: "s1" });
+  const result = (await client.call("shell_run", { sessionId: "s1", command: "env" })) as {
+    output: string;
+  };
+  expect(result.output).not.toContain("test-key-shell");
+  await send(client, "hello");
+  expect(requests[0]).not.toContain("test-key-shell");
+});
+
+test("shell_run waits for the running turn so its output lands on the live branch", async () => {
+  const { client, requests, ran, release } = await setup("allow", undefined, { holdFirstTurn: true });
+  await client.call("session_create", { sessionId: "s1" });
+  const first = send(client, "first");
+  while (requests.length === 0) await sleep(10);
+  let done = false;
+  const shell = client.call("shell_run", { sessionId: "s1", command: "echo hi" }).then(() => {
+    done = true;
+  });
+  await sleep(150);
+  expect(done).toBe(false);
+  expect(ran).toEqual([]);
+  release();
+  await first;
+  await shell;
+  expect(ran).toEqual(["echo hi"]);
+  await send(client, "second");
+  expect(requests[1]).toContain("output of echo hi");
+  expect(requests[1]).toContain("first");
+});
+
+test("cancel_turn aborts a running shell_run and drops its output", async () => {
+  let started = false;
+  let aborted = false;
+  const { client, requests } = await setup("allow", undefined, {
+    onRun: (signal) =>
+      new Promise<void>((resolve) => {
+        started = true;
+        if (signal.aborted) return resolve();
+        signal.addEventListener("abort", () => {
+          aborted = true;
+          resolve();
+        });
+      }),
+  });
+  await client.call("session_create", { sessionId: "s1" });
+  const shell = client
+    .call("shell_run", { sessionId: "s1", turnId: "sh1", command: "sleep 99" })
+    .catch((err) => err);
+  while (!started) await sleep(10);
+  expect(await client.call("cancel_turn", { turnId: "sh1" })).toEqual({ cancelled: true });
+  await shell;
+  expect(aborted).toBe(true);
+  await send(client, "hello");
+  expect(requests[0]).not.toContain("output of sleep 99");
 });

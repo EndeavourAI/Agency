@@ -146,6 +146,8 @@ export interface RequestTiming {
 export type LoopEvent =
   | { type: "text_delta"; text: string }
   | { type: "thinking_delta"; text: string }
+  /** The reasoning of one request ended: how long it ran. */
+  | { type: "thinking_end"; ms: number }
   | { type: "tool_start"; id: string; name: string; input?: Record<string, unknown> }
   | { type: "tool_result"; id: string; content: string; isError: boolean; images?: ImageBlock[] }
   | { type: "tool_progress"; id: string; name: string; message: string }
@@ -1655,6 +1657,12 @@ async function collectTurn(
   let stopReason: StopReason = "end_turn";
   const startedAt = performance.now();
   let firstTokenAt: number | undefined;
+  let thinkingAt: number | undefined;
+  const endThinking = (): void => {
+    if (thinkingAt === undefined) return;
+    onEvent?.({ type: "thinking_end", ms: Math.round(performance.now() - thinkingAt) });
+    thinkingAt = undefined;
+  };
 
   const idle = new AbortController();
   const stalled = () =>
@@ -1681,12 +1689,14 @@ async function collectTurn(
       idleTimer = watch();
       switch (event.type) {
         case "text_delta":
+          endThinking();
           firstTokenAt ??= performance.now();
           appendText(content, "text", event.text);
           onEvent?.({ type: "text_delta", text: event.text });
           break;
         case "thinking_delta":
           firstTokenAt ??= performance.now();
+          thinkingAt ??= performance.now();
           appendText(content, "thinking", event.text);
           onEvent?.({ type: "thinking_delta", text: event.text });
           break;
@@ -1709,6 +1719,7 @@ async function collectTurn(
           content.push({ type: "redacted_thinking", data: event.data });
           break;
         case "tool_call_start":
+          endThinking();
           firstTokenAt ??= performance.now();
           nameByToolId.set(event.id, event.name);
           jsonByToolId.set(event.id, "");
@@ -1758,6 +1769,7 @@ async function collectTurn(
           break;
         }
         case "message_stop":
+          endThinking();
           usage = event.usage;
           stopReason = event.stopReason;
           break;

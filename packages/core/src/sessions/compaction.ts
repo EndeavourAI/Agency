@@ -449,6 +449,10 @@ export function isContextOverflowError(error: unknown): boolean {
 export interface CompactionResult {
   compacted: boolean;
   tipId: string;
+  /** Turns folded into the summary, and the history size before and after (only when compacted). */
+  replaced?: number;
+  tokensBefore?: number;
+  tokensAfter?: number;
 }
 
 /**
@@ -742,6 +746,7 @@ export async function compact(
       ? undefined
       : await elideToTarget(chain, tokenizer, threshold);
   let parentId: string;
+  let replaced = 0;
   if (elided !== undefined) {
     // The entries before the first changed one stay as they are: the new branch starts there.
     const from = elided.chain[elided.first]?.parentId ?? null;
@@ -756,7 +761,11 @@ export async function compact(
       replacedEntryIds: [...folded.summarized],
     });
     parentId = (await rebase(summaryEntry.id, folded.carryForward)) ?? summaryEntry.id;
+    const turns = new Set<unknown>();
+    for (const e of chain) if (folded.summarized.has(e.id) && e.turnId !== undefined) turns.add(e.turnId);
+    replaced = turns.size;
   }
+  const tokensAfter = await countChainTokensAsync(store.chainFor(store.load(sessionId), parentId), tokenizer);
 
   try {
     const bus = store.getBus?.();
@@ -764,5 +773,5 @@ export async function compact(
     bus?.emit("event", { event: "session.compacted", payload: { sessionId, tipId: parentId, trigger } });
   } catch {}
 
-  return { compacted: true, tipId: parentId };
+  return { compacted: true, tipId: parentId, replaced, tokensBefore: tokenCount, tokensAfter };
 }

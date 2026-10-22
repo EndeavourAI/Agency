@@ -5,6 +5,7 @@ import {
   buildEnvironmentBlock,
   CALL_TOOL,
   CODE_TOOL,
+  type CompactionResult,
   compact,
   composeSystemPrompt,
   formatSystemReminders,
@@ -312,10 +313,7 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
       () => ctx.turnOwners.delete(turnId),
     );
   };
-  const sendTurn = async (
-    p: SessionSendParams,
-    context: { clientId: string },
-  ): Promise<SessionSendResult> => {
+  const sendTurn = async (p: SessionSendParams, context: { clientId: string }): Promise<SessionSendResult> => {
     const store = todoStore;
     if (!store.list().includes(p.sessionId)) {
       store.create(p.sessionId);
@@ -341,14 +339,33 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
       compactionUsage = addUsage(compactionUsage, usage);
     };
     const summarizeAll = sessionSummarizer(ctx, p.provider, p.model, undefined, payCompaction);
-    // The summary takes a model call: the client shows that the session compacts meanwhile.
-    const summarize: typeof summarizeAll = async (...args) => {
+    // The summary takes a model call: the client shows that the session compacts meanwhile. The end event
+    // follows compact(), which knows what was replaced.
+    let compacting = false;
+    const compactionStart = (): void => {
+      if (compacting) return;
+      compacting = true;
       broadcast(`turn.${turnId}`, { type: "compaction", phase: "start", sessionId: p.sessionId });
-      try {
-        return await summarizeAll(...args);
-      } finally {
-        broadcast(`turn.${turnId}`, { type: "compaction", phase: "end", sessionId: p.sessionId });
-      }
+    };
+    const compactionEnd = (outcome?: CompactionResult): void => {
+      if (!compacting && !outcome?.compacted) return;
+      compacting = false;
+      broadcast(`turn.${turnId}`, {
+        type: "compaction",
+        phase: "end",
+        sessionId: p.sessionId,
+        ...(outcome?.compacted
+          ? {
+              replaced: outcome.replaced,
+              tokensBefore: outcome.tokensBefore,
+              tokensAfter: outcome.tokensAfter,
+            }
+          : {}),
+      });
+    };
+    const summarize: typeof summarizeAll = async (...args) => {
+      compactionStart();
+      return summarizeAll(...args);
     };
     summarize.detailed = summarizeAll.detailed;
     // The summary of the chain up to `from`, at the end of the last request: only while that request is in the chain.
@@ -359,19 +376,15 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
         return undefined;
       const prefix = store.messagesFor(entries, known.tip).length;
       if (prefix !== known.sent.request.messages.length) return undefined;
-      broadcast(`turn.${turnId}`, { type: "compaction", phase: "start", sessionId: p.sessionId });
-      try {
-        return await summarizeAtEnd(
-          ctx.adapterFor(p.provider),
-          ctx.http,
-          known.sent,
-          store.messagesFor(entries, from).slice(prefix),
-          ctx.config.compactionInstructions,
-          payCompaction,
-        );
-      } finally {
-        broadcast(`turn.${turnId}`, { type: "compaction", phase: "end", sessionId: p.sessionId });
-      }
+      compactionStart();
+      return summarizeAtEnd(
+        ctx.adapterFor(p.provider),
+        ctx.http,
+        known.sent,
+        store.messagesFor(entries, from).slice(prefix),
+        ctx.config.compactionInstructions,
+        payCompaction,
+      );
     };
     if (p.goal !== undefined) await setSessionGoal(ctx, p.sessionId, p.goal);
     let tipId = store.latestTip(store.load(p.sessionId)) ?? null;
@@ -382,7 +395,12 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
     turnCheckpoints.set(p.sessionId, checkpoints);
     if (tipId) {
       summarize.whole = wholeAt(tipId);
-      const outcome = await compact(store, p.sessionId, tipId, tokenizer, threshold, summarize);
+      let outcome: CompactionResult | undefined;
+      try {
+        outcome = await compact(store, p.sessionId, tipId, tokenizer, threshold, summarize);
+      } finally {
+        compactionEnd(outcome);
+      }
       tipId = outcome.tipId;
       compacted = outcome.compacted;
     }
@@ -426,9 +444,12 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
       const from = tip ?? userEntry.id;
       const room = withOverhead(threshold, overheadTokens);
       summarize.whole = wholeAt(from);
-      const outcome = await compact(store, p.sessionId, from, tokenizer, room, summarize, 4, {
-        force: true,
-      });
+      let outcome: CompactionResult | undefined;
+      try {
+        outcome = await compact(store, p.sessionId, from, tokenizer, room, summarize, 4, { force: true });
+      } finally {
+        compactionEnd(outcome);
+      }
       history = store.messagesFor(store.load(p.sessionId), outcome.tipId);
       tip = outcome.tipId;
       compacted = true;

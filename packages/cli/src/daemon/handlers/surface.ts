@@ -13,6 +13,7 @@ import {
   restoreIntegrationCheckpoint,
   runHookCommand,
   storagePaths,
+  triggerTokens,
 } from "@agency/core";
 import type { MethodHandler } from "@agency/rpc";
 import type { Message } from "@agency/schema";
@@ -308,6 +309,15 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
       costUsd: usage.reduce((sum, u) => sum + u.costUsd, 0),
       contextTokens: last?.contextTokens ?? 0,
       contextLimit: known?.contextWindow ?? null,
+      // Where the session compacts, in tokens: the window's share or the configured limit, whichever is lower.
+      compactAt: known
+        ? Math.round(
+            triggerTokens({
+              contextWindow: known.contextWindow,
+              ...(ctx.config.compactionLimit ? { limitTokens: ctx.config.compactionLimit } : {}),
+            }),
+          )
+        : null,
       cacheHitRate: input > 0 ? Math.min(cached / input, 1) : null,
       branch: ctx.git(ctx.options.workspaceRoot, ["branch", "--show-current"])?.trim() || null,
     };

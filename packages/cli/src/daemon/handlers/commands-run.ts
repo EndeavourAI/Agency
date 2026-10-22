@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import {
   BUILTIN_COMMANDS,
   compact,
@@ -348,11 +349,14 @@ const BUILTINS: Record<string, BuiltinFn> = {
     );
     return { text: "permission maps plus offered tools", data };
   },
-  trust: async (ctx) => {
-    const data = {
-      trusted: ctx.trustStore.isTrusted(ctx.options.workspaceRoot),
-      path: ctx.options.workspaceRoot,
-    };
+  trust: async (ctx, _handlers, args) => {
+    const [verb, target] = args;
+    if (verb !== undefined && verb !== "allow" && verb !== "deny") fail(`usage: /trust [allow|deny] [path]`);
+    const path = target ? resolve(ctx.options.workspaceRoot, target) : ctx.options.workspaceRoot;
+    // The trust file is in the config fingerprint, so an idle daemon leaves and the next one loads the new trust.
+    if (verb === "allow") ctx.trustStore.trust(path);
+    else if (verb === "deny") ctx.trustStore.distrust(path);
+    const data = { trusted: ctx.trustStore.isTrusted(path), path };
     return { text: data.trusted ? `${data.path} is trusted` : `${data.path} is not trusted`, data };
   },
   debug: async (_ctx, handlers, args) => {

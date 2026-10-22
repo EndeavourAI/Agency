@@ -362,6 +362,17 @@ describe("command_run Tier 3 goldens", () => {
     expect(out.data).toMatchObject({ trusted: false, path: ws });
   });
 
+  test("/trust allow and deny change the trust of a path", async () => {
+    const { base, token, ws } = await boot();
+    const allowed = await run(base, token, "trust", "allow");
+    expect(allowed.data).toMatchObject({ trusted: true, path: ws });
+    const sub = join(ws, "sub");
+    expect((await run(base, token, "trust", `deny ${sub}`)).data).toMatchObject({ path: sub });
+    expect((await run(base, token, "trust", "deny")).data).toMatchObject({ trusted: false, path: ws });
+    const bad = await rpcCall(base, token, "command_run", { name: "trust", args: "maybe" });
+    expect(bad.body.error?.message).toContain("usage");
+  });
+
   test("/debug resolves the prompt", async () => {
     const { base, token } = await boot();
     const out = await run(base, token, "debug");

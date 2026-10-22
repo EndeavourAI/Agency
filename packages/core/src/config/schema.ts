@@ -134,7 +134,7 @@ export const ConfigSchema = z.object({
   /** `auto` keeps the schemas of the MCP tools out of a request when there are more than 10, until the model loads them. */
   mcpDeferTools: z.enum(["auto", "always", "never"]).optional(),
   /**
-   * The `code` tool: one script that calls the other tools. `true` (default on Linux and macOS) runs the script in an
+   * The `code` tool: one script that calls the other tools. Off by default; `true` runs the script in an
    * OS sandbox. `"host"` runs it with the authority of a shell command.
    */
   codeMode: z.union([z.boolean(), z.literal("host")]).optional(),

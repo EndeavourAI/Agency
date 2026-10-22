@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 function tmp(name: string): string {
-  const dir = mkdtempSync(join(tmpdir(), `agency-desktop-rpc-${name}-`));
+  const dir = mkdtempSync(join(tmpdir(), `agency-settings-rpc-${name}-`));
   dirs.push(dir);
   return dir;
 }

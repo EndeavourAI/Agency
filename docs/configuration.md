@@ -5,10 +5,9 @@ Agency loads one `Config` from stacked layers, lowest to highest:
 1. `defaultConfig` (in-code defaults)
 2. Global file: `<configDir>/config.jsonc` (JSONC, trailing commas allowed)
 3. Project file: `<projectRoot>/.agency/config.jsonc` (when a project root is given)
-4. Overlay file: the path in `AGENCY_CONFIG_OVERLAY` (the desktop app writes the chosen environment of a project there; a missing file is an error)
-5. Environment variables (see below)
-6. CLI flags layer (`--model` via `configFlags`; only known `Config` keys survive, unknown flags are dropped)
-7. Managed file (`managedPath` when supplied) — wins over everything, including flags
+4. Environment variables (see below)
+5. CLI flags layer (`--model` via `configFlags`; only known `Config` keys survive, unknown flags are dropped)
+6. Managed file (`managedPath` when supplied) — wins over everything, including flags
 
 Layers merge with `deepMergeLayer`: plain objects recurse (e.g. `provider.<id>` extends rather than replaces), arrays and scalars replace.
 

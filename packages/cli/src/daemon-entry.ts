@@ -69,7 +69,7 @@ export async function runDaemonEntry(argv: string[]): Promise<never> {
     });
   }
 
-  // The desktop app binds its daemons to its own life: once it is gone, also by a crash, the daemon leaves.
+  // A parent binds this daemon to its own life (the eval bench sets it): once it is gone, also by a crash, the daemon leaves.
   const parent = Number(process.env.AGENCY_PARENT_PID);
   if (parent > 0) {
     setInterval(() => {

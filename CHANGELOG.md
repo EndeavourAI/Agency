@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **The desktop app is gone**: it lives on as the git tag `archive/desktop`. Its CI step, release job and the
+  `AGENCY_CONFIG_OVERLAY` config layer are removed. Its RPC methods (`config_write`, `config_user`,
+  `daemon_restart`, provider keys, skills) stay as settings methods.
 - **Fixed: a Claude 5 session with no thinking level failed every request after old tool results were pruned**:
   these models think by default, and the earlier fix bound their thinking blocks only when a level was set. The
   request now names the default thinking with the binding. In 16 scripted long sessions, 4 of 8 with pruning hit

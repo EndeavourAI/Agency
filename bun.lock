@@ -4,9 +4,6 @@
   "workspaces": {
     "": {
       "name": "agency",
-      "dependencies": {
-        "fuzzysort": "^4.0.2",
-      },
       "devDependencies": {
         "@biomejs/biome": "^2.5.11",
         "@types/bun": "latest",
@@ -226,7 +223,6 @@
 
     "bun-types": ["bun-types@1.4.0", "", { "dependencies": { "@types/node": "*" } }, "sha512-iIKw23BspnQQYd3prITOBxeUsxBHnwzX6YJfGMuNOZzeNcMmVqzIIVGRm1l69ogaPQmb4wB6BN8mA5bE9YuC5Q=="],
 
-    "fuzzysort": ["fuzzysort@4.0.2", "", {}, "sha512-3c7yD6rK1EXIsqpcu1ZVzXJugODWNMzvUij6yTiziaAHrpNS8kzFOI9mJLE8pmG4K9JOaVgzQRgklfOEk8f4Tg=="],
 
     "gpt-tokenizer": ["gpt-tokenizer@4.0.0", "", {}, "sha512-YAWIyzvuVUHEfW7tFfFAxH8qQb+Q3RU9nYOTy7skMNX5qzU6Q8jxTHZLyO56ug1vYvCR7wndzpd3jwD86/mhjQ=="],
 

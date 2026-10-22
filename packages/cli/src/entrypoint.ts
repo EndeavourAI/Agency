@@ -1891,7 +1891,7 @@ async function daemonCancelCmd(parsed: ParsedArgv, deps: EntrypointDeps, out: Li
   }
 }
 
-/** `daemon start`: finds or starts the daemon of the workspace and exits. The desktop app reads the token from `instanceFile`. */
+/** `daemon start`: finds or starts the daemon of the workspace and exits. A client reads the token from `instanceFile`. */
 async function daemonStartCmd(
   parsed: ParsedArgv,
   deps: EntrypointDeps,

@@ -13,7 +13,7 @@ const daemons: AgentDaemon[] = [];
 const dirs: string[] = [];
 
 const prevKey = process.env.AGENCY_ANTHROPIC_API_KEY;
-process.env.AGENCY_ANTHROPIC_API_KEY = "test-key-desktop";
+process.env.AGENCY_ANTHROPIC_API_KEY = "test-key-settings";
 afterAll(() => {
   if (prevKey === undefined) delete process.env.AGENCY_ANTHROPIC_API_KEY;
   else process.env.AGENCY_ANTHROPIC_API_KEY = prevKey;
@@ -25,7 +25,7 @@ afterEach(async () => {
 });
 
 function tmp(name: string): string {
-  const dir = mkdtempSync(join(tmpdir(), `agency-desktop-${name}-`));
+  const dir = mkdtempSync(join(tmpdir(), `agency-settings-${name}-`));
   dirs.push(dir);
   return dir;
 }

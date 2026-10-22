@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   AgentRegistry,
   attachCommandHooks,
@@ -93,7 +93,6 @@ import { daemonBuild } from "../build-id.ts";
 import { createConfigFingerprint } from "./config-fingerprint.ts";
 import { registerCommandHandlers } from "./handlers/commands.ts";
 import { registerCommandRunHandler } from "./handlers/commands-run.ts";
-import { registerDesktopHandlers } from "./handlers/desktop.ts";
 import {
   installDetachHook,
   projectBoardFile,
@@ -109,6 +108,7 @@ import {
   gateForSession as sessionGateFor,
   sessionToolsFor,
 } from "./handlers/session.ts";
+import { registerSettingsHandlers } from "./handlers/settings.ts";
 import { registerSurfaceHandlers } from "./handlers/surface.ts";
 import { initTeamFromConfig, registerTeamHandlers } from "./handlers/team.ts";
 import { initTeamRunState, registerTeamRunHandlers } from "./handlers/team-run.ts";
@@ -164,12 +164,7 @@ export function createSandboxBackend(
       ...(sandboxConfig.allowedDomains ? { allowedDomains: sandboxConfig.allowedDomains } : {}),
       ...(windowsShell ? { windowsShell } : {}),
       // The keys, sessions and daemon tokens: a command that reads a token can drive the daemon.
-      // The overlay folder holds the environments of every project, with their variables.
-      hidden: [
-        dataDir(),
-        configDir(),
-        ...(process.env.AGENCY_CONFIG_OVERLAY ? [dirname(process.env.AGENCY_CONFIG_OVERLAY)] : []),
-      ],
+      hidden: [dataDir(), configDir()],
     });
   }
   return new SandboxBoundary(workspaceRoot, commandPolicy, externalDecision);
@@ -868,9 +863,9 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
     options.onIdleShutdown?.();
   };
 
-  const disposeDesktop = registerDesktopHandlers(handlers, ctx, { leave });
+  const disposeSettings = registerSettingsHandlers(handlers, ctx, { leave });
 
-  // An SSE subscriber of the HTTP gateway is a client too: a desktop window holds no TCP connection.
+  // An SSE subscriber of the HTTP gateway is a client too: a browser client holds no TCP connection.
   const clients = { tcp: 0, sse: 0 };
   // A client of another build asks: with no other client and no turn, this daemon leaves and that build starts its own.
   handlers.daemon_retire = async () => {
@@ -956,7 +951,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
       clearInterval(staleConfigTimer);
       await git.settled;
       stopBoardSync();
-      disposeDesktop();
+      disposeSettings();
       if (builtinsMode) {
         for (const scope of sessionScopes.values()) {
           try {

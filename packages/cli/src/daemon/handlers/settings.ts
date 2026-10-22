@@ -18,7 +18,7 @@ import { createHttpValidator, isValidProviderId } from "../../connect.ts";
 import type { DaemonContext } from "../types.ts";
 
 const SKILL_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
-/** A restart waits for the running turns; an idle daemon leaves within this time, and the app starts the next one. */
+/** A restart waits for the running turns; an idle daemon leaves within this time, and the next client starts the next one. */
 const RESTART_POLL_MS = 100;
 
 /** Labels of the skill folders of other agents, by the folder that holds the `skills` directory. */
@@ -35,7 +35,7 @@ const FOREIGN_ORIGINS: Array<[string, string]> = [
 ];
 
 function invalid(message: string): AgencyError {
-  return new AgencyError(ErrorCode.INVALID_REQUEST, message, { source: "desktop" });
+  return new AgencyError(ErrorCode.INVALID_REQUEST, message, { source: "settings" });
 }
 
 function requireString(value: unknown, what: string): string {
@@ -67,10 +67,10 @@ function yamlScalar(text: string): string {
 }
 
 /**
- * The methods that the desktop app needs: user config writes, a daemon restart, provider keys and skills.
+ * The settings methods: user config writes, a daemon restart, provider keys and skills.
  * Returns a disposer for the restart poll.
  */
-export function registerDesktopHandlers(
+export function registerSettingsHandlers(
   handlers: Record<string, MethodHandler>,
   ctx: DaemonContext,
   extra: { leave: () => void },
@@ -156,7 +156,7 @@ export function registerDesktopHandlers(
 
     const keychain = await ctx.getKeychain();
     if (keychain === undefined)
-      throw new AgencyError(ErrorCode.INTERNAL, "no key store available", { source: "desktop" });
+      throw new AgencyError(ErrorCode.INTERNAL, "no key store available", { source: "settings" });
     await keychain.set(providerId, apiKey);
     ctx.redactor.registerSecret(apiKey);
     return { providerId, storedIn: keychain.name, verified: true };
@@ -170,7 +170,7 @@ export function registerDesktopHandlers(
     if (!isValidProviderId(providerId)) throw invalid(`invalid provider id: ${providerId}`);
     const keychain = await ctx.getKeychain();
     if (keychain === undefined)
-      throw new AgencyError(ErrorCode.INTERNAL, "no key store available", { source: "desktop" });
+      throw new AgencyError(ErrorCode.INTERNAL, "no key store available", { source: "settings" });
 
     const stored = (await keychain.get(providerId)) !== undefined;
     const signedIn = (await keychain.get(oauthKey(providerId))) !== undefined;

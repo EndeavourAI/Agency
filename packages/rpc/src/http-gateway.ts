@@ -14,7 +14,7 @@ export interface SessionStoreLike {
 
 /**
  * The HTTP + SSE surface alongside the TCP loopback transport (A3, pulled
- * forward so the desktop app has a real client surface): the SAME handler
+ * forward so a UI has a real client surface): the SAME handler
  * table the TCP server dispatches, exposed as JSON-RPC-style HTTP endpoints,
  * with daemon events pushed as `text/event-stream` frames.
  *

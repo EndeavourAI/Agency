@@ -264,40 +264,13 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ globalDir, env: { AGENCY_GIT_WRITE: "sometimes" } })).toThrow();
   });
 
-  test("the overlay layer sits above the project layer and below env and managed", () => {
-    const globalDir = tempDir();
-    const projectRoot = tempDir();
-    cleanup.push(globalDir, projectRoot);
-    mkdirSync(join(projectRoot, ".agency"));
-    writeFileSync(
-      join(projectRoot, ".agency", "config.jsonc"),
-      `{ "schemaVersion": 1, "logLevel": "warn", "locale": "de", "theme": "light", "shellEnv": { "A": "project", "B": "project" } }`,
-    );
-    const overlay = join(globalDir, "overlay.jsonc");
-    const managedPath = join(globalDir, "managed.jsonc");
-    writeFileSync(
-      overlay,
-      `{ "schemaVersion": 1, "logLevel": "debug", "locale": "fr", "theme": "dark", "shellEnv": { "A": "overlay" }, "setupScript": "echo hi" }`,
-    );
-    writeFileSync(managedPath, `{ "schemaVersion": 1, "theme": "managed" }`);
-    const config = loadConfig({
-      globalDir,
-      projectRoot,
-      managedPath,
-      env: { AGENCY_CONFIG_OVERLAY: overlay, AGENCY_LOCALE: "es" },
-    });
-    expect(config.logLevel).toBe("debug");
-    expect(config.locale).toBe("es");
-    expect(config.theme).toBe("managed");
-    expect(config.shellEnv).toEqual({ A: "overlay", B: "project" });
-    expect(config.setupScript).toBe("echo hi");
-  });
-
-  test("a missing overlay file is an error that names the path", () => {
+  test("AGENCY_CONFIG_OVERLAY is not a config layer", () => {
     const globalDir = tempDir();
     cleanup.push(globalDir);
-    const overlay = join(globalDir, "nope.jsonc");
-    expect(() => loadConfig({ globalDir, env: { AGENCY_CONFIG_OVERLAY: overlay } })).toThrow(overlay);
+    const overlay = join(globalDir, "overlay.jsonc");
+    writeFileSync(overlay, `{ "schemaVersion": 1, "logLevel": "debug" }`);
+    const config = loadConfig({ globalDir, env: { AGENCY_CONFIG_OVERLAY: overlay } });
+    expect(config.logLevel).not.toBe("debug");
   });
 
   test("managed config overrides even CLI flags", () => {

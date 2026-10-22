@@ -163,14 +163,6 @@ export function loadConfig(sources: ConfigSources = {}): Config {
     if (projectLayer) merged = deepMergeLayer(merged, migrateLayer(projectLayer));
   }
 
-  // The desktop app writes this layer for the chosen environment: a missing file is a bug, not an absent layer.
-  const overlayPath = env.AGENCY_CONFIG_OVERLAY;
-  if (overlayPath) {
-    const overlayLayer = readLayer(overlayPath);
-    if (!overlayLayer) throw new Error(`config overlay not found: ${overlayPath}`);
-    merged = deepMergeLayer(merged, migrateLayer(overlayLayer));
-  }
-
   merged = deepMergeLayer(merged, envOverrides(env));
 
   if (sources.flags) {
@@ -186,9 +178,7 @@ export function loadConfig(sources: ConfigSources = {}): Config {
   if (!parsed.success) {
     const issues = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
     const projectPath = sources.projectRoot && join(sources.projectRoot, ".agency", "config.jsonc");
-    const files = [globalPath, projectPath, env.AGENCY_CONFIG_OVERLAY, sources.managedPath].filter(
-      (path) => path && existsSync(path),
-    );
+    const files = [globalPath, projectPath, sources.managedPath].filter((path) => path && existsSync(path));
     throw new Error(`config is not valid: ${issues.join("; ")} (files: ${files.join(", ") || "none"})`, {
       cause: parsed.error,
     });

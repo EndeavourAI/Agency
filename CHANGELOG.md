@@ -8,6 +8,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`git_status` and `git_diff`**: branch, ahead and behind, the last commit and changed files with line counts; the diff
+  against HEAD plus the text of untracked files. They take over from the archived desktop host.
 - **`session_list` for the resume picker**: each row has `lastPrompt`, `branch` (kept on the usage entry of a turn) and
   `costUsd`, and the method takes a text `query`.
 - **`client_config`**: one method returns the keys a TUI reads (`theme`, `outputStyle`, and the new `keybindings`,

@@ -25,8 +25,8 @@ import {
   resolvePrompt,
   type SystemPromptParts,
 } from "../types.ts";
+import { gitDiff, gitStatus } from "./git.ts";
 
-/** Keys config_set may change at runtime (in-memory until restart). */
 /** Paths that files_list returns at most: a TUI completes @ mentions from them. */
 const FILES_LIST_LIMIT = 50_000;
 
@@ -42,6 +42,7 @@ const CLIENT_CONFIG_KEYS = [
   "clientPlugins",
 ] as const;
 
+/** Keys config_set may change at runtime (in-memory until restart). */
 const RUNTIME_CONFIG_KEYS = [
   "logLevel",
   "locale",
@@ -255,6 +256,10 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
       );
     return { sessions };
   };
+
+  handlers.git_status = async () => gitStatus(ctx.options.workspaceRoot);
+
+  handlers.git_diff = async () => gitDiff(ctx.options.workspaceRoot);
 
   handlers.client_config = async () => {
     const client: Record<string, unknown> = {};

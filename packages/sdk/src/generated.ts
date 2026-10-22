@@ -36,6 +36,8 @@ export type RpcMethod =
   | "decisions_read"
   | "dispatch_compare"
   | "files_list"
+  | "git_diff"
+  | "git_status"
   | "history_list"
   | "inbox_send"
   | "lsp_status"
@@ -345,6 +347,10 @@ export interface SurfaceClient {
   dispatch_compare(params?: Record<string, unknown>): Promise<unknown>;
   /** Up to 50,000 workspace paths that git does not ignore, plus the resources of the session's MCP servers (mention: server:uri). */
   files_list(params?: Record<string, unknown>): Promise<unknown>;
+  /** The unified diff against HEAD, plus the text of untracked files (null for a binary or a large one). */
+  git_diff(params?: Record<string, unknown>): Promise<unknown>;
+  /** Branch, ahead and behind, the last commit and the changed files of the workspace with their line counts; repo is false outside a repository. */
+  git_status(params?: Record<string, unknown>): Promise<unknown>;
   /** The prompts submitted in this workspace, newest first; query keeps those that contain it, limit caps the rows. */
   history_list(params?: Record<string, unknown>): Promise<unknown>;
   /** Post a typed message to a teammate inbox. */
@@ -474,6 +480,8 @@ export function createSurfaceClient(
     decisions_read: (params) => call("decisions_read", params ?? {}),
     dispatch_compare: (params) => call("dispatch_compare", params ?? {}),
     files_list: (params) => call("files_list", params ?? {}),
+    git_diff: (params) => call("git_diff", params ?? {}),
+    git_status: (params) => call("git_status", params ?? {}),
     history_list: (params) => call("history_list", params ?? {}),
     inbox_send: (params) => call("inbox_send", params ?? {}),
     lsp_status: (params) => call("lsp_status", params ?? {}),

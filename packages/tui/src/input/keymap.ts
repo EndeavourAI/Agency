@@ -67,6 +67,8 @@ export type Command =
   | "review.commitPush"
   | "review.fileNext"
   | "review.filePrev"
+  | "review.scrollUp"
+  | "review.scrollDown"
   | "settings.down"
   | "settings.up"
   | "settings.in"
@@ -166,6 +168,8 @@ export const KEYMAP: Readonly<Record<Context, Table>> = {
     "ctrl+j": "review.commitPush",
     down: "review.fileNext",
     up: "review.filePrev",
+    pageup: "review.scrollUp",
+    pagedown: "review.scrollDown",
   },
   settings: {
     down: "settings.down",

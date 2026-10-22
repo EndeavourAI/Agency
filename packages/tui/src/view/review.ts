@@ -1,6 +1,6 @@
 /** The review screen (ctrl+r): the changed files of the workspace and the diff of one, with the commit box under them. */
-import { parseUnifiedDiff } from "../render-model/diff.ts";
 import { truncate } from "../render-model/width.ts";
+import { reviewFiles } from "../state/derive.ts";
 import type { AppState } from "../state/types.ts";
 import type { Palette } from "../term/themes.ts";
 import { boxRows } from "./ledger.ts";
@@ -8,46 +8,6 @@ import { clip, fill, type Row, type Seg, spread } from "./rows.ts";
 
 const LIST_W = 30;
 const baseName = (p: string): string => p.slice(p.lastIndexOf("/") + 1);
-
-interface FileView {
-  path: string;
-  add: number;
-  del: number;
-  lines: Array<{
-    k: "h" | "+" | "-" | " ";
-    text: string;
-    oldNo?: number | undefined;
-    newNo?: number | undefined;
-  }>;
-}
-
-/** Tracked files with their hunks, then untracked ones as all added. */
-export function reviewFiles(state: AppState): FileView[] {
-  const r = state.review;
-  const diffs = new Map(parseUnifiedDiff(r.diff).map((f) => [f.path, f]));
-  const tracked = (r.git?.files ?? [])
-    .filter((f) => !r.untracked.some((u) => u.path === f.path))
-    .map((f) => {
-      const d = diffs.get(f.path);
-      return {
-        path: f.path,
-        add: d?.add ?? f.added ?? 0,
-        del: d?.del ?? f.deleted ?? 0,
-        lines: d?.lines ?? [],
-      };
-    });
-  const fresh = r.untracked.map((u) => {
-    const lines = (u.text ?? "").split("\n");
-    if (lines.at(-1) === "") lines.pop();
-    return {
-      path: u.path,
-      add: lines.length,
-      del: 0,
-      lines: u.text === null ? [] : lines.map((text, i) => ({ k: "+" as const, text, newNo: i + 1 })),
-    };
-  });
-  return [...tracked, ...fresh];
-}
 
 const no = (n: number | undefined, w: number): string =>
   n === undefined ? " ".repeat(w) : String(n).padStart(w);
@@ -91,9 +51,23 @@ export function reviewBody(state: AppState, c: Palette, w: number, h: number): R
     : [[{ t: "No changes yet.", fg: c.muted }]];
   const f = files[at];
   const rightW = w - LIST_W - 2;
-  const right: Row[] = [[{ t: truncate(f?.path ?? "nothing to review", rightW), fg: c.soft }], []];
-  const numW = Math.max(2, ...(f?.lines ?? []).map((l) => String(l.newNo ?? l.oldNo ?? 0).length));
-  for (const l of f?.lines ?? []) {
+  const vis = Math.max(1, h - 4);
+  const lines = f?.lines ?? [];
+  const top = Math.min(state.review.scroll, Math.max(0, lines.length - vis));
+  const where =
+    lines.length > vis ? `${top + 1}–${Math.min(lines.length, top + vis)} of ${lines.length}` : "";
+  const right: Row[] = [
+    spread(
+      rightW,
+      [{ t: f?.path ?? "nothing to review", fg: c.soft }],
+      [{ t: where, fg: c.muted }],
+      undefined,
+      2,
+    ),
+    [],
+  ];
+  const numW = Math.max(2, ...lines.map((l) => String(l.newNo ?? l.oldNo ?? 0).length));
+  for (const l of lines.slice(top, top + vis)) {
     if (l.k === "h") {
       right.push([{ t: l.text, fg: c.you }]);
       continue;
@@ -108,7 +82,7 @@ export function reviewBody(state: AppState, c: Palette, w: number, h: number): R
     ];
     right.push(fill(seg, rightW, bg));
   }
-  if (f && f.lines.length === 0) right.push([{ t: "No text diff for this file.", fg: c.muted }]);
+  if (f && lines.length === 0) right.push([{ t: "No text diff for this file.", fg: c.muted }]);
   const rows: Row[] = [head, []];
   const body = Math.max(0, h - rows.length);
   for (let i = 0; i < body; i++)
@@ -116,7 +90,7 @@ export function reviewBody(state: AppState, c: Palette, w: number, h: number): R
   return rows;
 }
 
-/** The commit box: what would be committed, and the keys. The daemon has no commit method yet, so a press says so. */
+/** The commit box: the message that enter commits (the daemon's suggestion), the keys, and after a commit what happened. */
 export function commitBox(state: AppState, c: Palette, w: number): Row[] {
   const r = state.review;
   const files = reviewFiles(state);
@@ -131,7 +105,7 @@ export function commitBox(state: AppState, c: Palette, w: number): Row[] {
             { t: "✓ ", fg: c.add },
             { t: r.commitMessage, fg: c.text },
           ],
-          [{ t: r.committed === "pushed" ? "committed and pushed" : "committed", fg: c.add }],
+          [{ t: r.commitNote, fg: c.add }],
           undefined,
           2,
         ),
@@ -149,7 +123,7 @@ export function commitBox(state: AppState, c: Palette, w: number): Row[] {
       ],
       c.dim,
     );
-  const msg = `${files.length} file${files.length === 1 ? "" : "s"} changed`;
+  const msg = r.commitMessage || `${files.length} file${files.length === 1 ? "" : "s"} changed`;
   const buttons: Seg[] = [
     { t: " enter commit ", fg: c.bg, bg: c.brand },
     { t: "  " },

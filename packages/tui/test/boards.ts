@@ -29,6 +29,7 @@ export const ROWS: WireSessionRow[] = [
     lastPrompt: null,
     branch: "dev",
     costUsd: 1.75,
+    outcome: "done",
   },
   {
     id: "tui",
@@ -39,6 +40,7 @@ export const ROWS: WireSessionRow[] = [
     lastPrompt: null,
     branch: "dev",
     costUsd: 0.4,
+    outcome: "done",
   },
   {
     id: "gates",
@@ -49,6 +51,7 @@ export const ROWS: WireSessionRow[] = [
     lastPrompt: null,
     branch: "dev",
     costUsd: 0.9,
+    outcome: "done",
   },
   {
     id: "path",
@@ -59,6 +62,7 @@ export const ROWS: WireSessionRow[] = [
     lastPrompt: null,
     branch: "dev",
     costUsd: 0.3,
+    outcome: "failed",
   },
 ];
 
@@ -198,6 +202,7 @@ export function connected(o: BoardOptions = {}): Driver {
   d.daemon(
     { type: "conn", status: "online" },
     { type: "sessions_loaded", rows: ROWS },
+    { type: "week_cost_loaded", costUsd: 3.35 },
     { type: "live_turns", sessionIds: [] },
     { type: "slash_loaded", slash: SLASH },
     { type: "files_loaded", files: FILES },

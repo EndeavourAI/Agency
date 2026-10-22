@@ -20,9 +20,9 @@ export type Effect =
   | { type: "shell_run"; sessionId: string; id: string; command: string }
   | { type: "config_write"; key: string; value: unknown }
   | { type: "open_session"; sessionId: string }
-  | { type: "load_review" }
+  | { type: "load_review"; sessionId: string | null }
   | { type: "load_settings" }
-  | { type: "commit"; push: boolean }
+  | { type: "commit"; sessionId: string; message: string; push: boolean }
   | { type: "copy"; text: string }
   | { type: "paste_image" }
   | { type: "reconnect" }

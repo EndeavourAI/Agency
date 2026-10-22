@@ -13,6 +13,7 @@ import type {
   WireSessionRow,
   WireStatus,
   WireTodo,
+  WireTurnEnd,
 } from "../state/wire.ts";
 
 export interface TuiClientDeps {
@@ -99,6 +100,11 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
     // Newest first, as the palette lists them.
     const rows = [...r.sessions].sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
     dispatch([{ type: "sessions_loaded", rows }]);
+    const since = new Date(now() - 7 * 86_400_000).toISOString();
+    const spent = await call<{ since?: { costUsd: number } }>("cost_report", { since }).catch(
+      () => undefined,
+    );
+    if (spent?.since) dispatch([{ type: "week_cost_loaded", costUsd: spent.since.costUsd }]);
   }
 
   interface LiveTurn {
@@ -261,6 +267,7 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
         stopReason?: string;
         cancelled?: boolean;
         error?: { code: string; message: string };
+        end?: WireTurnEnd;
       };
       dispatch([
         {
@@ -272,6 +279,7 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
             ...(result.stopReason ? { stopReason: result.stopReason } : {}),
             ...(result.cancelled ? { cancelled: true } : {}),
             ...(result.error ? { error: result.error } : {}),
+            ...(result.end ? { end: result.end } : {}),
           },
         },
       ]);
@@ -360,7 +368,7 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
               return;
             case "shell_run": {
               try {
-                const r = await call<{ output: string; isError: boolean }>("shell_run", {
+                const r = await call<{ output: string; isError: boolean; exitCode?: number }>("shell_run", {
                   sessionId: e.sessionId,
                   command: e.command,
                   turnId: e.id,
@@ -372,6 +380,7 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
                     id: e.id,
                     output: r.output,
                     isError: r.isError,
+                    ...(r.exitCode !== undefined ? { exitCode: r.exitCode } : {}),
                   },
                 ]);
               } catch (err) {
@@ -394,7 +403,7 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
               return await openSession(e.sessionId);
             case "load_review": {
               const [git, diff] = await Promise.all([
-                call<WireGitStatus>("git_status"),
+                call<WireGitStatus>("git_status", e.sessionId ? { sessionId: e.sessionId } : {}),
                 call<WireGitDiff>("git_diff"),
               ]);
               dispatch([{ type: "git_loaded", git, diff }]);
@@ -402,10 +411,28 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
             }
             case "load_settings":
               return await loadConfig();
-            case "commit":
-              // The daemon has no commit method yet (gap in the stage 1 report); say so instead of pretending.
-              flash("commit is not available yet: the daemon has no git_commit method");
+            case "commit": {
+              const r = await call<{ branch: string; upstream?: string }>("git_commit", {
+                sessionId: e.sessionId,
+                message: e.message,
+                ...(e.push ? { push: true } : {}),
+              });
+              dispatch([
+                {
+                  type: "committed",
+                  pushed: e.push,
+                  branch: r.branch,
+                  ...(r.upstream ? { upstream: r.upstream } : {}),
+                },
+              ]);
+              // What is left to review, and the git pane of the details.
+              const [git, diff] = await Promise.all([
+                call<WireGitStatus>("git_status", { sessionId: e.sessionId }),
+                call<WireGitDiff>("git_diff"),
+              ]);
+              dispatch([{ type: "git_loaded", git, diff }]);
               return;
+            }
             case "copy":
               await deps.host.copy(e.text);
               return;

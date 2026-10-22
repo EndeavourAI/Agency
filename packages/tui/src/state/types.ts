@@ -1,7 +1,15 @@
 import type { Completion, SlashEntry } from "../input/completion.ts";
 import type { Composer } from "../input/composer.ts";
 import type { MdState } from "../render-model/markdown.ts";
-import type { WireGitStatus, WireSessionRow, WireStatus, WireTodo, WireUsage } from "./wire.ts";
+import type {
+  WireGitStatus,
+  WireSessionRow,
+  WireStatus,
+  WireTodo,
+  WireToolMeta,
+  WireTurnEnd,
+  WireUsage,
+} from "./wire.ts";
 
 export type UiMode = "build" | "plan" | "auto";
 export const MODES: readonly UiMode[] = ["build", "plan", "auto"];
@@ -31,6 +39,8 @@ export interface Step {
   open: boolean;
   /** How the person answered the ask that this step waited on. */
   answer?: "once" | "always";
+  /** What the tool measured: exit code, +N −M, line count. Absent in a session loaded from its file. */
+  meta?: WireToolMeta;
 }
 
 export interface Approval {
@@ -86,6 +96,8 @@ export interface Turn {
   stoppedBy?: string;
   /** Pending next-prompt suggestion (prompt_suggestion). */
   suggestion?: string;
+  /** The turn's own end record from the daemon: the commit it made and the checks it ran. */
+  end?: WireTurnEnd;
 }
 
 export interface EventBlock {
@@ -100,6 +112,8 @@ export interface ShellBlock {
   cmd: string;
   out: string[];
   status: "running" | "done" | "error";
+  /** Absent for a command loaded from the session file. */
+  exitCode?: number;
 }
 
 export type Block = Turn | EventBlock | ShellBlock;
@@ -170,6 +184,10 @@ export interface ReviewState {
   /** What the last commit did: shown in place of the commit box. */
   committed: "local" | "pushed" | null;
   commitMessage: string;
+  /** `committed on dev` or `committed and pushed to origin/dev`, once a commit landed. */
+  commitNote: string;
+  /** Rows the diff of the picked file is scrolled down. */
+  scroll: number;
 }
 
 export interface SettingsState {
@@ -200,6 +218,8 @@ export interface AppState {
   details: boolean;
   workspace: string;
   sessions: WireSessionRow[];
+  /** Spend of the last 7 days over every session (cost_report since); null until loaded. */
+  weekCostUsd: number | null;
   /** Sessions with a turn that runs now (turns_list). */
   liveSessions: string[];
   sessionId: string | null;

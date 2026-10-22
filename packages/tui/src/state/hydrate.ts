@@ -1,6 +1,6 @@
 import { emptyMd, finishMd, pushMd } from "../render-model/markdown.ts";
 import type { Block, Step, Turn } from "./types.ts";
-import type { WireContent, WireEntry } from "./wire.ts";
+import type { WireContent, WireEntry, WireTurnEnd } from "./wire.ts";
 
 export interface Hydrated {
   blocks: Block[];
@@ -19,9 +19,13 @@ function textOf(content: readonly WireContent[]): string {
     .join("\n");
 }
 
-/** Rebuilds the transcript from the entries of a session file (`session_show`.entries). */
-export function hydrate(entries: readonly WireEntry[]): Hydrated {
+/**
+ * Rebuilds the transcript from the entries of a session file (`session_show`.entries). A turn with no end entry
+ * in a session that has them was cut off, unless a turn runs there now (`live`).
+ */
+export function hydrate(entries: readonly WireEntry[], live = false): Hydrated {
   const blocks: Block[] = [];
+  const ended = new Set<string>();
   let cur: Turn | null = null;
   let model: string | null = null;
   let title: string | null = null;
@@ -60,7 +64,31 @@ export function hydrate(entries: readonly WireEntry[]): Hydrated {
 
   for (const e of entries) {
     const at = ms(e.createdAt);
-    if (e.type === "session_title" && typeof e.title === "string") title = e.title;
+    if (e.type === "turn_end" && typeof e.forTurn === "string") {
+      const end = e as unknown as WireTurnEnd & {
+        forTurn: string;
+        error?: { code: string; message: string };
+      };
+      const t = blocks.find((b): b is Turn => b.kind === "turn" && b.id === end.forTurn);
+      if (t) {
+        const status: Turn["status"] =
+          end.outcome === "failed"
+            ? "error"
+            : end.outcome === "denied"
+              ? "denied"
+              : end.outcome === "stopped"
+                ? "stopped"
+                : "done";
+        replace({
+          ...t,
+          status,
+          end: { outcome: end.outcome, checks: end.checks, ...(end.head ? { head: end.head } : {}) },
+          ...(end.error ? { error: end.error } : {}),
+          ...(end.outcome === "denied" && end.deniedBy ? { stoppedBy: `you denied ${end.deniedBy}` } : {}),
+        });
+        ended.add(end.forTurn);
+      }
+    } else if (e.type === "session_title" && typeof e.title === "string") title = e.title;
     else if (e.type === "model_change" && typeof e.model === "string") model = e.model;
     else if (e.type === "compaction_summary") {
       blocks.push({ kind: "event", id: e.id, text: "compacted · earlier turns summarized" });
@@ -155,12 +183,17 @@ export function hydrate(entries: readonly WireEntry[]): Hydrated {
       }
     }
   }
+  const lastId = blocks.findLast((b) => b.kind === "turn")?.id;
+  const cutOff = !live && ended.size > 0;
   return {
     blocks: blocks.map((b) =>
       b.kind === "turn"
         ? {
             ...b,
             answer: finishMd(b.answer),
+            ...(cutOff && b.id === lastId && !ended.has(b.id) && b.status === "done"
+              ? { status: "stopped" as const, stoppedBy: "the daemon stopped before it ended" }
+              : {}),
           }
         : b,
     ),

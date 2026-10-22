@@ -35,12 +35,12 @@ exports[`home logo, wordmark, the box, the hints, the recent list and the footer
                                     ✓  Retry infra faults                                               now    $1.75    done
                                     ✓  TUI concepts                                                      4m    $0.40    done
                                     ✓  Tune stop gates                                                   1d    $0.90    done
-                                    ✓  Sample: failed turn                                               3d    $0.30    done
+                                    ✗  Sample: failed turn                                               3d    $0.30 stopped
 
 
 
 
-                                                                                                                       daemon ready · 4 sessions · $3.35 total
+                                                                                                                   daemon ready · 4 sessions · $3.35 this week
 "
 `;
 
@@ -62,13 +62,13 @@ exports[`home 24 rows drop the logo; nothing else moves out of reach 1`] = `
   ✓  Retry infra faults                                   now    $1.75    done
   ✓  TUI concepts                                          4m    $0.40    done
   ✓  Tune stop gates                                       1d    $0.90    done
-  ✓  Sample: failed turn                                   3d    $0.30    done
+  ✗  Sample: failed turn                                   3d    $0.30 stopped
 
 
 
 
 
-                                       daemon ready · 4 sessions · $3.35 total
+                                   daemon ready · 4 sessions · $3.35 this week
 "
 `;
 
@@ -151,7 +151,7 @@ exports[`empty and offline home offline: no prompt, the way back, the footer in 
                                     ✓  Retry infra faults                                               now    $1.75    done
                                     ✓  TUI concepts                                                      4m    $0.40    done
                                     ✓  Tune stop gates                                                   1d    $0.90    done
-                                    ✓  Sample: failed turn                                               3d    $0.30    done
+                                    ✗  Sample: failed turn                                               3d    $0.30 stopped
 
 
 
@@ -290,7 +290,7 @@ exports[`palette, approval and themes palette: sessions first, then commands wit
   ▌› Make the 54 task runs faster with  ●  Retry infra faults                                         Agency  $1.75  now  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                                         ✓  TUI concepts                                                Agency  $0.40  4m
      read   packages/eval/harbor/run.s  ✓  Tune stop gates                                             Agency  $0.90  1d  changes                ctrl+r review
-     run    harbor run --help | grep -  ✓  Sample: failed turn                                         Agency  $0.30  3d  run.sh                         +2 −1
+     run    harbor run --help | grep -  ✗  Sample: failed turn                                         Agency  $0.30  3d  run.sh                         +2 −1
      edit   packages/eval/harbor/run.s                                                                                    report.py                      +1 −1
      run    dry run with no matching t  commands
                                         /model        Choose a model and effort                                           run
@@ -575,12 +575,12 @@ exports[`pickers no keys: the picker opens with the way to add one, no table 1`]
                                     ✓  Retry infra faults                                               now    $1.75    done
                                     ✓  TUI concepts                                                      4m    $0.40    done
                                     ✓  Tune stop gates                                                   1d    $0.90    done
-                                    ✓  Sample: failed turn                                               3d    $0.30    done
+                                    ✗  Sample: failed turn                                               3d    $0.30 stopped
 
 
 
 
-                                                                                                                       daemon ready · 4 sessions · $3.35 total
+                                                                                                                   daemon ready · 4 sessions · $3.35 this week
 "
 `;
 

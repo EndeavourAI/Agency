@@ -3,7 +3,7 @@
  * (`Tone`); the view maps them to the theme.
  */
 import { completionItems } from "../input/completion.ts";
-import { diffStats, stepDiff } from "../render-model/diff.ts";
+import { diffStats, parseUnifiedDiff, stepDiff } from "../render-model/diff.ts";
 import { stepOutput } from "../render-model/output.ts";
 import { truncate } from "../render-model/width.ts";
 import { formatCost } from "./format.ts";
@@ -97,11 +97,21 @@ export interface StepView {
 
 export function stepView(step: Step, paused: boolean): StepView {
   const diff = stepDiff(step.tool, step.input);
-  const stats = diff ? diffStats(diff) : null;
+  // The daemon's own count wins; the input-derived one covers a session loaded from its file.
+  const m = step.meta;
+  const stats =
+    m?.added !== undefined ? { add: m.added, del: m.removed ?? 0 } : diff ? diffStats(diff) : null;
   const fail = step.status === "error" || step.status === "denied";
   const live = step.status === "running" && !paused;
   const answer = step.answer === "once" ? "allowed once" : step.answer === "always" ? "always allowed" : "";
-  const meta = step.status === "denied" ? "denied" : step.status === "error" ? "failed" : answer;
+  const failed = m?.exitCode !== undefined && m.exitCode !== 0 ? `exit ${m.exitCode}` : "failed";
+  const lines = m?.lines !== undefined ? `${m.lines} line${m.lines === 1 ? "" : "s"}` : "";
+  const meta =
+    step.status === "denied"
+      ? "denied"
+      : step.status === "error"
+        ? failed
+        : [lines, answer].filter(Boolean).join(" · ");
   return {
     id: step.id,
     glyph: (fail ? "✗ " : "") + toolGlyph(step.tool),
@@ -145,6 +155,10 @@ export function turnStamp(t: Turn, offline: boolean): Stamp {
   if (t.status === "stopped")
     return { glyph: "✗", label: "interrupted", note: ` · ${t.stoppedBy ?? "you pressed esc"}`, tone: "del" };
   if (t.status === "error") return { glyph: "✗", label: "stopped", note: "", tone: "del" };
+  // Verified only on evidence the daemon recorded: a commit landed in the turn and its last check passed after the last edit.
+  const commit = t.end?.head && t.end.head.before !== t.end.head.after ? t.end.head.after : undefined;
+  if (commit && t.end?.checks === "passed")
+    return { glyph: "✓", label: "verified", note: ` · ${commit}`, tone: "add" };
   return { glyph: "✓", label: "done", note: ` · ${t.steps.length} steps`, tone: "add" };
 }
 
@@ -275,11 +289,8 @@ export function footer(state: AppState): { text: string; tone: Tone } {
     return { text: "✗ daemon unreachable · run agency daemon start", tone: "del" };
   const n = state.sessions.length;
   if (!n) return { text: "daemon ready", tone: "muted" };
-  const spent = state.sessions.reduce((sum, r) => sum + r.costUsd, 0);
-  return {
-    text: `daemon ready · ${n} session${n === 1 ? "" : "s"} · ${formatCost(spent)} total`,
-    tone: "muted",
-  };
+  const week = state.weekCostUsd === null ? "" : ` · ${formatCost(state.weekCostUsd)} this week`;
+  return { text: `daemon ready · ${n} session${n === 1 ? "" : "s"}${week}`, tone: "muted" };
 }
 
 export interface QueuedRow {
@@ -319,7 +330,7 @@ export function paletteItems(state: AppState): PaletteItem[] {
       hint: formatCost(r.costUsd),
       key: "",
       ref: r.id,
-      result: state.liveSessions.includes(r.id) ? "running" : "done",
+      ...(r.outcome ? { result: state.liveSessions.includes(r.id) ? "running" : r.outcome } : {}),
     }));
   const commands = COMMANDS.filter(
     (c) => !q || `${c.name} ${c.hint}`.toLowerCase().includes(q),
@@ -383,3 +394,46 @@ export function othersLabel(state: AppState): string {
 
 /** Home hides the logo below 30 rows. */
 export const showLogo = (state: AppState): boolean => state.rows >= LOGO_MIN_ROWS;
+
+export interface FileView {
+  path: string;
+  add: number;
+  del: number;
+  lines: Array<{
+    k: "h" | "+" | "-" | " ";
+    text: string;
+    oldNo?: number | undefined;
+    newNo?: number | undefined;
+  }>;
+}
+
+/** Tracked files with their hunks, then untracked ones as all added. */
+export function reviewFiles(state: AppState): FileView[] {
+  const r = state.review;
+  const diffs = new Map(parseUnifiedDiff(r.diff).map((f) => [f.path, f]));
+  const tracked = (r.git?.files ?? [])
+    .filter((f) => !r.untracked.some((u) => u.path === f.path))
+    .map((f) => {
+      const d = diffs.get(f.path);
+      return {
+        path: f.path,
+        add: d?.add ?? f.added ?? 0,
+        del: d?.del ?? f.deleted ?? 0,
+        lines: d?.lines ?? [],
+      };
+    });
+  const fresh = r.untracked.map((u) => {
+    const lines = (u.text ?? "").split("\n");
+    if (lines.at(-1) === "") lines.pop();
+    return {
+      path: u.path,
+      add: lines.length,
+      del: 0,
+      lines: u.text === null ? [] : lines.map((text, i) => ({ k: "+" as const, text, newNo: i + 1 })),
+    };
+  });
+  return [...tracked, ...fresh];
+}
+
+/** Diff rows that fit beside the file list: the screen less the bars, the commit box, the hint row and the headers. */
+export const reviewVisible = (state: AppState): number => Math.max(1, state.rows - 11);

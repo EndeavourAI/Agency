@@ -51,8 +51,8 @@ describe("home", () => {
     expect(hint).toContain("ctrl+p commands");
     const rec = find(m, "recent");
     expect(m.grid[rec.y + 1]).toMatch(/✓\s+Retry infra faults\s+now\s+\$1\.75\s+done/);
-    expect(m.grid[rec.y + 4]).toMatch(/✓\s+Sample: failed turn\s+3d\s+\$0\.30\s+done/);
-    expect(m.grid.at(-2)).toContain("daemon ready · 4 sessions · $3.35 total");
+    expect(m.grid[rec.y + 4]).toMatch(/✗\s+Sample: failed turn\s+3d\s+\$0\.30\s+stopped/);
+    expect(m.grid.at(-2)).toContain("daemon ready · 4 sessions · $3.35 this week");
     // The logo is brass; the wordmark is the text colour; the bars sit on the panel colour.
     const logo = find(m, "██");
     expect(m.cell(logo.x, logo.y).fg).toBe(A.brand);

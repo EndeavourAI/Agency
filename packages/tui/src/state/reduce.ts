@@ -33,6 +33,7 @@ export function initialState(
     details: (init.cols ?? 80) >= 120,
     workspace: init.workspace ?? "",
     sessions: [],
+    weekCostUsd: null,
     liveSessions: [],
     sessionId: null,
     bySession: {},
@@ -48,7 +49,17 @@ export function initialState(
     models: [],
     connectedProviders: [],
     defaultModel: null,
-    review: { open: false, file: 0, git: null, diff: "", untracked: [], committed: null, commitMessage: "" },
+    review: {
+      open: false,
+      file: 0,
+      git: null,
+      diff: "",
+      untracked: [],
+      committed: null,
+      commitMessage: "",
+      commitNote: "",
+      scroll: 0,
+    },
     settings: { sec: 0, row: null, edit: null, config: {} },
     copied: null,
     lastEsc: 0,
@@ -181,7 +192,9 @@ function reduceWire(t: Turn, s: SessionState, e: WireEvent): { t: Turn; s: Sessi
       return {
         t: {
           ...t,
-          steps: t.steps.map((st) => (st.id === e.id ? { ...st, status, content: e.content } : st)),
+          steps: t.steps.map((st) =>
+            st.id === e.id ? { ...st, status, content: e.content, ...(e.meta ? { meta: e.meta } : {}) } : st,
+          ),
         },
         s,
       };
@@ -263,7 +276,7 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
     case "session_loading":
       return withSession(state, e.sessionId, (s) => ({ ...s, loading: true }));
     case "session_loaded": {
-      const h = hydrate(e.entries);
+      const h = hydrate(e.entries, state.liveSessions.includes(e.sessionId));
       return withSession(state, e.sessionId, (s) => {
         // A turn that streams here now is newer than the file: keep it, and drop the file's copy of it.
         const live = s.blocks.filter((b): b is Turn => b.kind === "turn" && b.status === "running");
@@ -277,6 +290,8 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
         };
       });
     }
+    case "week_cost_loaded":
+      return { ...state, weekCostUsd: e.costUsd };
     case "status_loaded":
       return withSession(state, e.sessionId, (s) => ({
         ...s,
@@ -304,6 +319,8 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
         review: {
           ...state.review,
           git: e.git,
+          // The suggestion fills the commit box until a commit; after one, the box keeps what was committed.
+          commitMessage: state.review.committed ? state.review.commitMessage : (e.git.suggestedMessage ?? ""),
           diff: e.diff?.diff ?? state.review.diff,
           untracked: e.diff?.untracked ?? state.review.untracked,
         },
@@ -357,6 +374,7 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
               stopReason: ended.stopReason,
               ...(ended.cancelled ? { cancelled: true } : {}),
               ...(ended.error ? { error: ended.error } : {}),
+              ...(ended.end ? { end: ended.end } : {}),
             },
           })
         : next;
@@ -364,7 +382,8 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
     }
     case "turn_finished":
       return withSession(state, e.sessionId, (s) => {
-        const done = withTurn(s, e.turnId, (t) => {
+        const done = withTurn(s, e.turnId, (t0) => {
+          const t = e.outcome.end && !t0.end ? { ...t0, end: e.outcome.end } : t0;
           // The daemon says it twice, on the turn stream and as the answer of session_send: the first one counts.
           if (t.status === "done" || t.status === "error") return t;
           if (t.status === "denied" || t.status === "stopped") return settle(t, t.status, e.at);
@@ -429,7 +448,12 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
         ...s,
         blocks: s.blocks.map((b) =>
           b.kind === "shell" && b.id === e.id
-            ? { ...b, status: e.isError ? "error" : "done", out: e.output.replace(/\n+$/, "").split("\n") }
+            ? {
+                ...b,
+                status: e.isError ? "error" : "done",
+                out: e.output.replace(/\n+$/, "").split("\n"),
+                ...(e.exitCode !== undefined ? { exitCode: e.exitCode } : {}),
+              }
             : b,
         ),
       }));
@@ -472,7 +496,16 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
         blocks: [...s.blocks, { kind: "event", id: e.id, text: e.text }],
       }));
     case "committed":
-      return { ...state, review: { ...state.review, committed: e.pushed ? "pushed" : "local" } };
+      return {
+        ...state,
+        review: {
+          ...state.review,
+          committed: e.pushed ? "pushed" : "local",
+          commitNote: e.pushed
+            ? `committed and pushed to ${e.upstream ?? e.branch}`
+            : `committed on ${e.branch}`,
+        },
+      };
     case "suggestion_used":
       return withSession(state, e.sessionId, (s) => ({
         ...s,
@@ -638,12 +671,14 @@ function reduceUi(state: AppState, e: UiEvent): AppState {
         ...state,
         view: "session",
         palette: { open: false, query: "", at: 0 },
-        review: { ...state.review, open: true },
+        review: { ...state.review, open: true, committed: null },
       };
     case "review_close":
       return { ...state, review: { ...state.review, open: false } };
     case "review_file":
-      return { ...state, review: { ...state.review, file: e.i } };
+      return { ...state, review: { ...state.review, file: e.i, scroll: 0 } };
+    case "review_scroll":
+      return { ...state, review: { ...state.review, scroll: e.to } };
     case "pick_enter": {
       if (!sid) return state;
       const s = session(state, sid);
@@ -753,6 +788,7 @@ function reduceUi(state: AppState, e: UiEvent): AppState {
 const DAEMON_TYPES = new Set<string>([
   "conn",
   "sessions_loaded",
+  "week_cost_loaded",
   "live_turns",
   "session_live",
   "session_loading",

@@ -8,6 +8,7 @@ import type {
   WireSessionRow,
   WireStatus,
   WireTodo,
+  WireTurnEnd,
 } from "./wire.ts";
 
 export type ComposerOp =
@@ -33,6 +34,7 @@ export type ComposerOp =
 export type DaemonEvent =
   | { type: "conn"; status: Connection }
   | { type: "sessions_loaded"; rows: WireSessionRow[] }
+  | { type: "week_cost_loaded"; costUsd: number }
   | { type: "live_turns"; sessionIds: string[] }
   | { type: "session_live"; sessionId: string; live: boolean }
   | { type: "session_loading"; sessionId: string }
@@ -59,7 +61,12 @@ export type DaemonEvent =
       sessionId: string;
       turnId: string;
       at: number;
-      outcome: { stopReason?: string; cancelled?: boolean; error?: { code: string; message: string } };
+      outcome: {
+        stopReason?: string;
+        cancelled?: boolean;
+        error?: { code: string; message: string };
+        end?: WireTurnEnd;
+      };
     }
   | { type: "turn_stopped"; sessionId: string; turnId: string; at: number }
   | {
@@ -72,11 +79,18 @@ export type DaemonEvent =
   | { type: "prompt_queued"; sessionId: string; item: QueueItem }
   | { type: "queue_shifted"; sessionId: string; id: string }
   | { type: "shell_started"; sessionId: string; id: string; cmd: string }
-  | { type: "shell_finished"; sessionId: string; id: string; output: string; isError: boolean }
+  | {
+      type: "shell_finished";
+      sessionId: string;
+      id: string;
+      output: string;
+      isError: boolean;
+      exitCode?: number;
+    }
   | { type: "session_opened"; sessionId: string; title?: string }
   | { type: "model_applied"; sessionId: string | null; ref: string }
   | { type: "notice"; sessionId: string; id: string; text: string }
-  | { type: "committed"; pushed: boolean }
+  | { type: "committed"; pushed: boolean; branch: string; upstream?: string }
   | { type: "suggestion_used"; sessionId: string };
 
 /** What the person does at the keyboard. */
@@ -99,6 +113,7 @@ export type UiEvent =
   | { type: "review_open" }
   | { type: "review_close" }
   | { type: "review_file"; i: number }
+  | { type: "review_scroll"; to: number }
   | { type: "pick_enter" }
   | { type: "pick_move"; d: number }
   | { type: "pick_exit" }

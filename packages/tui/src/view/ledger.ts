@@ -101,7 +101,10 @@ export function shellRows(b: ShellBlock, x: LedgerCtx): Row[] {
   rows.push(blank);
   rows.push(
     ind([
-      { t: b.status === "error" ? "failed" : "done", fg: b.status === "error" ? x.c.del : x.c.muted },
+      {
+        t: b.exitCode !== undefined ? `exit ${b.exitCode}` : b.status === "error" ? "failed" : "done",
+        fg: b.status === "error" ? x.c.del : x.c.muted,
+      },
       { t: " · sent to the agent as data", fg: x.c.muted },
     ]),
   );

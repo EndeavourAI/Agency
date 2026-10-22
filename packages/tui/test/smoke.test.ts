@@ -71,6 +71,7 @@ function session(opts: { cols?: number; rows?: number } = {}): Driver {
           lastPrompt: "x",
           branch: "dev",
           costUsd: 1.75,
+          outcome: "done",
         },
         {
           id: "tui",
@@ -81,6 +82,7 @@ function session(opts: { cols?: number; rows?: number } = {}): Driver {
           lastPrompt: "y",
           branch: "dev",
           costUsd: 0.4,
+          outcome: "done",
         },
       ],
     },
@@ -180,12 +182,21 @@ describe("palette and global keys", () => {
     d.send(KEY.ctrl("r"));
     d.daemon({
       type: "git_loaded",
-      git: { repo: true, files: [{ path: "a.ts", status: "M", added: 2, deleted: 1 }] },
+      git: {
+        repo: true,
+        suggestedMessage: "fix the retry flags",
+        files: [{ path: "a.ts", status: "M", added: 2, deleted: 1 }],
+      },
     });
     d.send(KEY.ctrlEnterKitty);
-    expect(d.last("commit")).toEqual({ type: "commit", push: true });
+    expect(d.last("commit")).toEqual({
+      type: "commit",
+      sessionId: SID,
+      message: "fix the retry flags",
+      push: true,
+    });
     d.send(KEY.enter);
-    expect(d.last("commit")).toEqual({ type: "commit", push: false });
+    expect(d.last("commit")).toMatchObject({ push: false });
     d.send(KEY.ctrlJ);
     expect(d.effects.filter((e) => e.type === "commit" && e.push)).toHaveLength(2);
   });
@@ -197,7 +208,7 @@ describe("palette and global keys", () => {
     expect(d.last("commit")).toBeUndefined();
     d.daemon(
       { type: "git_loaded", git: { repo: true, files: [{ path: "a", status: "M", added: 1, deleted: 0 }] } },
-      { type: "committed", pushed: false },
+      { type: "committed", pushed: false, branch: "dev" },
     );
     d.send(KEY.enter);
     expect(d.last("commit")).toBeUndefined();
@@ -340,7 +351,10 @@ describe("home, offline and empty states", () => {
   });
 
   test("the footer counts sessions and their cost", () => {
-    expect(footer(session().state).text).toBe("daemon ready · 2 sessions · $2.15 total");
+    expect(footer(session().state).text).toBe("daemon ready · 2 sessions");
+    const d = session();
+    d.daemon({ type: "week_cost_loaded", costUsd: 2.15 });
+    expect(footer(d.state).text).toBe("daemon ready · 2 sessions · $2.15 this week");
     expect(othersLabel(session().state)).toBe("1 more");
   });
 

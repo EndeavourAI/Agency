@@ -14,6 +14,8 @@ import {
   isHalted,
   isWorking,
   paletteItems,
+  reviewFiles,
+  reviewVisible,
   runningTurn,
   settingValue,
 } from "../state/derive.ts";
@@ -133,10 +135,10 @@ export function drainQueue(state: AppState, ctx: KeyContext): Out {
   return first ? sendQueued(state, ctx, first) : none;
 }
 
-function clientAct(act: NonNullable<SlashEntry["act"]>): Out {
+function clientAct(state: AppState, act: NonNullable<SlashEntry["act"]>): Out {
   switch (act) {
     case "review":
-      return out([{ type: "review_open" }], [{ type: "load_review" }]);
+      return out([{ type: "review_open" }], [{ type: "load_review", sessionId: state.sessionId }]);
     case "focus":
     case "details":
       return out([{ type: "details_toggle" }]);
@@ -174,7 +176,7 @@ function submit(state: AppState, ctx: KeyContext): Out {
   if (!c.shell) {
     const act = [...CLIENT_SLASH, ...state.slash].find((x) => `/${x.name}` === text && x.act);
     if (act?.act) {
-      const a = clientAct(act.act);
+      const a = clientAct(state, act.act);
       return out([{ type: "composer_sent" }, ...a.events], a.effects);
     }
     if (text.startsWith("/") && state.sessionId) {
@@ -229,7 +231,7 @@ function overlayRun(state: AppState): Out {
       ],
       [{ type: "open_session", sessionId: item.ref }],
     );
-  const a = clientAct(item.ref as NonNullable<SlashEntry["act"]>);
+  const a = clientAct(state, item.ref as NonNullable<SlashEntry["act"]>);
   return out([{ type: "palette_close" }, ...a.events], a.effects);
 }
 
@@ -243,7 +245,7 @@ function run(state: AppState, command: Command, ctx: KeyContext): Out {
     case "review.toggle":
       return state.review.open && state.view === "session"
         ? out([{ type: "review_close" }])
-        : out([{ type: "review_open" }], [{ type: "load_review" }]);
+        : out([{ type: "review_open" }], [{ type: "load_review", sessionId: state.sessionId }]);
     case "details.toggle":
       return out([{ type: "details_toggle" }]);
     case "session.new":
@@ -379,8 +381,22 @@ function run(state: AppState, command: Command, ctx: KeyContext): Out {
     case "review.commit":
     case "review.commitPush": {
       const files = state.review.git?.files?.length ?? 0;
-      if (files === 0 || state.review.committed) return none;
-      return out([], [{ type: "commit", push: command === "review.commitPush" }]);
+      if (files === 0 || state.review.committed || !state.sessionId) return none;
+      const message = state.review.commitMessage.trim() || `update ${files} file${files === 1 ? "" : "s"}`;
+      return out(
+        [],
+        [{ type: "commit", sessionId: state.sessionId, message, push: command === "review.commitPush" }],
+      );
+    }
+    case "review.scrollUp":
+    case "review.scrollDown": {
+      const files = reviewFiles(state);
+      const f = files[Math.min(state.review.file, Math.max(0, files.length - 1))];
+      const vis = reviewVisible(state);
+      const max = Math.max(0, (f?.lines.length ?? 0) - vis);
+      const step = Math.max(1, vis - 1);
+      const d = command === "review.scrollDown" ? step : -step;
+      return out([{ type: "review_scroll", to: Math.max(0, Math.min(max, state.review.scroll + d)) }]);
     }
     case "review.fileNext":
     case "review.filePrev": {

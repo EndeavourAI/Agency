@@ -20,15 +20,45 @@ export interface WireApprovalRequest {
   source?: string;
 }
 
+/** What a tool measured for its step line (`tool_result`.meta); durationMs comes from the daemon's clock. */
+export interface WireToolMeta {
+  exitCode?: number;
+  added?: number;
+  removed?: number;
+  lines?: number;
+  durationMs?: number;
+}
+
+/** How a turn ended (the daemon's `turn_end` entry): the commit it made and the checks it ran. */
+export interface WireTurnEnd {
+  outcome: "done" | "stopped" | "denied" | "failed";
+  deniedBy?: string;
+  head?: { before: string; after: string };
+  checks: "passed" | "failed" | "stale" | "none";
+}
+
 export type WireEvent =
   | { type: "text_delta"; text: string }
   | { type: "thinking_delta"; text: string }
   | { type: "thinking_end"; ms: number }
-  | { type: "turn_end"; stopReason: string; cancelled: boolean; error?: { code: string; message: string } }
+  | {
+      type: "turn_end";
+      stopReason: string;
+      cancelled: boolean;
+      error?: { code: string; message: string };
+      end?: WireTurnEnd;
+    }
   | { type: "approval_resolved"; requestId: string; decision: "once" | "always" | "reject" }
   | { type: "tool_start"; id: string; name: string; input?: Record<string, unknown> }
   | { type: "tool_progress"; id: string; name: string; message: string }
-  | { type: "tool_result"; id: string; content: string; isError: boolean; images?: unknown[] }
+  | {
+      type: "tool_result";
+      id: string;
+      content: string;
+      isError: boolean;
+      images?: unknown[];
+      meta?: WireToolMeta;
+    }
   | {
       type: "turn_complete";
       stopReason: string;
@@ -82,6 +112,8 @@ export interface WireSessionRow {
   lastPrompt: string | null;
   branch: string | null;
   costUsd: number;
+  /** The last turn: running now, or how it ended; null when the session has no record of it. */
+  outcome?: "running" | "done" | "stopped" | "failed" | null;
 }
 
 /** `status_get`.status */
@@ -127,6 +159,8 @@ export interface WireGitStatus {
   behind?: number;
   lastCommit?: { hash: string; subject: string; when: string };
   files?: Array<{ path: string; status: string; added: number | null; deleted: number | null }>;
+  /** A commit message to start from: the session's title or last prompt, else the changed files. */
+  suggestedMessage?: string;
 }
 
 /** `git_diff`: the diff against HEAD plus the text of untracked files (null when binary or large). */

@@ -39,19 +39,31 @@ const lastTurn = (state: AppState, id: string): Turn | undefined =>
 
 export interface SessionMark {
   mark: string;
-  result: "running" | "stopped" | "done";
+  /** Empty when nobody recorded how the last turn ended. */
+  result: "running" | "stopped" | "done" | "";
 }
 
-/** The mark of a session in lists: running, stopped by an error, or done. The open session shows `●` while it runs. */
+/** The mark of a session in lists: running, stopped (an error, esc or a refusal), or done. The open session shows `●` while it runs. */
 export function sessionMark(state: AppState, id: string, tick: number): SessionMark {
   if (state.liveSessions.includes(id))
     return {
       mark: id === state.sessionId && state.view === "session" ? "●" : (SPIN[tick % SPIN.length] as string),
       result: "running",
     };
-  return lastTurn(state, id)?.status === "error"
-    ? { mark: "✗", result: "stopped" }
-    : { mark: "✓", result: "done" };
+  const turn = lastTurn(state, id);
+  const outcome = turn
+    ? turn.status === "done"
+      ? "done"
+      : turn.status === "waiting"
+        ? null
+        : "stopped"
+    : (() => {
+        const o = state.sessions.find((r) => r.id === id)?.outcome;
+        return o === "failed" ? "stopped" : (o ?? null);
+      })();
+  if (outcome === "done") return { mark: "✓", result: "done" };
+  if (outcome === "stopped") return { mark: "✗", result: "stopped" };
+  return { mark: "·", result: "" };
 }
 
 const pad = (text: string, w: number, right = false): string => {

@@ -3,7 +3,8 @@
  * Everything a person does here goes in as bytes and is read back from the screen.
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { ESC, launch, type Pty } from "./pty.ts";
+import { join } from "node:path";
+import { ESC, launch, type Pty, runScript } from "./pty.ts";
 
 const has = (rows: string[], text: string): boolean => rows.some((r) => r.includes(text));
 let pty: Pty;
@@ -91,5 +92,53 @@ describe("the TUI in a terminal", () => {
     expect(last(1049)).toBe("l");
     expect(last(25)).toBe("h");
     expect(last(2004)).toBe("l");
+  }, 60_000);
+});
+
+describe("leaving the terminal as it was", () => {
+  const crash = join(import.meta.dir, "crash-entry.ts");
+  const restored = (out: string) => {
+    const last = (n: number) =>
+      out.lastIndexOf(`${ESC}[?${n}h`) > out.lastIndexOf(`${ESC}[?${n}l`) ? "h" : "l";
+    expect(last(1049)).toBe("l");
+    expect(last(25)).toBe("h");
+    expect(last(2004)).toBe("l");
+  };
+
+  test("an exception that nobody catches restores the screen, says what failed and exits 1", async () => {
+    const { out, code } = await runScript(crash, { CRASH_HOW: "throw" });
+    expect(code).toBe(1);
+    expect(out.lastIndexOf(`${ESC}[?1049h`)).toBeGreaterThan(-1);
+    expect(out).toContain("agency crashed: Error: boom in a timer");
+    restored(out);
+  }, 30_000);
+
+  test("a rejected promise nobody awaits does the same", async () => {
+    const { out, code } = await runScript(crash, { CRASH_HOW: "reject" });
+    expect(code).toBe(1);
+    expect(out).toContain("boom in a promise");
+    restored(out);
+  }, 30_000);
+
+  test.skipIf(process.platform === "win32")(
+    "SIGTERM restores the screen and exits",
+    async () => {
+      const { out } = await runScript(crash, { CRASH_HOW: "signal" });
+      restored(out);
+    },
+    30_000,
+  );
+
+  test("AGENCY_FULL_REPAINT still draws the screen and quits clean", async () => {
+    const full = await launch({ env: { AGENCY_FULL_REPAINT: "1" } });
+    try {
+      await full.until("home", (r) => has(r, "What should Agency work on?"), 45_000);
+      full.send("\x03");
+      full.send("\x03");
+      expect(await full.exited).toBe(0);
+      restored(full.out);
+    } finally {
+      await full.stop();
+    }
   }, 60_000);
 });

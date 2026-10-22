@@ -97,3 +97,23 @@ export async function launch(
   };
   return self;
 }
+
+/** Runs a script under a pseudo-terminal and gives back its raw output and exit code. */
+export async function runScript(
+  path: string,
+  env: Record<string, string>,
+): Promise<{ out: string; code: number }> {
+  let out = "";
+  const proc = Bun.spawn([process.execPath, path], {
+    env: { ...process.env, ...env },
+    terminal: {
+      cols: 80,
+      rows: 24,
+      data(_t: unknown, d: Uint8Array) {
+        out += Buffer.from(d).toString("utf8");
+      },
+    },
+  });
+  const code = await proc.exited;
+  return { out, code };
+}

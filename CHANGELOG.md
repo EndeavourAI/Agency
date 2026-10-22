@@ -6,6 +6,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-22
+
 ### Release
 
 - **Releasing**: bump `version` in the root `package.json` and merge to `master`. The release workflow builds, publishes the
@@ -1855,5 +1857,6 @@ Initial development release. Foundation through ecosystem, built in phases:
   (local-only in v1), per-session cost/token accounting with cache-hit-rate
   reporting, first-run onboarding, `agency debug` bundle.
 
-[Unreleased]: https://github.com/AgencyAgents/Agency/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/AgencyAgents/Agency/releases/tag/v0.1.0
+[Unreleased]: https://github.com/EndeavourAI/Agency/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/EndeavourAI/Agency/releases/tag/v0.2.0
+[0.1.0]: https://github.com/EndeavourAI/Agency/releases/tag/v0.1.0

@@ -727,13 +727,9 @@ export async function compact(
   const rebase = async (from: string | null, moved: SessionEntry[]): Promise<string | null> => {
     let parent = from;
     for (const entry of moved) {
-      const {
-        id: _id,
-        parentId: _parentId,
-        createdAt: _createdAt,
-        schemaVersion: _schemaVersion,
-        ...rest
-      } = entry;
+      // The originals stay in the file: a second copy of a usage entry would count its cost twice.
+      if (entry.type === "usage" || entry.type === "turn_end") continue;
+      const { id: _id, parentId: _parentId, schemaVersion: _schemaVersion, ...rest } = entry;
       parent = (await store.append(sessionId, { ...rest, parentId: parent })).id;
     }
     return parent;

@@ -221,8 +221,11 @@ function lastPrompt(entries: readonly Record<string, unknown>[]): string | undef
 function lastOutcome(entries: readonly Record<string, unknown>[]): "done" | "stopped" | "failed" | null {
   const end = entries.findLastIndex((e) => e.type === "turn_end");
   const prompt = entries.findLastIndex((e) => e.type === "message" && typeof e.turnId === "string");
-  if (end > prompt) {
-    const outcome = (entries[end] as { outcome?: string }).outcome;
+  // A compaction moves the prompt behind its turn's end entry, so match them by turn and not by position.
+  const turn = entries[prompt]?.turnId;
+  const closing = entries.findLast((e) => e.type === "turn_end" && e.forTurn === turn) ?? entries[end];
+  if (closing !== undefined && (end > prompt || closing.forTurn === turn)) {
+    const outcome = (closing as { outcome?: string }).outcome;
     return outcome === "done" ? "done" : outcome === "failed" ? "failed" : "stopped";
   }
   return end < 0 && entries.at(-1)?.type === "usage" ? "done" : null;

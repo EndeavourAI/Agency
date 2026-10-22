@@ -32,6 +32,8 @@ export interface ConnectToDaemonOptions {
   /** Auto-reconnect (with capped backoff, resubscribing) after an
    *  established connection drops. Default true. */
   reconnect?: boolean;
+  /** Called with false when an established connection drops and with true when a reconnect completes. */
+  onConnection?: (online: boolean) => void;
 }
 
 export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
@@ -161,6 +163,7 @@ export async function connectToDaemon(
     writer = undefined;
     decoder = undefined;
     if (closedByClient) return;
+    options.onConnection?.(false);
     scheduleReconnect();
   }
 
@@ -178,6 +181,7 @@ export async function connectToDaemon(
             for (const event of subscriptions) sendFrame({ type: "subscribe", event });
           }
           flushOutbox();
+          options.onConnection?.(true);
         })
         .catch(() => scheduleReconnect());
     }, delay);

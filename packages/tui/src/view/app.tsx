@@ -1,3 +1,4 @@
+import type { RGBA } from "@opentui/core";
 import { type Accessor, createMemo, Index, Match, Show, Switch } from "solid-js";
 import { activeContexts } from "../controller/keys.ts";
 import {
@@ -92,16 +93,30 @@ function Overlay(props: AppProps & { kind: "palette" | "model" }) {
       : modelRows(s(), props.palette(), s().cols, room);
   });
   const w = () => segsWidth(rows()[0] ?? []);
+  const scrim = () => props.palette().scrim;
   return (
-    <box
-      position="absolute"
-      top={3}
-      left={Math.max(0, Math.floor((s().cols - w()) / 2))}
-      zIndex={10}
-      width={w()}
-    >
-      <Rows rows={rows()} w={w()} bg={props.palette().panel} />
-    </box>
+    <>
+      <Show when={scrim()}>
+        <box
+          position="absolute"
+          top={0}
+          left={0}
+          width={s().cols}
+          height={s().rows - 1}
+          zIndex={9}
+          backgroundColor={scrim() as RGBA}
+        />
+      </Show>
+      <box
+        position="absolute"
+        top={3}
+        left={Math.max(0, Math.floor((s().cols - w()) / 2))}
+        zIndex={10}
+        width={w()}
+      >
+        <Rows rows={rows()} w={w()} bg={props.palette().panel} />
+      </box>
+    </>
   );
 }
 

@@ -64,7 +64,14 @@ export const HEX = {
 } as const satisfies Record<ThemeName, Record<string, string>>;
 
 export type ColorName = keyof (typeof HEX)["agency"];
-export type Palette = Record<ColorName, Color>;
+/** `scrim` dims what a dialog covers (class.js `scrim`); a terminal without truecolor gets none, as a blend would leave the palette. */
+export type Palette = Record<ColorName, Color> & { scrim: RGBA | null };
+
+const SCRIM = {
+  agency: [16, 17, 19, 0.78],
+  night: [22, 22, 30, 0.78],
+  light: [250, 248, 243, 0.8],
+} as const satisfies Record<ThemeName, readonly [number, number, number, number]>;
 
 const LEVELS: readonly number[] = [0, 95, 135, 175, 215, 255];
 
@@ -85,9 +92,11 @@ export function nearest256(hex: string): number {
 /** Truecolor hex, or the nearest of the 256 colours when the terminal does not say it does RGB. */
 export function palette(theme: ThemeName, truecolor: boolean): Palette {
   const src = HEX[theme] ?? HEX.agency;
-  const out = {} as Palette;
+  const out = { scrim: null } as Palette;
   for (const k of Object.keys(src) as ColorName[])
     out[k] = truecolor ? src[k] : RGBA.fromIndex(nearest256(src[k]));
+  const [r, g, b, a] = SCRIM[theme] ?? SCRIM.agency;
+  if (truecolor) out.scrim = RGBA.fromInts(r, g, b, Math.round(a * 255));
   return out;
 }
 

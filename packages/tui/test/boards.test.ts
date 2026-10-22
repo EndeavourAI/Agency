@@ -186,10 +186,11 @@ describe("main: the ledger of a session", () => {
     const idle = await board(d);
     const top = find(idle, "┌");
     expect(idle.cell(top.x, top.y).fg).toBe(A.text);
-    d.send(ctrl.p);
-    const covered = await board(d);
-    const quiet = find(covered, "┌", 30);
-    expect(covered.cell(quiet.x, quiet.y).fg).toBe(A.dim);
+    // Something else owns the keys: the review screen. Its commit box is quiet.
+    d.send("\x12");
+    const review = await board(d);
+    const quiet = find(review, "┌", 30);
+    expect(review.cell(quiet.x, quiet.y).fg).toBe(A.dim);
     d.send("\x1b");
     d.send("\t");
     d.send("\t");
@@ -265,6 +266,9 @@ describe("palette, approval and themes", () => {
     expect(sel.bg).toBe(A.element);
     const cmd = find(m, "/model");
     expect(m.cell(cmd.x, cmd.y).bg).toBe(A.panel);
+    // What the dialog covers is dimmed by the scrim, text and fill alike; the dialog itself is not.
+    const under = find(m, "▌› Make the 54");
+    expect(m.cell(under.x, under.y).fg).not.toBe(A.you);
   });
 
   test("palette: the query filters both lists", async () => {

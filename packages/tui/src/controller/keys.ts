@@ -502,5 +502,7 @@ export function dispatchPaste(state: AppState, text: string): Out {
     return out([{ type: "palette_query", q: state.palette.query + clean.replace(/\n/g, " ") }]);
   const contexts = activeContexts(state);
   if (contexts[0] !== "composer" && contexts[0] !== "completion") return none;
+  // A terminal with an image on the clipboard pastes nothing: that is the person asking for the image.
+  if (text === "") return out([], [{ type: "paste_image" }]);
   return out([{ type: "edit", edit: { op: "insert", text: clean } }]);
 }

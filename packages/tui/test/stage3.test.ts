@@ -1,5 +1,6 @@
 /** Data the daemon sends since stage 3: step facts, turn ends, session outcomes, commits and the review scroll. */
 import { describe, expect, test } from "bun:test";
+import { dispatchPaste } from "../src/controller/index.ts";
 import { hydrate } from "../src/state/hydrate.ts";
 import {
   footer,
@@ -285,5 +286,25 @@ describe("review on screen", () => {
       ),
     ).toBe(true);
     await m.dispose();
+  });
+});
+
+describe("image paste", () => {
+  const chip = { name: "", size: 2048, mimeType: "image/png", data: "iVBO" };
+
+  test("a paste with no text asks for the clipboard image; a paste of text does not", () => {
+    const d = opened();
+    expect(dispatchPaste(d.state, "").effects).toEqual([{ type: "paste_image" }]);
+    expect(dispatchPaste(d.state, "hi").effects).toEqual([]);
+    d.send(KEY.ctrl("p"));
+    expect(dispatchPaste(d.state, "").effects).toEqual([]);
+  });
+
+  test("the chip goes to the daemon with the prompt as an image attachment", () => {
+    const d = opened();
+    d.daemon({ type: "image_added", chip });
+    d.type("what is this?");
+    d.send(KEY.enter);
+    expect(d.last("send_turn")?.images).toEqual([chip]);
   });
 });

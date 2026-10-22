@@ -10,6 +10,7 @@ import type { Runtime } from "./runtime/index.ts";
 import { createRuntime } from "./runtime/index.ts";
 import { fullRepaint, reducedMotion } from "./term/caps.ts";
 import { copyText } from "./term/clipboard.ts";
+import { readClipboardImage } from "./term/clipboard-image.ts";
 import "./term/register.ts";
 import { openTerminal } from "./term/terminal.ts";
 
@@ -43,8 +44,7 @@ runtime = createRuntime({
   workspace,
   host: {
     copy: (text) => copyText(text, renderer),
-    // Image paste needs the clipboard image: stage 3.
-    readClipboardImage: async () => null,
+    readClipboardImage: () => readClipboardImage(),
     quit: () => void term.close(0),
   },
 });

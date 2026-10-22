@@ -1,0 +1,99 @@
+/** Runs the dev entry under a real pseudo-terminal (ConPTY on Windows) and reads its screen with a terminal emulator. */
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { defaultInstanceDir } from "@agency/cli";
+import { Terminal } from "@xterm/headless";
+
+const MAIN = join(import.meta.dir, "..", "src", "main.ts");
+const DAEMON = join(import.meta.dir, "scripted-daemon.ts");
+export const ESC = "\x1b";
+
+export interface Pty {
+  /** Raw bytes the app wrote, for the checks of what it restored. */
+  readonly out: string;
+  send(bytes: string): void;
+  screen(): Promise<string[]>;
+  /** Polls the screen until `ok` holds; the error carries the last screen. */
+  until(what: string, ok: (rows: string[]) => boolean, ms?: number): Promise<string[]>;
+  exited: Promise<number>;
+  stop(): Promise<void>;
+}
+
+export async function launch(
+  o: { cols?: number; rows?: number; env?: Record<string, string> } = {},
+): Promise<Pty> {
+  const cols = o.cols ?? 120;
+  const rows = o.rows ?? 36;
+  const workspace = mkdtempSync(join(tmpdir(), "agency-tui-pty-ws-"));
+  const term = new Terminal({ cols, rows, allowProposedApi: true });
+  let out = "";
+  let chain: Promise<void> = Promise.resolve();
+  const proc = Bun.spawn([process.execPath, MAIN], {
+    cwd: workspace,
+    env: {
+      ...process.env,
+      COLORTERM: "truecolor",
+      AGENCY_ANTHROPIC_API_KEY: "test-key-not-real",
+      AGENCY_DISABLE_MODELS_FETCH: "1",
+      AGENCY_TUI_DAEMON_ENTRY: DAEMON,
+      AGENCY_REDUCED_MOTION: "1",
+      ...o.env,
+    },
+    terminal: {
+      cols,
+      rows,
+      data(_t: unknown, d: Uint8Array) {
+        const s = Buffer.from(d).toString("utf8");
+        out += s;
+        chain = chain.then(() => new Promise<void>((r) => term.write(s, r)));
+      },
+    },
+  });
+  const screen = async (): Promise<string[]> => {
+    await chain;
+    return Array.from(
+      { length: rows },
+      (_, y) => term.buffer.active.getLine(y)?.translateToString(true) ?? "",
+    );
+  };
+  const self: Pty = {
+    get out() {
+      return out;
+    },
+    send: (bytes) => proc.terminal?.write(bytes),
+    screen,
+    async until(what, ok, ms = 20_000) {
+      const end = Date.now() + ms;
+      let last: string[] = [];
+      while (Date.now() < end) {
+        last = await screen();
+        if (ok(last)) return last;
+        await Bun.sleep(50);
+      }
+      throw new Error(`timed out waiting for ${what}\n${last.join("\n")}`);
+    },
+    exited: proc.exited,
+    async stop() {
+      proc.kill();
+      await proc.exited.catch(() => undefined);
+      // The daemon outlives its client by design: stop the one this run started.
+      const dir = defaultInstanceDir();
+      for (const f of readdirSync(dir).filter((n) => n.endsWith(".json"))) {
+        try {
+          const info = JSON.parse(readFileSync(join(dir, f), "utf8")) as { pid?: number };
+          if (info.pid) process.kill(info.pid);
+        } catch {
+          // Already gone.
+        }
+      }
+      term.dispose();
+      try {
+        rmSync(workspace, { recursive: true, force: true });
+      } catch {
+        // The daemon of the workspace may still hold a file open on Windows.
+      }
+    },
+  };
+  return self;
+}

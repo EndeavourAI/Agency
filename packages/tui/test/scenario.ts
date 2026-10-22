@@ -71,16 +71,22 @@ const REQUESTS: StreamEvent[][] = [
     { type: "text_delta", text: "Ran it.\n" } as StreamEvent,
     { type: "message_stop", stopReason: "end_turn", usage: usage(120, 5, 0.001) } as StreamEvent,
   ],
+  // Turn 4 (PTY test): a slow answer that a person can stop with esc.
+  [
+    ...Array.from({ length: 40 }, (_, i) => ({ type: "text_delta", text: `word${i} ` }) as StreamEvent),
+    { type: "message_stop", stopReason: "end_turn", usage: usage(50, 40, 0.001) } as StreamEvent,
+  ],
 ];
 
 /** The scripted requests of each prompt start at these offsets; a request is picked by the prompt and its step. */
 const STARTS: Array<[RegExp, number]> = [
   [/^Make the 54/, 0],
   [/^Now clean/, 3],
+  [/^Take your time/, 7],
   [/./, 5],
 ];
 
-function adapter(): ProviderAdapter {
+export function adapter(): ProviderAdapter {
   return {
     family: "fake",
     async *stream(request: { messages: Message[] }): AsyncIterable<StreamEvent> {
@@ -96,13 +102,13 @@ function adapter(): ProviderAdapter {
         yield e;
         // A little spacing keeps the recorded timings from all being zero.
         if (e.type === "text_delta" || e.type === "thinking_delta")
-          await new Promise((r) => setTimeout(r, 2));
+          await new Promise((r) => setTimeout(r, /^Take your time/.test(text) ? 80 : 2));
       }
     },
   } as unknown as ProviderAdapter;
 }
 
-const tools: ToolSpec[] = [
+export const tools: ToolSpec[] = [
   {
     name: "read",
     description: "read a file",
@@ -172,7 +178,13 @@ export async function startScenario(): Promise<Scenario> {
     stop: async () => {
       await client.close();
       await daemon.stop();
-      for (const d of dirs) rmSync(d, { recursive: true, force: true });
+      for (const d of dirs) {
+        try {
+          rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+        } catch {
+          // A git child of the daemon may still hold the folder on Windows; the temp dir is disposable.
+        }
+      }
       if (prev.key === undefined) delete process.env.AGENCY_ANTHROPIC_API_KEY;
       else process.env.AGENCY_ANTHROPIC_API_KEY = prev.key;
       if (prev.offline === undefined) delete process.env.AGENCY_DISABLE_MODELS_FETCH;

@@ -390,3 +390,17 @@ describe("settings built from the user config", () => {
     expect(parseText("statusLine.command", "  ")).toBeNull();
   });
 });
+
+describe("the run block of the details pane", () => {
+  test("the sandbox row reads the user config and says what answers the asks in this mode", async () => {
+    const { detailsRows } = await import("../src/view/details.ts");
+    const { palette } = await import("../src/term/themes.ts");
+    const text = (d: Driver): string[] =>
+      detailsRows(d.state, palette("agency", true)).map((r) => r.map((s) => s.t).join(""));
+    const d = opened();
+    expect(text(d).some((l) => /^sandbox\s+software · approvals only$/.test(l))).toBe(true);
+    d.daemon({ type: "config_loaded", config: { sandbox: { backend: "docker" } } });
+    d.send("\t");
+    expect(text(d).some((l) => /^sandbox\s+docker · read only$/.test(l))).toBe(true);
+  });
+});

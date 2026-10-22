@@ -2,6 +2,7 @@
 import { padEnd, wrap } from "../render-model/width.ts";
 import { ctxPercent, current, tasks } from "../state/derive.ts";
 import { formatCost, formatTokens } from "../state/format.ts";
+import { getPath } from "../state/settings.ts";
 import type { AppState } from "../state/types.ts";
 import type { Palette } from "../term/themes.ts";
 import { modelName } from "./chrome.ts";
@@ -89,6 +90,10 @@ export function detailsRows(state: AppState, c: Palette, w = DETAILS_W): Row[] {
     ...clip([{ t: value, fg }], w - 9),
   ];
   rows.push(line("model", st?.model ? modelName(state) : "—", c.text));
+  // The sandbox of the user config, and what answers the asks in this mode.
+  const backend = getPath(state.settings.config, "sandbox.backend");
+  const asks = state.mode === "plan" ? "read only" : state.mode === "auto" ? "auto review" : "approvals only";
+  rows.push(line("sandbox", `${typeof backend === "string" ? backend : "software"} · ${asks}`, c.soft));
   if (st) {
     const cached = st.cacheHitRate === null ? "" : ` · ${Math.round(st.cacheHitRate * 100)}% cached`;
     rows.push(line("cost", `${formatCost(st.costUsd)}${cached}`, c.text));

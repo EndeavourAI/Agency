@@ -23,7 +23,7 @@ export interface Pty {
 }
 
 export async function launch(
-  o: { cols?: number; rows?: number; env?: Record<string, string> } = {},
+  o: { cols?: number; rows?: number; env?: Record<string, string>; bin?: string } = {},
 ): Promise<Pty> {
   let cols = o.cols ?? 120;
   let rows = o.rows ?? 36;
@@ -31,14 +31,15 @@ export async function launch(
   const term = new Terminal({ cols, rows, allowProposedApi: true });
   let out = "";
   let chain: Promise<void> = Promise.resolve();
-  const proc = Bun.spawn([process.execPath, MAIN], {
+  // A compiled binary starts its own daemon: the scripted one is a Bun script it cannot run.
+  const proc = Bun.spawn(o.bin ? [o.bin] : [process.execPath, MAIN], {
     cwd: workspace,
     env: {
       ...process.env,
       COLORTERM: "truecolor",
       AGENCY_ANTHROPIC_API_KEY: "test-key-not-real",
       AGENCY_DISABLE_MODELS_FETCH: "1",
-      AGENCY_TUI_DAEMON_ENTRY: DAEMON,
+      ...(o.bin ? {} : { AGENCY_TUI_DAEMON_ENTRY: DAEMON }),
       AGENCY_REDUCED_MOTION: "1",
       ...o.env,
     },

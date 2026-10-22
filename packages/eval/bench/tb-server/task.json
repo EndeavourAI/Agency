@@ -1,0 +1,8 @@
+{
+  "prompt": "Create index.html containing the text hello eval. Start an HTTP server that serves this folder on port 18765 and keeps running after you finish. Check it with curl.",
+  "check": "sleep 1 && curl -sf -m 5 http://127.0.0.1:18765/index.html | grep -q 'hello eval'",
+  "cleanup": "fuser -k 18765/tcp >/dev/null 2>&1 ; pkill -f 'http[.]server' ; true",
+  "solution": "echo 'hello eval' > index.html && (nohup python3 -m http.server 18765 >/dev/null 2>&1 &) && sleep 1",
+  "hideCheck": true,
+  "platforms": ["linux", "darwin"]
+}

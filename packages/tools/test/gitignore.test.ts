@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { parseGitignoreLine } from "../src/gitignore.ts";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { listUnignoredFiles, parseGitignoreLine } from "../src/gitignore.ts";
 
 function matcher(lines: string[]): (rel: string) => boolean {
   const rules = lines
@@ -51,5 +54,50 @@ describe("parseGitignoreLine / gitignore filtering", () => {
     const ignore = matcher(["**/generated/**"]);
     expect(ignore("src/generated/out.ts")).toBe(true);
     expect(ignore("src/handwritten.ts")).toBe(false);
+  });
+});
+
+describe("listUnignoredFiles", () => {
+  const put = (root: string, rel: string, text = "x") => {
+    mkdirSync(join(root, rel, ".."), { recursive: true });
+    writeFileSync(join(root, rel), text);
+  };
+
+  test("a nested .gitignore hides paths of its own folder only, and a new file shows on the next call", () => {
+    const root = mkdtempSync(join(tmpdir(), "agency-files-"));
+    try {
+      put(root, ".gitignore", "*.log\n");
+      put(root, "a.ts");
+      put(root, "run.log");
+      put(root, "pkg/.gitignore", "gen/\nsecret.txt\n");
+      put(root, "pkg/gen/out.ts");
+      put(root, "pkg/secret.txt");
+      put(root, "pkg/keep.ts");
+      put(root, "other/secret.txt");
+      put(root, "pkg/deep/x.log");
+      put(root, ".git/config");
+      expect(listUnignoredFiles(root, 100).files).toEqual([
+        ".gitignore",
+        "a.ts",
+        "other/secret.txt",
+        "pkg/.gitignore",
+        "pkg/keep.ts",
+      ]);
+      put(root, "new.ts");
+      expect(listUnignoredFiles(root, 100).files).toContain("new.ts");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("the limit cuts the list and says so", () => {
+    const root = mkdtempSync(join(tmpdir(), "agency-files-"));
+    try {
+      for (const name of ["a", "b", "c"]) put(root, name);
+      expect(listUnignoredFiles(root, 3)).toEqual({ files: ["a", "b", "c"], truncated: false });
+      expect(listUnignoredFiles(root, 2)).toEqual({ files: ["a", "b"], truncated: true });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

@@ -5,9 +5,12 @@ import { t } from "@agency/i18n";
 import type { ToolDeps, ToolSpec } from "../contract.ts";
 import type { FormatterConfig } from "../formatter.ts";
 import { runFormatter } from "../formatter.ts";
+import { lineDelta } from "../hashline.ts";
+import { newPlaceholder } from "../placeholder.ts";
 import type { ReadState } from "../read-state.ts";
-import { str, summarize } from "../render.ts";
+import { projectPath, str, summarize } from "../render.ts";
 import type { SnapshotStore } from "../snapshot.ts";
+import { syntaxNote } from "../syntax.ts";
 
 export interface WriteToolOptions {
   /** Session read journal; set to warn when overwriting a file never read. */
@@ -44,21 +47,29 @@ export function createWriteTool(
       requirePathScope(deps.identity, deps.capabilities, resolved);
 
       const existed = existsSync(resolved);
-      if (existed) {
-        snapshots.capture(resolved, readFileSync(resolved, "utf8"), ctx.turnId);
+      const before = existed ? readFileSync(resolved, "utf8") : undefined;
+      const omitted = newPlaceholder(input.content, before);
+      if (omitted !== undefined)
+        return { content: t("tool.placeholder", { tool: "write", line: omitted }), isError: true };
+      if (before !== undefined) {
+        snapshots.capture(resolved, before, ctx.turnId);
       } else {
         mkdirSync(dirname(resolved), { recursive: true });
+        snapshots.captureCreated(resolved, ctx.turnId);
       }
 
       writeFileSync(resolved, input.content, "utf8");
       await runFormatter(formatter, resolved);
       snapshots.recordAfter(resolved);
 
-      let content = t("tool.write.wrote", { bytes: input.content.length, path: input.path });
+      const shownPath = projectPath(deps.sandbox.resolvePath("."), resolved, input.path);
+      let content = t("tool.write.wrote", { bytes: input.content.length, path: shownPath });
       if (existed && options?.readState && !options.readState.has(resolved)) {
-        content += `\n${t("tool.write.unread_overwrite", { path: input.path })}`;
+        content += `\n${t("tool.write.unread_overwrite", { path: shownPath })}`;
       }
-      return { content };
+      const broken = syntaxNote(input.path, before, input.content);
+      if (broken !== undefined) content += `\n${broken}`;
+      return { content, meta: lineDelta(before ?? "", input.content) };
     },
   };
   return spec;

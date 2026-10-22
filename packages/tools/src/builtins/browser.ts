@@ -1,8 +1,8 @@
-import { requireNetwork } from "@agency/guard";
 import { t } from "@agency/i18n";
 import type { HttpClient } from "@agency/net";
 import type { ToolDeps, ToolSpec } from "../contract.ts";
 import { decodeEntities, extractHtmlTitle, htmlToMarkdown } from "../html.ts";
+import { networkOrAsk } from "../network-ask.ts";
 import { clip, str, summarize } from "../render.ts";
 
 const MAX_BROWSER_CHARS = 50_000;
@@ -98,6 +98,7 @@ export function createBrowserTool(deps: ToolDeps, http: HttpClient): ToolSpec {
 
   const spec: ToolSpec<BrowserInput> = {
     name: "browser",
+    deferred: true,
     description:
       "Headless-browser minimum without bundled chromium: navigate fetches a page over HTTP(S), " +
       "snapshot returns an accessibility-tree-like view (title, headings, links, text), close discards " +
@@ -123,7 +124,7 @@ export function createBrowserTool(deps: ToolDeps, http: HttpClient): ToolSpec {
       return `${label}: ${result.content.length} chars (${body})`;
     },
 
-    async handler(input) {
+    async handler(input, ctx) {
       const action = str(input.action);
       if (action !== "navigate" && action !== "snapshot" && action !== "screenshot" && action !== "close") {
         return {
@@ -159,7 +160,8 @@ export function createBrowserTool(deps: ToolDeps, http: HttpClient): ToolSpec {
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
         return { content: t("tool.browser.file_denied"), isError: true };
       }
-      requireNetwork(deps.identity, deps.capabilities, parsed.hostname);
+      const refused = await networkOrAsk(deps, "browser", parsed.hostname, ctx);
+      if (refused !== undefined) return { content: refused, isError: true };
 
       const res = await http.fetch(url);
       let body = await res.text();

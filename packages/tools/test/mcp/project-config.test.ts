@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadProjectMcpServers } from "../../src/mcp/config.ts";
+import { enabledServers, loadProjectMcpServers } from "../../src/mcp/config.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -75,5 +75,16 @@ describe("loadProjectMcpServers", () => {
 
   test("a workspace with no file gives no server", () => {
     expect(loadProjectMcpServers(workspace(), () => {}, {})).toEqual({});
+  });
+});
+
+describe("enabledServers", () => {
+  test("drops a server that says enabled: false, and the user's entry beats a project server of its name", () => {
+    const merged = {
+      ...{ docs: { command: "project-docs" }, keep: { command: "k" } },
+      ...{ docs: { command: "project-docs", enabled: false } },
+    };
+    expect(enabledServers(merged)).toEqual({ keep: { command: "k" } });
+    expect(enabledServers({ a: { enabled: true }, b: {} })).toEqual({ a: { enabled: true }, b: {} });
   });
 });

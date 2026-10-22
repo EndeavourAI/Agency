@@ -277,4 +277,51 @@ describe("DaemonClient — reconnect with subscription resend", () => {
     expect(subsOnReconnect).toContain("turn.b");
     expect(subsOnReconnect).toContain("turn.c");
   }, 15_000);
+
+  test("onConnection reports a drop and the completed reconnect", async () => {
+    let connections = 0;
+    const { server, port } = await mockDaemon({
+      // The first connection dies right after its handshake; the second stays up.
+      onConnect: (socket) => {
+        connections += 1;
+        if (connections === 1) setTimeout(() => socket.destroy(), 50);
+      },
+    });
+    servers.push(server);
+    const seen: boolean[] = [];
+    const client = await connectToDaemon(port, "127.0.0.1", {
+      heartbeatMs: 100,
+      reconnect: true,
+      onConnection: (online) => seen.push(online),
+    });
+    clients.push(client);
+
+    await waitFor(() => seen.length >= 2, 5_000);
+    expect(seen.slice(0, 2)).toEqual([false, true]);
+  }, 15_000);
+
+  test("a throwing onConnection callback does not break the reconnect", async () => {
+    let connections = 0;
+    const { server, port } = await mockDaemon({
+      onConnect: (socket) => {
+        connections += 1;
+        if (connections === 1) setTimeout(() => socket.destroy(), 50);
+      },
+    });
+    servers.push(server);
+    const seen: boolean[] = [];
+    const client = await connectToDaemon(port, "127.0.0.1", {
+      heartbeatMs: 100,
+      reconnect: true,
+      onConnection: (online) => {
+        seen.push(online);
+        throw new Error("listener bug");
+      },
+    });
+    clients.push(client);
+
+    await waitFor(() => seen.length >= 2, 5_000);
+    expect(seen.slice(0, 2)).toEqual([false, true]);
+    expect(connections).toBe(2);
+  }, 15_000);
 });

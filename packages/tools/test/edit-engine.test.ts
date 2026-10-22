@@ -9,6 +9,38 @@ describe("applyEdit", () => {
     expect(result).toBe("function foo() {\n  return 2;\n}\n");
   });
 
+  test("a conflict marker that the file has is part of oldText, not slop to strip", () => {
+    // Live: a merge left `>>>>>>> feature` in the file three times, while the tool reported each edit as done.
+    const conflict = "<<<<<<< HEAD\nT = 45\n=======\nT = 60\n>>>>>>> feature\n\nx = 1\n";
+    const oldText = "<<<<<<< HEAD\nT = 45\n=======\nT = 60\n>>>>>>> feature\n";
+    expect(applyEdit(conflict, { oldText, newText: "T = 60\n" })).toBe("T = 60\n\nx = 1\n");
+    expect(applyEditsVerified(conflict, [{ oldText, newText: "T = 60\n" }]).content).toBe(
+      "T = 60\n\nx = 1\n",
+    );
+    // Slop that the file does not have still goes: the anchor matches without it.
+    expect(applyEdit("a = 1\nb = 2\n", { oldText: "a = 1\n// ...\n", newText: "a = 3\n" })).toBe(
+      "a = 3\nb = 2\n",
+    );
+  });
+
+  test("takes text copied from a read with its line numbers, as the file has it", () => {
+    const content = "function foo() {\n  return 1;\n}\n";
+    const result = applyEdit(content, {
+      oldText: "     1  function foo() {\n     2    return 1;",
+      newText: "     1  function foo() {\n     2    return 2;",
+    });
+    expect(result).toBe("function foo() {\n  return 2;\n}\n");
+    const added = applyEdit(content, {
+      oldText: "     2    return 1;",
+      newText: "     2    log();\n  return 1;",
+    });
+    expect(added).toBe("function foo() {\n  log();\n  return 1;\n}\n");
+    const tabbed = applyEdit(content, { oldText: "2\t  return 1;", newText: "2\t  return 3;" });
+    expect(tabbed).toBe("function foo() {\n  return 3;\n}\n");
+    // Numbers that do not count up one by one are text of the file, not of a read.
+    expect(() => applyEdit("a\n", { oldText: "     1  a\n     3  b", newText: "x" })).toThrow();
+  });
+
   test("rejects rather than misapplies when the anchor text isn't found", () => {
     const content = "const x = 1;\n";
     expect(() => applyEdit(content, { oldText: "const y = 1;", newText: "const y = 2;" })).toThrow(

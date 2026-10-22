@@ -54,6 +54,21 @@ describe("anthropicAdapter", () => {
     ]);
   });
 
+  test("an overload in the stream is an overload, not a transient error", async () => {
+    const codeOf = async (type: string): Promise<string | undefined> => {
+      const text = `event: error\ndata: {"type":"error","error":{"type":"${type}","message":"busy"}}\n\n`;
+      try {
+        await collect(anthropicAdapter.stream(baseRequest, fakeHttp(sseResponse(text))));
+      } catch (error) {
+        return error instanceof AgencyError ? error.code : undefined;
+      }
+      return undefined;
+    };
+    expect(await codeOf("overloaded_error")).toBe(ErrorCode.OVERLOAD);
+    expect(await codeOf("rate_limit_error")).toBe(ErrorCode.RATE_LIMIT);
+    expect(await codeOf("api_error")).toBe(ErrorCode.TRANSIENT);
+  });
+
   test("takes the counts and the charge that a gateway reports at the end of the stream", async () => {
     // Recorded from the Messages endpoint of OpenRouter: message_start has zero counts, message_delta has the real ones.
     const cassette = await Bun.file(`${import.meta.dir}/../cassettes/openrouter-messages-stream.sse`).text();
@@ -135,17 +150,26 @@ describe("anthropicAdapter", () => {
     // The API documentation: these models answer 400 to a thinking budget, and hide thinking text by default.
     const bodyFor = async (model: string, thinkingLevel: ProviderRequest["thinkingLevel"]) => {
       let captured = "";
+      let beta: string | undefined;
       const http: HttpClient = {
         fetch: async (_url, init) => {
           captured = init?.body as string;
+          beta = (init?.headers as Record<string, string> | undefined)?.["anthropic-beta"];
           return sseResponse("");
         },
       };
       await collect(anthropicAdapter.stream({ ...baseRequest, model, maxTokens: 8192, thinkingLevel }, http));
       const body = JSON.parse(captured);
+      // The field without its beta header is a 400.
+      expect(beta).toBe(body.thinking?.block_binding ? "thinking-binding-controls-2026-08-01" : undefined);
       return { thinking: body.thinking, effort: body.output_config?.effort };
     };
-    const adaptive = { type: "adaptive", display: "summarized" };
+    // A thinking block whose history the harness trimmed is dropped, not a 400 for the whole request.
+    const adaptive = {
+      type: "adaptive",
+      display: "summarized",
+      block_binding: { prefix_mismatch_behavior: "drop_block" },
+    };
 
     expect(await bodyFor("claude-opus-5", "high")).toEqual({ thinking: adaptive, effort: "high" });
     expect(await bodyFor("claude-opus-4-7", "minimal")).toEqual({ thinking: adaptive, effort: "low" });
@@ -153,6 +177,11 @@ describe("anthropicAdapter", () => {
     // The 4.6 models have no xhigh level.
     expect(await bodyFor("claude-sonnet-4-6", "xhigh")).toEqual({ thinking: adaptive, effort: "high" });
     expect(await bodyFor("claude-opus-5", "off")).toEqual({ thinking: undefined, effort: undefined });
+    // With no level, Claude 5 thinks anyway: the request binds its blocks and asks for the summary, whose deltas
+    // keep the stream alive (a silent think of over 300 s tripped the stall limit).
+    expect(await bodyFor("claude-haiku-5-5", undefined)).toEqual({ thinking: adaptive, effort: undefined });
+    for (const model of ["claude-sonnet-4-6", "claude-haiku-4-5", "MiniMax-M3"])
+      expect(await bodyFor(model, undefined)).toEqual({ thinking: undefined, effort: undefined });
     // The 4.5 family and older models answer 400 to adaptive thinking: they keep the budget.
     for (const model of ["claude-sonnet-4-5", "claude-opus-4-5-20251101", "claude-opus-4-20250514"]) {
       expect((await bodyFor(model, "minimal")).thinking).toEqual({ type: "enabled", budget_tokens: 1024 });

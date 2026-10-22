@@ -1,16 +1,25 @@
 import { join } from "node:path";
 import {
   announceHook,
+  type Config,
+  configDir,
   getSessionTitle,
+  isReminderText,
+  listPrompts,
+  loadConfig,
   loadTraceSpansSync,
+  type MessageEntry,
+  promptHistoryFile,
   restoreIntegrationCheckpoint,
+  runHookCommand,
   storagePaths,
+  triggerTokens,
 } from "@agency/core";
 import type { MethodHandler } from "@agency/rpc";
 import type { Message } from "@agency/schema";
 import { AgencyError, ErrorCode } from "@agency/schema";
 import { isUsageEntry } from "@agency/telemetry";
-import { SnapshotStore, TEAM_MCP_PROCESS_CAP } from "@agency/tools";
+import { listUnignoredFiles, SnapshotStore, TEAM_MCP_PROCESS_CAP } from "@agency/tools";
 import { teamRunUsage } from "../costing.ts";
 import { agentsListPayload } from "../team-context.ts";
 import {
@@ -20,6 +29,22 @@ import {
   resolvePrompt,
   type SystemPromptParts,
 } from "../types.ts";
+import { type GitFile, gitDiff, gitStatus, suggestMessage } from "./git.ts";
+
+/** Paths that files_list returns at most: a TUI completes @ mentions from them. */
+const FILES_LIST_LIMIT = 50_000;
+
+const STATUS_LINE_TIMEOUT_S = 5;
+
+/** The keys that only a client reads. */
+const CLIENT_CONFIG_KEYS = [
+  "theme",
+  "outputStyle",
+  "keybindings",
+  "editorMode",
+  "voice",
+  "clientPlugins",
+] as const;
 
 /** Keys config_set may change at runtime (in-memory until restart). */
 const RUNTIME_CONFIG_KEYS = [
@@ -31,6 +56,8 @@ const RUNTIME_CONFIG_KEYS = [
   "small_model",
   "theme",
 ];
+
+const MAX_TITLE_CHARS = 200;
 
 function requireSessionId(rawParams: unknown, method: string): string {
   const { sessionId } = rawParams as { sessionId?: string };
@@ -165,6 +192,45 @@ async function restoreWithMode(
   };
 }
 
+/** The first prompt stands in for a title until the small model names the session, or when none is set. */
+function firstPrompt(entries: readonly Record<string, unknown>[]): string | undefined {
+  for (const entry of entries) {
+    const message = entry.message as Message | undefined;
+    if (entry.type !== "message" || message?.role !== "user") continue;
+    const block = message.content.find((b) => b.type === "text") as { text?: string } | undefined;
+    const line = block?.text?.trim().split("\n")[0]?.trim().slice(0, 80);
+    if (line) return line;
+  }
+  return undefined;
+}
+
+/** The newest prompt that the user typed: a message that entered mid-turn or from a shell command is no prompt. */
+function lastPrompt(entries: readonly Record<string, unknown>[]): string | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i] as Record<string, unknown>;
+    const message = entry.message as Message | undefined;
+    if (entry.type !== "message" || message?.role !== "user" || entry.origin !== undefined) continue;
+    const block = message.content.find((b) => b.type === "text") as { text?: string } | undefined;
+    const line = block?.text?.trim().split("\n")[0]?.trim().slice(0, 80);
+    if (line) return line;
+  }
+  return undefined;
+}
+
+/** How the last turn ended; null when it left no end entry (the daemon died, or the session predates them) and no usage entry. */
+function lastOutcome(entries: readonly Record<string, unknown>[]): "done" | "stopped" | "failed" | null {
+  const end = entries.findLastIndex((e) => e.type === "turn_end");
+  const prompt = entries.findLastIndex((e) => e.type === "message" && typeof e.turnId === "string");
+  // A compaction moves the prompt behind its turn's end entry, so match them by turn and not by position.
+  const turn = entries[prompt]?.turnId;
+  const closing = entries.findLast((e) => e.type === "turn_end" && e.forTurn === turn) ?? entries[end];
+  if (closing !== undefined && (end > prompt || closing.forTurn === turn)) {
+    const outcome = (closing as { outcome?: string }).outcome;
+    return outcome === "done" ? "done" : outcome === "failed" ? "failed" : "stopped";
+  }
+  return end < 0 && entries.at(-1)?.type === "usage" ? "done" : null;
+}
+
 export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>, ctx: DaemonContext): void {
   const {
     config,
@@ -178,19 +244,130 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
     turnCheckpoints,
   } = ctx;
 
-  handlers.session_list = async () => {
-    const sessions = todoStore.list().map((id) => {
-      const entries = todoStore.load(id);
-      const last = entries[entries.length - 1];
-      return {
-        id,
-        title: getSessionTitle(entries),
-        tipId: todoStore.latestTip(entries) ?? last?.id ?? null,
-        entries: entries.length,
-        updatedAt: last?.createdAt ?? null,
-      };
-    });
+  handlers.session_list = async (rawParams) => {
+    const { query } = (rawParams ?? {}) as { query?: string };
+    const needle = query?.trim().toLowerCase();
+    const running = new Set([...ctx.activeTurnMeta.values()].map((t) => t.sessionId));
+    const sessions = todoStore
+      .list()
+      .map((id) => {
+        const entries = todoStore.load(id);
+        const last = entries[entries.length - 1];
+        const usage = entries.filter(isUsageEntry) as unknown as Array<{
+          costUsd: number;
+          gitBranch?: string;
+        }>;
+        return {
+          id,
+          title: getSessionTitle(entries) ?? firstPrompt(entries),
+          tipId: todoStore.latestTip(entries) ?? last?.id ?? null,
+          entries: entries.length,
+          updatedAt: last?.createdAt ?? null,
+          lastPrompt: lastPrompt(entries) ?? null,
+          branch: usage.findLast((u) => u.gitBranch !== undefined)?.gitBranch ?? null,
+          costUsd: usage.reduce((sum, u) => sum + u.costUsd, 0),
+          outcome: running.has(id) ? "running" : lastOutcome(entries),
+        };
+      })
+      .filter(
+        (row) =>
+          !needle ||
+          [row.id, row.title, row.lastPrompt, row.branch].some((v) => v?.toLowerCase().includes(needle)),
+      );
     return { sessions };
+  };
+
+  handlers.git_status = async (rawParams) => {
+    const status = await gitStatus(ctx.options.workspaceRoot);
+    if (status.repo !== true) return status;
+    const { sessionId } = (rawParams ?? {}) as { sessionId?: string };
+    const entries =
+      sessionId !== undefined && todoStore.list().includes(sessionId) ? todoStore.load(sessionId) : [];
+    // ponytail: the session keeps no summary of its work, so its title or last prompt stands for it.
+    const hint = getSessionTitle(entries) ?? lastPrompt(entries);
+    return { ...status, suggestedMessage: suggestMessage(status.files as GitFile[], hint) };
+  };
+
+  handlers.git_diff = async () => gitDiff(ctx.options.workspaceRoot);
+
+  handlers.client_config = async () => {
+    const client: Record<string, unknown> = {};
+    // From the files, not the config of the start: a config_write shows without a restart.
+    let fresh: Config = config;
+    try {
+      fresh = loadConfig({
+        globalDir: ctx.options.configDir ?? configDir(),
+        env: process.env,
+        ...(ctx.trustStore.isTrusted(ctx.options.workspaceRoot)
+          ? { projectRoot: ctx.options.workspaceRoot }
+          : {}),
+        ...(ctx.options.managedPath ? { managedPath: ctx.options.managedPath } : {}),
+      });
+    } catch {}
+    for (const key of CLIENT_CONFIG_KEYS) if (fresh[key] !== undefined) client[key] = fresh[key];
+    return { config: client };
+  };
+
+  handlers.status_get = async (rawParams) => {
+    const { sessionId } = (rawParams ?? {}) as { sessionId?: string };
+    if (!sessionId)
+      throw new AgencyError(ErrorCode.INVALID_REQUEST, "status_get requires sessionId", {
+        source: "surface",
+      });
+    const usage = todoStore.load(sessionId).filter(isUsageEntry) as unknown as Array<{
+      model: string;
+      costUsd: number;
+      contextTokens?: number;
+      usage: { inputTokens: number; cachedInputTokens?: number };
+    }>;
+    const last = usage.at(-1);
+    const model = last?.model ?? (typeof config.model === "string" ? config.model : null);
+    const input = usage.reduce((sum, u) => sum + u.usage.inputTokens, 0);
+    const cached = usage.reduce((sum, u) => sum + (u.usage.cachedInputTokens ?? 0), 0);
+    const known = listModels().find((m) => m.id === model || `${m.family}/${m.id}` === model);
+    const settings = ctx.sessionSettings.get(sessionId);
+    const status = {
+      sessionId,
+      model,
+      effort: settings?.effort ?? null,
+      mode: settings?.mode ?? "ask",
+      costUsd: usage.reduce((sum, u) => sum + u.costUsd, 0),
+      contextTokens: last?.contextTokens ?? 0,
+      contextLimit: known?.contextWindow ?? null,
+      // Where the session compacts, in tokens: the window's share or the configured limit, whichever is lower.
+      compactAt: known
+        ? Math.round(
+            triggerTokens({
+              contextWindow: known.contextWindow,
+              ...(ctx.config.compactionLimit ? { limitTokens: ctx.config.compactionLimit } : {}),
+            }),
+          )
+        : null,
+      cacheHitRate: input > 0 ? Math.min(cached / input, 1) : null,
+      branch: ctx.git(ctx.options.workspaceRoot, ["branch", "--show-current"])?.trim() || null,
+    };
+    if (!ctx.statusLine) return { status };
+    const ran = await runHookCommand(
+      ctx.statusLine.command,
+      JSON.stringify(status),
+      { ...ctx.hookRun, cwd: ctx.options.workspaceRoot },
+      STATUS_LINE_TIMEOUT_S,
+    );
+    return { status, line: ran.code === 0 ? ran.stdout : null };
+  };
+
+  handlers.history_list = async (rawParams) => {
+    const { query, limit } = (rawParams ?? {}) as { query?: string; limit?: number };
+    return { prompts: listPrompts(promptHistoryFile(ctx.options.workspaceRoot), query, limit) };
+  };
+
+  handlers.files_list = async (rawParams) => {
+    const { sessionId } = (rawParams ?? {}) as { sessionId?: string };
+    const { files, truncated } = listUnignoredFiles(ctx.options.workspaceRoot, FILES_LIST_LIMIT);
+    const rows = (await (sessionId ? sessionScopes.get(sessionId)?.mcp?.listResources() : undefined)) ?? [];
+    // The mention of a resource carries its server, as the MCP tools do.
+    const resources = rows.map((r) => ({ ...r, mention: `${r.server}:${r.uri}` }));
+    return { files, truncated, resources };
   };
 
   handlers.session_create = async (rawParams) => {
@@ -240,6 +417,29 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
     turnCheckpoints.delete(sessionId);
     if (stack) turnCheckpoints.set(meta.id, stack);
     return { sessionId: meta.id, renamedFrom: sessionId };
+  };
+
+  handlers.session_title_set = async (rawParams) => {
+    const sessionId = requireSessionId(rawParams, "session_title_set");
+    const raw = (rawParams as { title?: unknown }).title;
+    const title = typeof raw === "string" ? raw.trim() : "";
+    if (title === "" || title.length > MAX_TITLE_CHARS)
+      throw new AgencyError(
+        ErrorCode.INVALID_REQUEST,
+        `session_title_set title must be 1 to ${MAX_TITLE_CHARS} characters`,
+        { source: "surface" },
+      );
+    const entries = todoStore.load(sessionId);
+    if (entries.length === 0)
+      throw new AgencyError(ErrorCode.INVALID_REQUEST, `unknown session: ${sessionId}`, {
+        source: "surface",
+      });
+    await todoStore.append(sessionId, {
+      type: "session_title",
+      parentId: todoStore.latestTip(entries) ?? null,
+      title,
+    });
+    return { sessionId, title };
   };
 
   handlers.models_list = async (rawParams) => {
@@ -310,9 +510,24 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
   };
 
   handlers.cost_report = async (rawParams) => {
-    const { sessionId } = (rawParams ?? {}) as { sessionId?: string };
+    const { sessionId, since } = (rawParams ?? {}) as { sessionId?: string; since?: string | number };
     const ids = sessionId !== undefined ? [sessionId] : todoStore.list();
     const sessions = ids.map((id) => costForSession(todoStore.load(id), todoSessionsDir, id));
+    const sinceMs = since === undefined ? Number.NaN : new Date(since).getTime();
+    if (since !== undefined && Number.isNaN(sinceMs))
+      throw new AgencyError(ErrorCode.INVALID_REQUEST, "since must be an ISO time or epoch milliseconds", {
+        source: "surface",
+      });
+    const recent =
+      since === undefined
+        ? undefined
+        : ids
+            .flatMap((id) => todoStore.load(id))
+            .filter((e) => isUsageEntry(e) && Date.parse(e.createdAt) >= sinceMs)
+            .reduce((acc, e) => ({ turns: acc.turns + 1, costUsd: acc.costUsd + Number(e.costUsd ?? 0) }), {
+              turns: 0,
+              costUsd: 0,
+            });
     const run = teamRunUsage(ctx, sessionId);
     const total = sessions.reduce(
       (acc, s) => ({
@@ -346,6 +561,7 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
       sessions,
       agents: agentsListPayload(ctx, sessionId),
       total: { ...total, cacheHitRate: totalCacheHitRate },
+      ...(recent === undefined ? {} : { since: recent }),
       perAgent: run.perAgent,
       perTask: run.perTask,
       runTotalUsd: run.totalUsd,
@@ -353,6 +569,40 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
       spend: { ...ctx.spendLedger.snapshot(), caps: budgets },
       mcp,
     };
+  };
+
+  /**
+   * Rewinds a session to just before one of its prompts: the files that the turns from that prompt on wrote go back,
+   * and the session ends where the prompt began. A file edited since the agent wrote it stops it unless `force`.
+   */
+  handlers.session_rewind = async (rawParams) => {
+    const sessionId = requireSessionId(rawParams, "session_rewind");
+    const { entryId, force } = (rawParams ?? {}) as { entryId?: unknown; force?: unknown };
+    const invalid = (message: string) =>
+      new AgencyError(ErrorCode.INVALID_REQUEST, message, { source: "surface" });
+    if ([...ctx.activeTurnMeta.values()].some((t) => t.sessionId === sessionId))
+      throw invalid("session_rewind: a turn runs in this session; stop it first");
+    const entries = todoStore.load(sessionId);
+    const tip = todoStore.latestTip(entries);
+    const chain = tip === undefined ? [] : todoStore.chainFor(entries, tip);
+    // No entry: the last prompt, which undoes the last turn.
+    const at =
+      entryId === undefined
+        ? chain.findLastIndex((e) => typeof e.turnId === "string")
+        : chain.findIndex((e) => e.id === entryId);
+    const prompt = chain[at] as MessageEntry | undefined;
+    if (prompt?.type !== "message" || typeof prompt.turnId !== "string")
+      throw invalid(`session_rewind: ${String(entryId)} is not a prompt of this session`);
+    const turns = new Set(chain.slice(at).flatMap((e) => (typeof e.turnId === "string" ? [e.turnId] : [])));
+    const outcome = snapshotStoreForSession(ctx, sessionId).rewind(turns, force === true);
+    if (outcome.conflicts.length > 0 && force !== true)
+      return { rewound: false, conflicts: outcome.conflicts };
+    await todoStore.rollback(sessionId, prompt.parentId);
+    turnCheckpoints.delete(sessionId);
+    const text = prompt.message.content
+      .flatMap((c) => (c.type === "text" && !isReminderText(c.text) ? [c.text] : []))
+      .join("\n");
+    return { rewound: true, files: outcome.files, conflicts: outcome.conflicts, prompt: text };
   };
 
   handlers.undo_run = async (rawParams) => {
@@ -402,6 +652,8 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
       workspaceRoot: ctx.options.workspaceRoot,
       trustStore: ctx.trustStore,
       pluginInstructions: ctx.pluginInstructions,
+      memoryFile: ctx.memoryFile,
+      userAgentInstructions: ctx.userAgentInstructions,
     });
     return { prompt: resolved.text, segments: resolved.segments };
   };

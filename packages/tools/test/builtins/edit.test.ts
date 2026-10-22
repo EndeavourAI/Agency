@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FULL_CAPABILITIES, SandboxBoundary } from "@agency/guard";
 import { createEditTool } from "../../src/builtins/edit.ts";
+import { createWriteTool } from "../../src/builtins/write.ts";
 import type { ToolDeps } from "../../src/contract.ts";
+import { ReadState } from "../../src/read-state.ts";
 import { SnapshotStore } from "../../src/snapshot.ts";
 
 const dirs: string[] = [];
@@ -36,6 +38,29 @@ describe("createEditTool", () => {
 
     expect(result.isError).toBeFalsy();
     expect(readFileSync(join(root, "a.ts"), "utf8")).toBe("const x = 2;\n");
+  });
+
+  test("an edited file counts as read: a later write of it gets no unread note", async () => {
+    const { deps, root, snapshots } = setup();
+    writeFileSync(join(root, "a.ts"), "const x = 1;\n");
+    const readState = new ReadState();
+    const edit = createEditTool(deps, snapshots, {}, { readState });
+    await edit.handler({ path: "a.ts", oldText: "const x = 1;", newText: "const x = 2;" }, { signal });
+    const write = createWriteTool(deps, snapshots, {}, { readState });
+    const result = await write.handler({ path: "a.ts", content: "const x = 3;\n" }, { signal });
+    expect(result.content).not.toContain("never read");
+  });
+
+  test("an edit that would change nothing is refused, not reported as done", async () => {
+    const { deps, root, snapshots } = setup();
+    writeFileSync(join(root, "a.ts"), "const x = 1;\n");
+    const tool = createEditTool(deps, snapshots, {});
+    const result = await tool.handler(
+      { path: "a.ts", oldText: "const x = 1;", newText: "const x = 1;" },
+      { signal },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("nothing was written");
   });
 
   test("rejects (not misapplies) when oldText has drifted, leaving the file untouched", async () => {
@@ -71,5 +96,26 @@ describe("createEditTool", () => {
 
     const entry = snapshots.capture(join(root, "a.ts"), "before");
     expect(snapshots.read(entry)).toBe("before");
+  });
+
+  test("the result shows the changed lines with their numbers, so no read has to follow", async () => {
+    const { deps, root, snapshots } = setup();
+    const lines = Array.from({ length: 40 }, (_, i) => `const v${i + 1} = ${i + 1};`);
+    writeFileSync(join(root, "a.ts"), `${lines.join("NL")}NL`.replaceAll("NL", String.fromCharCode(10)));
+    const tool = createEditTool(deps, snapshots, {});
+
+    const result = await tool.handler(
+      { path: "a.ts", oldText: "const v20 = 20;", newText: "const v20 = 200;" },
+      { signal },
+    );
+
+    expect(result.isError).toBeFalsy();
+    const shown = result.content.split(String.fromCharCode(10));
+    expect(shown[0]).toBe("edited a.ts");
+    expect(shown).toContain("20\tconst v20 = 200;");
+    expect(shown).toContain("17\tconst v17 = 17;");
+    expect(shown).toContain("23\tconst v23 = 23;");
+    expect(shown).not.toContain("16\tconst v16 = 16;");
+    expect(tool.renderResult?.({ content: result.content, isError: false })).toBe("edited a.ts");
   });
 });

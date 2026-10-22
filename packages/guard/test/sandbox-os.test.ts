@@ -8,9 +8,10 @@ import {
   buildScriptSandboxArgv,
   buildSeatbeltProfile,
   OsSandboxBackend,
+  unixSocketFilter,
 } from "../src/sandbox-os.ts";
 
-// No Linux or macOS machine ran these backends: the tests cover the arguments and the profile text only.
+// The arguments and the profile text. sandbox-os-run.test.ts runs real commands on Linux and macOS.
 describe("OS sandbox arguments", () => {
   test("bubblewrap: read-only disk, writable workspace, read-only git hooks, no network by default", () => {
     const args = buildBwrapArgs("/home/u/ws", "/home/u/ws/src", false);
@@ -75,16 +76,76 @@ describe("OS sandbox arguments", () => {
     );
   });
 
+  test("bubblewrap with allowed domains: no network but the proxy socket, which socat serves on a port inside", () => {
+    const args = buildBwrapArgs(
+      "/home/u/ws",
+      "/home/u/ws",
+      false,
+      "bwrap",
+      [],
+      "/tmp/agency-net-x/proxy.sock",
+    );
+    const text = args.join(" ");
+    expect(args).toContain("--unshare-net");
+    // The bind comes after the private /tmp, or the tmpfs hides it.
+    expect(text.indexOf("--tmpfs /tmp")).toBeLessThan(
+      text.indexOf("--bind /tmp/agency-net-x/proxy.sock /tmp/agency-proxy.sock"),
+    );
+    expect(text).toContain("--setenv HTTPS_PROXY http://127.0.0.1:3128");
+    expect(text).toContain("--setenv NO_PROXY ");
+    const [dash, shell, flag, script, name] = args.slice(-5);
+    expect([dash, shell, flag, name]).toEqual(["--", "/bin/sh", "-c", "sh"]);
+    expect(script).toContain("UNIX-CONNECT:/tmp/agency-proxy.sock");
+    expect(script).toContain(":0C38 00000000:0000 0A");
+    expect(script).toEndWith('exec "$@"');
+  });
+
+  test("Seatbelt with allowed domains: the network is denied but the port of the proxy, and the command gets it", async () => {
+    const lines = buildSeatbeltProfile("/Users/u/ws", false, "/private/tmp", [], 4567).split("\n");
+    const deny = lines.indexOf("(deny network*)");
+    expect(deny).toBeGreaterThan(-1);
+    expect(lines.indexOf('(allow network-outbound (remote ip "localhost:4567"))')).toBeGreaterThan(deny);
+
+    const mac = new OsSandboxBackend("/Users/u/ws", {}, undefined, {
+      platform: "darwin",
+      allowedDomains: ["github.com"],
+    });
+    expect(mac.wrap(["sh"]).join(" ")).not.toContain("_PROXY");
+    await mac.startNetworkProxy();
+    const wrapped = mac.wrap(["sh", "-c", "ls"]);
+    const port = /localhost:(\d+)/.exec(wrapped[2] ?? "")?.[1];
+    expect(Number(port)).toBeGreaterThan(0);
+    expect(wrapped.slice(3, 5)).toEqual(["/usr/bin/env", `HTTP_PROXY=http://127.0.0.1:${port}`]);
+    expect(wrapped).toContain("NO_PROXY=");
+    expect(wrapped.slice(-3)).toEqual(["sh", "-c", "ls"]);
+  });
+
   test("the backend wraps a command for its platform and keeps the command policy", () => {
     const linux = new OsSandboxBackend("/home/u/ws", { deny: [/rm -rf/] }, undefined, {
       platform: "linux",
     });
-    expect(linux.wrap(["sh", "-c", "ls"]).slice(-4)).toEqual(["--", "sh", "-c", "ls"]);
+    const bwrap = linux.wrap(["sh", "-c", "ls"]);
+    expect(bwrap.slice(-4)).toEqual(["--", "sh", "-c", "ls"]);
+    // bubblewrap reads the seccomp program on fd 3, which the shell before it opens.
+    expect(bwrap.slice(0, 3)).toEqual(["/bin/sh", "-c", 'exec "$@" 3<"$0"']);
+    expect(bwrap.slice(4, 7)).toEqual(["bwrap", "--seccomp", "3"]);
     expect(() => linux.checkCommand("rm -rf /")).toThrow();
     const mac = new OsSandboxBackend("/Users/u/ws", {}, undefined, { platform: "darwin" });
     const wrapped = mac.wrap(["sh", "-c", "ls"]);
     expect(wrapped.slice(0, 2)).toEqual(["/usr/bin/sandbox-exec", "-p"]);
     expect(wrapped.slice(-3)).toEqual(["sh", "-c", "ls"]);
+  });
+
+  test("the seccomp program checks the arch, then fails socket(AF_UNIX) and io_uring", () => {
+    const filter = unixSocketFilter("x64");
+    expect(filter?.length).toBe(11 * 8);
+    expect(filter?.readUInt32LE(1 * 8 + 4)).toBe(0xc000003e);
+    // The socket call of x86-64, then a domain of AF_UNIX: EPERM.
+    expect(filter?.readUInt32LE(5 * 8 + 4)).toBe(41);
+    expect(filter?.readUInt32LE(7 * 8 + 4)).toBe(1);
+    expect(filter?.readUInt32LE(9 * 8 + 4)).toBe(0x00050001);
+    expect(unixSocketFilter("arm64")?.readUInt32LE(5 * 8 + 4)).toBe(198);
+    expect(unixSocketFilter("ia32")).toBeUndefined();
   });
 
   test("script sandbox: no network, nothing writable, and of the user's disk only the files of the runner", () => {

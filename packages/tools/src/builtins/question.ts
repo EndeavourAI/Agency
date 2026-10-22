@@ -39,7 +39,12 @@ export function createQuestionTool(opts: { nonInteractive?: boolean } = {}): Too
 
     async handler(input) {
       if (opts.nonInteractive) {
-        return { content: "question denied: non-interactive run has no approval surface", isError: true };
+        return {
+          content:
+            "No one will answer: this run is not interactive. Choose the most reasonable option yourself, name it " +
+            "in your final answer, and go on with the task.",
+          isError: true,
+        };
       }
       const question = str(input.question).trim();
       if (question.length === 0) {

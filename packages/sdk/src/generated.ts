@@ -14,6 +14,7 @@ export type RpcMethod =
   | "agent_message"
   | "agent_stop"
   | "agents_list"
+  | "agents_remove"
   | "agents_upsert"
   | "approval_respond"
   | "board_claim"
@@ -21,22 +22,36 @@ export type RpcMethod =
   | "board_status"
   | "cancel_turn"
   | "channel_read"
+  | "client_config"
   | "command_run"
   | "commands_expand"
   | "commands_list"
   | "config_get"
   | "config_set"
+  | "config_user"
+  | "config_write"
   | "cost_report"
+  | "daemon_restart"
+  | "daemon_retire"
   | "decisions_read"
   | "dispatch_compare"
+  | "files_list"
+  | "git_commit"
+  | "git_diff"
+  | "git_status"
+  | "history_list"
   | "inbox_send"
   | "lsp_status"
   | "mcp_status"
+  | "memory_get"
+  | "memory_remove"
   | "models_list"
   | "owners_read"
   | "permissions_list"
   | "plan_approve"
   | "prompt_inspect"
+  | "provider_connect"
+  | "provider_disconnect"
   | "providers_list"
   | "redo"
   | "report_get"
@@ -49,8 +64,14 @@ export type RpcMethod =
   | "session_list"
   | "session_message"
   | "session_rename"
+  | "session_rewind"
   | "session_send"
   | "session_show"
+  | "session_title_set"
+  | "shell_run"
+  | "skill_write"
+  | "skills_list"
+  | "status_get"
   | "task_file"
   | "team_open"
   | "team_status"
@@ -78,6 +99,7 @@ export type GatewayEvent =
   | "cost_report"
   | "budget_exceeded"
   | "heartbeat"
+  | "prompt_suggestion"
   | "fallback"
   | "approval_requested"
   | "session.*"
@@ -169,6 +191,7 @@ export interface TurnCompleteEvent {
   type: string;
   stopReason: string;
   usage: EventUsage;
+  timing?: Record<string, number>;
 }
 export interface CostMeterEvent {
   type: string;
@@ -192,6 +215,12 @@ export interface BudgetExceededEvent {
 }
 export interface HeartbeatEvent {
   type: string;
+}
+export interface PromptSuggestionEvent {
+  type: string;
+  sessionId: string;
+  turnId: string;
+  text: string;
 }
 export interface FallbackEvent {
   type: string;
@@ -275,6 +304,8 @@ export interface SurfaceClient {
   agent_stop(params?: Record<string, unknown>): Promise<unknown>;
   /** List team agents with state, session, and cost. */
   agents_list(params?: Record<string, unknown>): Promise<unknown>;
+  /** Delete the project's file of an agent; the team changes on the next daemon start. */
+  agents_remove(params?: Record<string, unknown>): Promise<unknown>;
   /** Write an agent file and refresh the registry entry. */
   agents_upsert(params?: Record<string, unknown>): Promise<unknown>;
   /** Answer a pending approval ask once, always, or reject. */
@@ -289,6 +320,8 @@ export interface SurfaceClient {
   cancel_turn(params?: Record<string, unknown>): Promise<unknown>;
   /** Pull shared channel posts after a cursor. */
   channel_read(params?: Record<string, unknown>): Promise<unknown>;
+  /** The merged config keys that a client reads: theme, outputStyle, keybindings, editorMode, voice, clientPlugins. */
+  client_config(params?: Record<string, unknown>): Promise<unknown>;
   /** Resolve /name to a built-in handler or markdown template. */
   command_run(params?: Record<string, unknown>): Promise<unknown>;
   /** Expand a slash command template with args. */
@@ -299,18 +332,40 @@ export interface SurfaceClient {
   config_get(params?: Record<string, unknown>): Promise<unknown>;
   /** Set one runtime-safe config key in memory until restart. */
   config_set(params?: Record<string, unknown>): Promise<unknown>;
-  /** Sum usage entries plus trace spans per session and agent (Phase 9 adds budgets and caps). */
+  /** The user config file alone, without provider keys: the layer that config_write edits. */
+  config_user(params?: Record<string, unknown>): Promise<unknown>;
+  /** Persist one dotted config key to the user config file, or, with scope=local, to the workspace file .agency/config.local.jsonc; comments kept, null removes it. */
+  config_write(params?: Record<string, unknown>): Promise<unknown>;
+  /** Sum usage entries plus trace spans per session and agent (Phase 9 adds budgets and caps); since (ISO time or epoch ms) adds the turns and cost after it. */
   cost_report(params?: Record<string, unknown>): Promise<unknown>;
+  /** Leave once no turn runs, so the next client starts a daemon with the new config. */
+  daemon_restart(params?: Record<string, unknown>): Promise<unknown>;
+  /** Leave now if the caller is the only client and no turn runs; a client of another build asks, then starts its own. */
+  daemon_retire(params?: Record<string, unknown>): Promise<unknown>;
   /** Read the shared choice log entries. */
   decisions_read(params?: Record<string, unknown>): Promise<unknown>;
   /** Fan out one prompt to two agents and compare. */
   dispatch_compare(params?: Record<string, unknown>): Promise<unknown>;
+  /** Up to 50,000 workspace paths that git does not ignore, plus the resources of the session's MCP servers (mention: server:uri). */
+  files_list(params?: Record<string, unknown>): Promise<unknown>;
+  /** Commit paths (or every change of the workspace) with a message, behind the permission rules; push goes to the upstream of the current branch, never forced. */
+  git_commit(params?: Record<string, unknown>): Promise<unknown>;
+  /** The unified diff against HEAD, plus the text of untracked files (null for a binary or a large one). */
+  git_diff(params?: Record<string, unknown>): Promise<unknown>;
+  /** Branch, ahead and behind, the last commit and the changed files of the workspace with their line counts, and a suggested commit message; repo is false outside a repository. */
+  git_status(params?: Record<string, unknown>): Promise<unknown>;
+  /** The prompts submitted in this workspace, newest first; query keeps those that contain it, limit caps the rows. */
+  history_list(params?: Record<string, unknown>): Promise<unknown>;
   /** Post a typed message to a teammate inbox. */
   inbox_send(params?: Record<string, unknown>): Promise<unknown>;
   /** Language server statuses for a session scope. */
   lsp_status(params?: Record<string, unknown>): Promise<unknown>;
   /** MCP server failures and prompts for a session scope. */
   mcp_status(params?: Record<string, unknown>): Promise<unknown>;
+  /** Read the memory notes of the workspace: enabled flag, file path and note lines. */
+  memory_get(params?: Record<string, unknown>): Promise<unknown>;
+  /** Remove the first memory note equal to the given line; returns the remaining notes. */
+  memory_remove(params?: Record<string, unknown>): Promise<unknown>;
   /** List catalog models merged with config overrides. */
   models_list(params?: Record<string, unknown>): Promise<unknown>;
   /** Resolve path owners from the .agency/owners map. */
@@ -321,7 +376,11 @@ export interface SurfaceClient {
   plan_approve(params?: Record<string, unknown>): Promise<unknown>;
   /** Resolve the system prompt without running a turn. */
   prompt_inspect(params?: Record<string, unknown>): Promise<unknown>;
-  /** List providers with defaults, connectivity, and liveness. */
+  /** Validate a provider API key and store it in the key store. */
+  provider_connect(params?: Record<string, unknown>): Promise<unknown>;
+  /** Remove the stored key of a provider; a key from an environment variable stays. */
+  provider_disconnect(params?: Record<string, unknown>): Promise<unknown>;
+  /** List providers with defaults, connectivity, liveness and keySource (where each connected key comes from: env var name, login, keychain, config); models: "connected" lists models only for connected or configured providers. */
   providers_list(params?: Record<string, unknown>): Promise<unknown>;
   /** Redo a snapshot-backed file change. */
   redo(params?: Record<string, unknown>): Promise<unknown>;
@@ -339,16 +398,28 @@ export interface SurfaceClient {
   session_export(params?: Record<string, unknown>): Promise<unknown>;
   /** Branch a session at a tip inside the same file. */
   session_fork(params?: Record<string, unknown>): Promise<unknown>;
-  /** List daemon-known sessions with title and tip. */
+  /** List daemon-known sessions with title, tip and the outcome of the last turn (running, done, stopped, failed, or null when unknown). */
   session_list(params?: Record<string, unknown>): Promise<unknown>;
-  /** Queue mid-turn steering text drained per tool iteration. */
+  /** Queue mid-turn steering text drained per tool iteration; queued is false when no running turn reads it. */
   session_message(params?: Record<string, unknown>): Promise<unknown>;
   /** Move a session history to a new id (clone plus delete). */
   session_rename(params?: Record<string, unknown>): Promise<unknown>;
+  /** Rewind a session to before a prompt (default: the last): files its turns wrote go back; an edit since stops it unless force. */
+  session_rewind(params?: Record<string, unknown>): Promise<unknown>;
   /** Daemon-owned turn: send text, history and usage stay server-side. */
   session_send(params?: Record<string, unknown>): Promise<unknown>;
   /** Read a session through the single SessionProjector view. */
   session_show(params?: Record<string, unknown>): Promise<unknown>;
+  /** Set the title of a session (1 to 200 characters); session_list shows it. */
+  session_title_set(params?: Record<string, unknown>): Promise<unknown>;
+  /** Run a user shell command under the sandbox and the permission rules; its output joins the session as user context. */
+  shell_run(params?: Record<string, unknown>): Promise<unknown>;
+  /** Create a SKILL.md in the project or user skills folder; never overwrites. */
+  skill_write(params?: Record<string, unknown>): Promise<unknown>;
+  /** List discovered skills with origin, tier, tools, body, and enabled flag, and whether the workspace is trusted. */
+  skills_list(params?: Record<string, unknown>): Promise<unknown>;
+  /** Model, effort, mode, cost, context used and limit, cache hit, branch and session of a session; line is the output of the statusLine command. */
+  status_get(params?: Record<string, unknown>): Promise<unknown>;
   /** File a board item with goal, criteria, scope, and budget. */
   task_file(params?: Record<string, unknown>): Promise<unknown>;
   /** Open a team behind approval when the goal needs parallel specialists. */
@@ -390,6 +461,7 @@ export function createSurfaceClient(
     agent_message: (params) => call("agent_message", params ?? {}),
     agent_stop: (params) => call("agent_stop", params ?? {}),
     agents_list: (params) => call("agents_list", params ?? {}),
+    agents_remove: (params) => call("agents_remove", params ?? {}),
     agents_upsert: (params) => call("agents_upsert", params ?? {}),
     approval_respond: (params) => call("approval_respond", params ?? {}),
     board_claim: (params) => call("board_claim", params ?? {}),
@@ -397,22 +469,36 @@ export function createSurfaceClient(
     board_status: (params) => call("board_status", params ?? {}),
     cancel_turn: (params) => call("cancel_turn", params ?? {}),
     channel_read: (params) => call("channel_read", params ?? {}),
+    client_config: (params) => call("client_config", params ?? {}),
     command_run: (params) => call("command_run", params ?? {}),
     commands_expand: (params) => call("commands_expand", params ?? {}),
     commands_list: (params) => call("commands_list", params ?? {}),
     config_get: (params) => call("config_get", params ?? {}),
     config_set: (params) => call("config_set", params ?? {}),
+    config_user: (params) => call("config_user", params ?? {}),
+    config_write: (params) => call("config_write", params ?? {}),
     cost_report: (params) => call("cost_report", params ?? {}),
+    daemon_restart: (params) => call("daemon_restart", params ?? {}),
+    daemon_retire: (params) => call("daemon_retire", params ?? {}),
     decisions_read: (params) => call("decisions_read", params ?? {}),
     dispatch_compare: (params) => call("dispatch_compare", params ?? {}),
+    files_list: (params) => call("files_list", params ?? {}),
+    git_commit: (params) => call("git_commit", params ?? {}),
+    git_diff: (params) => call("git_diff", params ?? {}),
+    git_status: (params) => call("git_status", params ?? {}),
+    history_list: (params) => call("history_list", params ?? {}),
     inbox_send: (params) => call("inbox_send", params ?? {}),
     lsp_status: (params) => call("lsp_status", params ?? {}),
     mcp_status: (params) => call("mcp_status", params ?? {}),
+    memory_get: (params) => call("memory_get", params ?? {}),
+    memory_remove: (params) => call("memory_remove", params ?? {}),
     models_list: (params) => call("models_list", params ?? {}),
     owners_read: (params) => call("owners_read", params ?? {}),
     permissions_list: (params) => call("permissions_list", params ?? {}),
     plan_approve: (params) => call("plan_approve", params ?? {}),
     prompt_inspect: (params) => call("prompt_inspect", params ?? {}),
+    provider_connect: (params) => call("provider_connect", params ?? {}),
+    provider_disconnect: (params) => call("provider_disconnect", params ?? {}),
     providers_list: (params) => call("providers_list", params ?? {}),
     redo: (params) => call("redo", params ?? {}),
     report_get: (params) => call("report_get", params ?? {}),
@@ -425,8 +511,14 @@ export function createSurfaceClient(
     session_list: (params) => call("session_list", params ?? {}),
     session_message: (params) => call("session_message", params ?? {}),
     session_rename: (params) => call("session_rename", params ?? {}),
+    session_rewind: (params) => call("session_rewind", params ?? {}),
     session_send: (params) => call("session_send", params ?? {}),
     session_show: (params) => call("session_show", params ?? {}),
+    session_title_set: (params) => call("session_title_set", params ?? {}),
+    shell_run: (params) => call("shell_run", params ?? {}),
+    skill_write: (params) => call("skill_write", params ?? {}),
+    skills_list: (params) => call("skills_list", params ?? {}),
+    status_get: (params) => call("status_get", params ?? {}),
     task_file: (params) => call("task_file", params ?? {}),
     team_open: (params) => call("team_open", params ?? {}),
     team_status: (params) => call("team_status", params ?? {}),

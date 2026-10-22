@@ -238,6 +238,7 @@ export function modelRunOptions(info: ModelInfo | undefined) {
     maxTokensPerRequest: info?.maxOutputTokens,
     contextWindow: info?.contextWindow,
     vision: info?.capabilities.vision,
+    efforts: info?.efforts,
   };
 }
 
@@ -246,12 +247,22 @@ export function priceForModel(pricing: ModelPricing): {
   output: number;
   cachedInput: number;
   cacheWrite: number;
+  longPrompt?: { overTokens: number; input: number; output: number };
 } {
   return {
     input: pricing.inputPerMTok,
     output: pricing.outputPerMTok,
     cachedInput: pricing.cachedInputPerMTok ?? pricing.inputPerMTok,
     cacheWrite: pricing.cacheWritePerMTok ?? pricing.inputPerMTok,
+    ...(pricing.longPrompt === undefined
+      ? {}
+      : {
+          longPrompt: {
+            overTokens: pricing.longPrompt.overTokens,
+            input: pricing.longPrompt.inputPerMTok,
+            output: pricing.longPrompt.outputPerMTok,
+          },
+        }),
   };
 }
 

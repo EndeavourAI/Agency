@@ -33,7 +33,7 @@ const server = Bun.serve({
   hostname: "127.0.0.1",
   fetch(request) {
     const name = new URL(request.url).pathname.slice(1);
-    if (name === ASSET) return new Response(binary);
+    if (name === ASSET || name === `${ASSET}-musl`) return new Response(binary);
     if (name === "checksums.txt") return new Response(checksums);
     return new Response("not found", { status: 404 });
   },
@@ -71,6 +71,12 @@ describe.skipIf(!bash)("install.sh", () => {
     expect(run.stderr).toBe("");
     expect(run.code).toBe(0);
     expect(readFileSync(run.installed).equals(binary)).toBe(true);
+  });
+
+  test("a musl system, as Alpine is, gets the musl build", async () => {
+    const run = await install(`${UNAME}; ldd() { echo "musl libc (x86_64)"; }`, `${digest}  ${ASSET}-musl\n`);
+    expect(run.stderr).toBe("");
+    expect(run.code).toBe(0);
   });
 
   test("installs on a machine with no sha256sum, as macOS is", async () => {

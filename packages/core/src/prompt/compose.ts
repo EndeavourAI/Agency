@@ -446,11 +446,37 @@ export function readOnlyReminder(): SystemReminder {
   };
 }
 
+/** The first prompt after plan mode: without it the model would keep to the plan reminder of the earlier prompts. */
+export function planOffReminder(): SystemReminder {
+  return {
+    kind: "plan_mode",
+    text: "Read-only (plan) mode is off: you may modify files and run commands again.",
+  };
+}
+
+/** A text block that the harness stored in a prompt of the user: clients show the prompt without it. */
+export function isReminderText(text: string): boolean {
+  return text.startsWith(SYSTEM_REMINDER_OPEN);
+}
+
 /** A file the conversation previously read has changed on disk since. */
 export function fileChangedReminder(path: string): SystemReminder {
   return {
     kind: "file_changed",
     text: `The file ${path} changed on disk since you last read it. Re-read it before editing — do not trust stale line numbers or content.`,
+  };
+}
+
+/** A run with no one to answer (`-p`, the SDK). Live: a Terminal-Bench run stopped to ask "permission to run a longer attack". */
+/** `terse`: live (Terminal-Bench), the final answer took a median 1,467 characters that no one read. */
+export function headlessReminder(terse = false): SystemReminder {
+  return {
+    kind: "headless",
+    text:
+      "This run is not interactive: no one will read a question or answer it before the run ends. Do not stop to ask " +
+      "for input, a choice or permission. Choose the most reasonable option, name it in your final answer, and finish " +
+      "the task; end early only when it cannot be done." +
+      (terse ? " Keep the final answer to at most 3 lines: what you did and how you checked it." : ""),
   };
 }
 

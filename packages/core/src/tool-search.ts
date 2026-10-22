@@ -10,15 +10,32 @@ export type DeferMode = "auto" | "always" | "never";
 
 const words = (text: string): string[] => text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
 
+/** 0 of 5,583 stored calls went to these. A direct call still runs; a researcher keeps the web tools listed. */
+const RARE_TOOLS = new Set(["fetch", "websearch", "memory", "question"]);
+const WEB_TOOLS = new Set(["fetch", "websearch"]);
+
+/** Marks the rare tools `deferred` for `role`, so `deferTools` lists them only in `tool_search`. */
+export function deferByRole<T extends ToolSpec>(tools: T[], role: string | undefined): T[] {
+  const researcher = role?.toLowerCase() === "researcher";
+  return tools.map((tool) =>
+    RARE_TOOLS.has(tool.name) && !(researcher && WEB_TOOLS.has(tool.name))
+      ? { ...tool, deferred: true }
+      : tool,
+  );
+}
+
 /**
- * Keeps the schemas of the MCP tools out of the requests. The model finds a tool with `tool_search`, which gives the
- * schema as text, and calls it with `call_tool`. The tool list of a request never changes, so the prompt cache of the
- * provider holds.
+ * Keeps the schemas of seldom needed tools out of the requests: built-in tools marked `deferred`, and the MCP tools by
+ * `mode`. The model finds a tool with `tool_search`, which gives the schema as text, and calls it by name or with
+ * `call_tool`. The tool list of a request never changes, so the prompt cache of the provider holds.
  */
 export function deferTools(tools: ToolSpec[], mode: DeferMode): ToolSpec[] {
-  const deferred = tools.filter((tool) => (tool as { origin?: string }).origin === "mcp");
-  if (mode === "never" || deferred.length === 0) return tools;
-  if (mode === "auto" && deferred.length <= DEFER_MCP_ABOVE) return tools;
+  const isMcp = (tool: ToolSpec) => (tool as { origin?: string }).origin === "mcp";
+  const mcp = tools.filter(isMcp).length;
+  const deferMcp = mode === "always" || (mode === "auto" && mcp > DEFER_MCP_ABOVE);
+  // `mode` is for the MCP tools: a built-in tool marked `deferred` always waits for a search.
+  const deferred = tools.filter((tool) => tool.deferred || (deferMcp && isMcp(tool)));
+  if (deferred.length === 0) return tools;
   const names = new Set(deferred.map((tool) => tool.name));
   const search: ToolSpec = {
     name: TOOL_SEARCH,

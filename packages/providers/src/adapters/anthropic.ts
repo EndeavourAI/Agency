@@ -1,5 +1,5 @@
 import type { HttpClient } from "@agency/net";
-import { AgencyError, type ContentBlock, ErrorCode, type StopReason } from "@agency/schema";
+import { AgencyError, type ContentBlock, ErrorCode, PDF_MIME, type StopReason } from "@agency/schema";
 import { estimateTokens, MIN_CACHEABLE_TOKENS, splitStableDynamic } from "../cache-policy.ts";
 import { parseRetryAfterMs } from "../retry-after.ts";
 import { parseSse } from "../sse.ts";
@@ -21,6 +21,8 @@ const THINKING_BUDGET: Record<Exclude<ThinkingLevel, "off">, number> = {
 /** The 4.5 family and older models take a thinking budget and answer 400 to adaptive thinking. Later models are the reverse. */
 const BUDGET_THINKING_MODEL = /claude-(?:3-|(?:opus|sonnet|haiku)-4-(?:[15](?!\d)|\d{8}))/;
 
+/** Claude 5 and later think when the request names no thinking. */
+const DEFAULT_THINKING_MODEL = /^claude-[a-z]+-(?:[5-9]|\d{2,})(?!\d)/;
 /** `output_config.effort` per unified level, for the models with adaptive thinking. */
 const EFFORT: Record<Exclude<ThinkingLevel, "off">, string> = {
   minimal: "low",
@@ -60,22 +62,24 @@ function toAnthropicContent(block: ContentBlock, vision = false): Record<string,
     case "text":
       return { type: "text", text: block.text };
     case "image":
-      return { type: "image", source: { type: "base64", media_type: block.mimeType, data: block.data } };
+      return block.mimeType === PDF_MIME
+        ? { type: "document", source: { type: "base64", media_type: PDF_MIME, data: block.data } }
+        : { type: "image", source: { type: "base64", media_type: block.mimeType, data: block.data } };
     case "tool_call":
       return { type: "tool_use", id: block.id, name: block.name, input: block.input };
-    case "tool_result":
+    case "tool_result": {
+      // A PDF goes to every model; an image only to one that sees images.
+      const attached = (block.images ?? []).filter((image) => vision || image.mimeType === PDF_MIME);
       return {
         type: "tool_result",
         tool_use_id: block.toolCallId,
         content:
-          vision && block.images?.length
-            ? [
-                { type: "text", text: block.content },
-                ...block.images.map((image) => toAnthropicContent(image)),
-              ]
+          attached.length > 0
+            ? [{ type: "text", text: block.content }, ...attached.map((image) => toAnthropicContent(image))]
             : block.content,
         is_error: block.isError || undefined,
       };
+    }
     case "thinking":
       // Unsigned thinking can't be replayed (the API rejects it), and neither can
       // a signature that another provider issued.
@@ -100,13 +104,61 @@ function buildRequestBody(request: ProviderRequest): Record<string, unknown> {
       }))
       .filter((m) => m.content.length > 0);
 
+  const body: Record<string, unknown> = {
+    model: request.model,
+    max_tokens: request.maxTokens,
+    stream: true,
+  };
+
+  // The minimum cacheable size counts the whole prefix up to a mark (tools, then system, then messages), not one part.
+  const tools = request.tools?.map(
+    (t): { name: string; description?: string; input_schema: unknown; cache_control?: unknown } => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.inputSchema,
+    }),
+  );
+  const toolTokens = tools?.length ? estimateTokens(JSON.stringify(tools)) : 0;
+  const { stable, dynamic } = request.systemSegments
+    ? splitStableDynamic(request.systemSegments)
+    : { stable: "", dynamic: "" };
+  const stableMarked = stable !== "" && toolTokens + estimateTokens(stable) >= minTokens;
+
+  if (tools?.length) {
+    if (toolTokens >= minTokens) {
+      // The API wants a 1-hour entry before any 5-minute one, and tools come before the system text.
+      const lastTool = tools.at(-1);
+      if (lastTool)
+        lastTool.cache_control = stableMarked ? { type: "ephemeral", ttl: "1h" } : { type: "ephemeral" };
+    }
+    body.tools = tools;
+  }
+
+  let systemTokens = 0;
+  if (request.systemSegments) {
+    const system: Record<string, unknown>[] = [];
+    if (stable) {
+      system.push(
+        stableMarked
+          ? { type: "text", text: stable, cache_control: { type: "ephemeral", ttl: "1h" } }
+          : { type: "text", text: stable },
+      );
+    }
+    if (dynamic) system.push({ type: "text", text: dynamic });
+    if (system.length > 0) body.system = system;
+    systemTokens = estimateTokens(stable) + estimateTokens(dynamic);
+  } else if (request.system) {
+    body.system = [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }];
+    systemTokens = estimateTokens(request.system);
+  }
+
   // Breakpoints 3 and 4 roll forward: the settled turn-back tail and the
-  // current tail. Each is skipped when the conversation is too short to pay.
+  // current tail. Each is skipped when the prefix is too short to pay.
   const userIdx = messages
     .map((m, i) => (m.role === "user" && m.content.length > 0 ? i : -1))
     .filter((i) => i >= 0);
   const prefixTokens = (through: number): number =>
-    estimateTokens(JSON.stringify(messages.slice(0, through + 1)));
+    toolTokens + systemTokens + estimateTokens(JSON.stringify(messages.slice(0, through + 1)));
   const lastIdx = userIdx.at(-1);
   const lastTail = lastIdx !== undefined ? messages[lastIdx]?.content.at(-1) : undefined;
   if (lastIdx !== undefined && lastTail && prefixTokens(lastIdx) >= minTokens) {
@@ -122,46 +174,6 @@ function buildRequestBody(request: ProviderRequest): Record<string, unknown> {
     }
   }
 
-  const body: Record<string, unknown> = {
-    model: request.model,
-    max_tokens: request.maxTokens,
-    stream: true,
-  };
-
-  if (request.tools?.length) {
-    const tools: { name: string; description?: string; input_schema: unknown; cache_control?: unknown }[] =
-      request.tools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        input_schema: t.inputSchema,
-      }));
-    if (estimateTokens(JSON.stringify(tools)) >= minTokens) {
-      // The API wants a 1-hour entry before any 5-minute one, and tools come before the system text.
-      const hour =
-        request.systemSegments !== undefined &&
-        estimateTokens(splitStableDynamic(request.systemSegments).stable) >= minTokens;
-      const lastTool = tools.at(-1);
-      if (lastTool) lastTool.cache_control = hour ? { type: "ephemeral", ttl: "1h" } : { type: "ephemeral" };
-    }
-    body.tools = tools;
-  }
-
-  if (request.systemSegments) {
-    const { stable, dynamic } = splitStableDynamic(request.systemSegments);
-    const system: Record<string, unknown>[] = [];
-    if (stable) {
-      system.push(
-        estimateTokens(stable) >= minTokens
-          ? { type: "text", text: stable, cache_control: { type: "ephemeral", ttl: "1h" } }
-          : { type: "text", text: stable },
-      );
-    }
-    if (dynamic) system.push({ type: "text", text: dynamic });
-    if (system.length > 0) body.system = system;
-  } else if (request.system) {
-    body.system = [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }];
-  }
-
   body.messages = messages;
 
   if (request.temperature !== undefined) body.temperature = request.temperature;
@@ -174,13 +186,30 @@ function buildRequestBody(request: ProviderRequest): Record<string, unknown> {
     } else {
       // These models hide the thinking text unless the request asks for the summary. The 4.6 models have no xhigh.
       const noXhigh = request.thinkingLevel === "xhigh" && /-4-6(?!\d)/.test(request.model);
-      body.thinking = { type: "adaptive", display: "summarized" };
+      // Live (Haiku 5.5, 4 of 98 Terminal-Bench runs): a request after old tool results were trimmed got a 400, as
+      // each thinking block is bound to the history before it. Dropping a stale block keeps the run going.
+      body.thinking = {
+        type: "adaptive",
+        display: "summarized",
+        block_binding: { prefix_mismatch_behavior: "drop_block" },
+      };
       body.output_config = { effort: noXhigh ? "high" : EFFORT[request.thinkingLevel] };
     }
+  } else if (request.thinkingLevel === undefined && DEFAULT_THINKING_MODEL.test(request.model)) {
+    // Live: with no level these models still think; unbound, a pruned history 400ed each later request, and a hidden
+    // think sent nothing for 300 s and tripped the stall limit (regex-chess). The summary streams every few seconds.
+    body.thinking = {
+      type: "adaptive",
+      display: "summarized",
+      block_binding: { prefix_mismatch_behavior: "drop_block" },
+    };
   }
 
   return body;
 }
+
+/** `thinking.block_binding` is accepted only under this beta; without it the field is a 400. */
+const THINKING_BINDING_BETA = "thinking-binding-controls-2026-08-01";
 
 async function toAgencyError(res: Response): Promise<AgencyError> {
   const body = (await res.json().catch(() => undefined)) as
@@ -242,15 +271,18 @@ function readUsage(usage: Usage, wire: WireUsage | undefined): void {
 }
 
 async function* streamRaw(request: ProviderRequest, http: HttpClient): AsyncIterable<StreamEvent> {
+  const body = buildRequestBody(request);
+  const binding = (body.thinking as { block_binding?: unknown } | undefined)?.block_binding !== undefined;
   const res = await http.fetch(`${request.baseUrl ?? BASE_URL}/messages`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-api-key": request.apiKey,
       "anthropic-version": API_VERSION,
+      ...(binding ? { "anthropic-beta": THINKING_BINDING_BETA } : {}),
       ...request.headers,
     },
-    body: JSON.stringify(buildRequestBody(request)),
+    body: JSON.stringify(body),
     signal: request.signal,
   });
 
@@ -337,7 +369,14 @@ async function* streamRaw(request: ProviderRequest, http: HttpClient): AsyncIter
       }
       case "error": {
         const err = payload.error as { type?: string; message?: string };
-        throw new AgencyError(ErrorCode.TRANSIENT, err.message ?? "stream error", {
+        // An overload can come after the 200, in the stream: it gets the retries of a 529.
+        const code =
+          err.type === "overloaded_error"
+            ? ErrorCode.OVERLOAD
+            : err.type === "rate_limit_error"
+              ? ErrorCode.RATE_LIMIT
+              : ErrorCode.TRANSIENT;
+        throw new AgencyError(code, err.message ?? "stream error", {
           source: "anthropic",
           context: { errorType: err.type },
         });

@@ -1,0 +1,7 @@
+{
+  "prompt": "The tests in test/ fail. Fix stats.py so that they pass (the mean of an empty list is 0). Do not change the tests.",
+  "check": "python3 -c \"import sys; sys.path[:0] = ['.', 'test']; import test_stats as t; t.test_mean(); t.test_empty()\"",
+  "solution": "printf 'def mean(xs):\\n    return sum(xs) / len(xs) if xs else 0\\n' > stats.py",
+  "hideCheck": true,
+  "platforms": ["linux", "darwin"]
+}

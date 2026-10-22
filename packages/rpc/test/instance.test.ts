@@ -194,3 +194,80 @@ describe("ensureDaemon", () => {
     ).rejects.toThrow(/did not become ready/);
   });
 });
+
+describe("ensureDaemon and the build of a running daemon", () => {
+  /** A running daemon of `build` that leaves on daemon_retire unless `busy`. */
+  async function running(instanceFile: string, build: string | undefined, busy: boolean) {
+    const server = await startDaemonServer({
+      handlers: {
+        ping: async () => `build ${build}`,
+        daemon_retire: async () => {
+          if (busy) return { leaving: false };
+          setTimeout(() => rmSync(instanceFile, { force: true }), 20);
+          return { leaving: true };
+        },
+      },
+    });
+    servers.push(server);
+    writeInstanceFile(instanceFile, {
+      port: server.port,
+      pid: process.pid,
+      startedAt: new Date().toISOString(),
+      version: PROTOCOL_VERSION,
+      ...(build === undefined ? {} : { build }),
+    });
+  }
+  const spawnBuild = (build: string) => (instanceFile: string) => {
+    pendingSpawns.push(
+      startDaemonServer({ handlers: { ping: async () => `build ${build}` } }).then((server) => {
+        servers.push(server);
+        writeInstanceFile(instanceFile, {
+          port: server.port,
+          pid: process.pid,
+          startedAt: new Date().toISOString(),
+          version: PROTOCOL_VERSION,
+          build,
+        });
+        return server;
+      }),
+    );
+  };
+
+  test("a daemon of another build that is idle leaves, and this build starts its own", async () => {
+    // Live: every run of a new checkout talked to the daemon of an old one still alive in the folder.
+    const instanceDir = tempDir();
+    const ws = "/repo/upgraded";
+    await running(join(instanceDir, `${hashWorkspaceRoot(ws)}.json`), "old", false);
+    const { client } = await ensureDaemon({
+      workspaceRoot: ws,
+      instanceDir,
+      spawnDaemon: spawnBuild("new"),
+      build: "new",
+    });
+    clients.push(client);
+    expect(await client.call("ping", {})).toBe("build new");
+  });
+
+  test("a busy daemon of another build is still used, and one of the same build is kept", async () => {
+    const instanceDir = tempDir();
+    await running(join(instanceDir, `${hashWorkspaceRoot("/repo/busy")}.json`), "old", true);
+    const busy = await ensureDaemon({
+      workspaceRoot: "/repo/busy",
+      instanceDir,
+      spawnDaemon: spawnBuild("new"),
+      build: "new",
+    });
+    clients.push(busy.client);
+    expect(await busy.client.call("ping", {})).toBe("build old");
+
+    await running(join(instanceDir, `${hashWorkspaceRoot("/repo/same")}.json`), "new", false);
+    const same = await ensureDaemon({
+      workspaceRoot: "/repo/same",
+      instanceDir,
+      spawnDaemon: spawnBuild("other"),
+      build: "new",
+    });
+    clients.push(same.client);
+    expect(await same.client.call("ping", {})).toBe("build new");
+  });
+});

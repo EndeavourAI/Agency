@@ -1,5 +1,5 @@
 export * from "./builtin-set.ts";
-export { type BashState, createBashTool } from "./builtins/bash.ts";
+export { BASH_HOST_NOTE, BASH_SANDBOX_NOTE, type BashState, createBashTool } from "./builtins/bash.ts";
 export {
   type BoardBackend,
   type BoardFiler,
@@ -19,6 +19,13 @@ export { createEditTool } from "./builtins/edit.ts";
 export { createFetchTool } from "./builtins/fetch.ts";
 export { createGlobTool } from "./builtins/glob.ts";
 export { createGrepTool } from "./builtins/grep.ts";
+export {
+  createMemoryTool,
+  MAX_MEMORY_NOTES,
+  readMemoryNotes,
+  writeMemoryNotes,
+} from "./builtins/memory.ts";
+export { createNotebookEditTool, renderNotebook } from "./builtins/notebook.ts";
 export {
   approvalRecordPath,
   assertActTransitionAllowed,
@@ -54,7 +61,7 @@ export {
 } from "./builtins/plan.ts";
 export { createProcessKillTool, createProcessListTool, createProcessOutputTool } from "./builtins/process.ts";
 export { createQuestionTool } from "./builtins/question.ts";
-export { createReadTool } from "./builtins/read.ts";
+export { createReadTool, imageMimeFor } from "./builtins/read.ts";
 export { createSpawnTool, extractFinalText } from "./builtins/spawn.ts";
 export {
   createAgentInspectTool,
@@ -102,6 +109,7 @@ export * from "./hashline.ts";
 export * from "./html.ts";
 export * from "./lsp/index.ts";
 export * from "./mcp/index.ts";
+export { applyChunks, type PatchOp, parsePatch } from "./patch.ts";
 export * from "./process-manager.ts";
 export * from "./read-state.ts";
 export * from "./registry.ts";

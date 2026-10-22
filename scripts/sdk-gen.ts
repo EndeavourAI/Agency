@@ -25,13 +25,15 @@ const EVENT_TYPES: Record<string, string> = {
   tool_result:
     "export interface ToolResultEvent { type: string; id: string; content: string; isError: boolean; }",
   turn_complete:
-    "export interface TurnCompleteEvent { type: string; stopReason: string; usage: EventUsage; }",
+    "export interface TurnCompleteEvent { type: string; stopReason: string; usage: EventUsage; timing?: Record<string, number>; }",
   cost_meter:
     "export interface CostMeterEvent { type: string; sessionId: string; turnCostUsd: number; runTotalUsd: number; runCacheHitRate: number; perAgent: Record<string, number>; }",
   cost_report:
     "export interface CostReportEvent { type: string; totalUsd: number; tokens: number; cacheHitRate: number; perAgent: Record<string, unknown>; }",
   budget_exceeded:
     "export interface BudgetExceededEvent { type: string; spentTokens: number; spentCostUsd: number; }",
+  prompt_suggestion:
+    "export interface PromptSuggestionEvent { type: string; sessionId: string; turnId: string; text: string; }",
   heartbeat: "export interface HeartbeatEvent { type: string; }",
   fallback: "export interface FallbackEvent { type: string; from: string; to: string; reason: string; }",
   approval_requested:

@@ -85,7 +85,7 @@ export function applyEditsVerified(
 ): EditVerificationResult {
   // Comment-slop autocorrect (item 54): normalize every hunk before any
   // positioning/dedupe so spans are computed on the clean anchors.
-  const corrected = hunks.map((h) => autocorrectHunk(h).hunk);
+  const corrected = hunks.map((h) => autocorrectHunk(h, content).hunk);
   // Exact-duplicate dedupe (item 56): identical hunks (same oldText,
   // newText, replaceAll) collapse to one, preserving first-seen order.
   // Range-overlap dedupe below would also drop them, but making it
@@ -329,18 +329,47 @@ export function restorePairedIndent(oldText: string, newText: string): string {
     .join("\n");
 }
 
+/** The prefix of a read line: a number and a tab, or the padded number and two spaces of older sessions. */
+const READ_NUMBER = /^ *(\d+)(?:\t| {2})/;
+
+/**
+ * Text copied from a read with its numbers: each line has the prefix of a read, and the numbers count up one by one,
+ * which file text of its own almost never does. Undefined when the text is not such a copy.
+ */
+function withoutReadNumbers(text: string): string | undefined {
+  const lines = text.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  let first: number | undefined;
+  for (const [index, line] of lines.entries()) {
+    const number = READ_NUMBER.exec(line)?.[1];
+    if (number === undefined) return undefined;
+    first ??= Number(number);
+    if (Number(number) !== first + index) return undefined;
+  }
+  return lines.length === 0 ? undefined : text.replace(/^ *\d+(?:\t| {2})/gm, "");
+}
+
 export interface HunkAutocorrect {
   hunk: EditHunk;
   corrected: boolean;
   notes: string[];
 }
 
-/** Normalize one hunk: strip trailing slop from both sides, then repair indent. */
-export function autocorrectHunk(hunk: EditHunk): HunkAutocorrect {
+/** Normalize one hunk: strip trailing slop from both sides, then repair indent. An oldText that `content` has is kept. */
+export function autocorrectHunk(hunk: EditHunk, content?: string): HunkAutocorrect {
   const notes: string[] = [];
   let oldText = hunk.oldText;
   let newText = hunk.newText;
-  const oldStripped = stripTrailingSlop(oldText);
+  // Live: a merge's `>>>>>>> feature` was stripped as slop, so the edit left it in the file and said it was done.
+  const asGiven = content?.includes(oldText) === true;
+  const unnumbered = asGiven ? undefined : withoutReadNumbers(oldText);
+  if (unnumbered !== undefined) {
+    oldText = unnumbered;
+    // New lines that the model added have no number of their own.
+    newText = newText.replace(/^ *\d+(?:\t| {2})/gm, "");
+    notes.push("removed the line numbers of a read from oldText");
+  }
+  const oldStripped = asGiven ? { text: oldText, stripped: [] } : stripTrailingSlop(oldText);
   if (oldStripped.stripped.length > 0) {
     oldText = oldStripped.text;
     notes.push(`stripped ${oldStripped.stripped.length} trailing slop line(s) from oldText`);
@@ -378,7 +407,7 @@ export function autocorrectHunk(hunk: EditHunk): HunkAutocorrect {
  * never fuzzy about code.
  */
 export function applyEdit(content: string, request: EditRequest): string {
-  const normalized = autocorrectHunk(request).hunk;
+  const normalized = autocorrectHunk(request, content).hunk;
   const oldText = normalized.oldText;
   const newText = normalized.newText;
   const replaceAll = normalized.replaceAll ?? request.replaceAll;

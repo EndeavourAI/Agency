@@ -1,6 +1,6 @@
-import { requireNetwork } from "@agency/guard";
 import type { HttpClient } from "@agency/net";
-import type { ToolDeps, ToolSpec } from "../contract.ts";
+import type { ToolContext, ToolDeps, ToolSpec } from "../contract.ts";
+import { networkOrAsk } from "../network-ask.ts";
 import { str, summarize } from "../render.ts";
 
 const MAX_RESULTS_CHARS = 20_000;
@@ -27,9 +27,11 @@ async function openRouterSearch(
   config: Extract<WebSearchConfig, { openrouter: unknown }>["openrouter"],
   http: HttpClient,
   deps: ToolDeps,
+  ctx: Pick<ToolContext, "requestApproval">,
 ): Promise<{ content: string; isError?: true }> {
   const url = `${config.baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  requireNetwork(deps.identity, deps.capabilities, new URL(url).hostname);
+  const refused = await networkOrAsk(deps, "websearch", new URL(url).hostname, ctx);
+  if (refused !== undefined) return { content: refused, isError: true };
   const key = await config.apiKey();
   if (!key) return { content: "websearch needs the key of the openrouter provider", isError: true };
   const res = await http.fetch(url, {
@@ -77,21 +79,23 @@ export function createWebSearchTool(deps: ToolDeps, http: HttpClient, config: We
       required: ["query"],
     },
     riskTier: "moderate",
+    readOnly: () => true,
     renderCall: (input) => `websearch ${summarize(str(input.query))}`,
     renderResult: (result) =>
       result.isError
         ? `websearch failed: ${summarize(result.content)}`
         : `websearch: ${summarize(result.content) || "(no results)"}`,
 
-    async handler(input) {
+    async handler(input, ctx) {
       const query = str(input.query).trim();
       if (query.length === 0) {
         return { content: "websearch requires a non-empty query", isError: true };
       }
-      if ("openrouter" in config) return openRouterSearch(query, config.openrouter, http, deps);
+      if ("openrouter" in config) return openRouterSearch(query, config.openrouter, http, deps, ctx);
 
       const url = `${config.endpoint}${config.endpoint.includes("?") ? "&" : "?"}q=${encodeURIComponent(query)}`;
-      requireNetwork(deps.identity, deps.capabilities, new URL(url).hostname);
+      const refused = await networkOrAsk(deps, "websearch", new URL(url).hostname, ctx);
+      if (refused !== undefined) return { content: refused, isError: true };
 
       const res = await http.fetch(url);
       const body = await res.text();

@@ -7,24 +7,60 @@ export const METHOD_DOCS: Record<string, string> = {
   run_turn: "Run one model turn over caller-owned messages.",
   cancel_turn: "Abort an in-flight turn and refuse its pending asks.",
   turns_list: "List the turns that run: id, session, model and start time.",
+  session_rewind:
+    "Rewind a session to before a prompt (default: the last): files its turns wrote go back; an edit since stops it unless force.",
   session_send: "Daemon-owned turn: send text, history and usage stay server-side.",
   session_show: "Read a session through the single SessionProjector view.",
-  session_list: "List daemon-known sessions with title and tip.",
+  session_list:
+    "List daemon-known sessions with title, tip and the outcome of the last turn (running, done, stopped, failed, or null when unknown).",
   session_create: "Create an empty session, id generated when omitted.",
   session_export: "Return a session's raw entries verbatim, unknown types included.",
+  session_title_set: "Set the title of a session (1 to 200 characters); session_list shows it.",
   session_rename: "Move a session history to a new id (clone plus delete).",
   session_delete: "Drop a session scope, approvals, and stored entries.",
   session_fork: "Branch a session at a tip inside the same file.",
   session_clone: "Copy a session file to an independent new id.",
-  session_message: "Queue mid-turn steering text drained per tool iteration.",
+  session_message:
+    "Queue mid-turn steering text drained per tool iteration; queued is false when no running turn reads it.",
   models_list: "List catalog models merged with config overrides.",
-  providers_list: "List providers with defaults, connectivity, and liveness.",
+  providers_list:
+    'List providers with defaults, connectivity, liveness and keySource (where each connected key comes from: env var name, login, keychain, config); models: "connected" lists models only for connected or configured providers.',
+  shell_run:
+    "Run a user shell command under the sandbox and the permission rules; its output joins the session as user context.",
+  git_status:
+    "Branch, ahead and behind, the last commit and the changed files of the workspace with their line counts, and a suggested commit message; repo is false outside a repository.",
+  git_commit:
+    "Commit paths (or every change of the workspace) with a message, behind the permission rules; push goes to the upstream of the current branch, never forced.",
+  git_diff:
+    "The unified diff against HEAD, plus the text of untracked files (null for a binary or a large one).",
+  client_config:
+    "The merged config keys that a client reads: theme, outputStyle, keybindings, editorMode, voice, clientPlugins.",
+  status_get:
+    "Model, effort, mode, cost, context used and limit, cache hit, branch and session of a session; line is the output of the statusLine command.",
+  history_list:
+    "The prompts submitted in this workspace, newest first; query keeps those that contain it, limit caps the rows.",
+  files_list:
+    "Up to 50,000 workspace paths that git does not ignore, plus the resources of the session's MCP servers (mention: server:uri).",
   config_get: "Read daemon config, secrets redacted, or one top-level key.",
   config_set: "Set one runtime-safe config key in memory until restart.",
+  config_user: "The user config file alone, without provider keys: the layer that config_write edits.",
+  config_write:
+    "Persist one dotted config key to the user config file, or, with scope=local, to the workspace file .agency/config.local.jsonc; comments kept, null removes it.",
+  daemon_restart: "Leave once no turn runs, so the next client starts a daemon with the new config.",
+  daemon_retire:
+    "Leave now if the caller is the only client and no turn runs; a client of another build asks, then starts its own.",
+  provider_connect: "Validate a provider API key and store it in the key store.",
+  provider_disconnect: "Remove the stored key of a provider; a key from an environment variable stays.",
+  skills_list:
+    "List discovered skills with origin, tier, tools, body, and enabled flag, and whether the workspace is trusted.",
+  memory_get: "Read the memory notes of the workspace: enabled flag, file path and note lines.",
+  memory_remove: "Remove the first memory note equal to the given line; returns the remaining notes.",
+  skill_write: "Create a SKILL.md in the project or user skills folder; never overwrites.",
   permissions_list: "Show the permission maps plus effective offered tools.",
   todo_read: "Read the latest persisted todo_state for a session.",
   todo_write: "Persist a todo_state entry for a session.",
-  cost_report: "Sum usage entries plus trace spans per session and agent (Phase 9 adds budgets and caps).",
+  cost_report:
+    "Sum usage entries plus trace spans per session and agent (Phase 9 adds budgets and caps); since (ISO time or epoch ms) adds the turns and cost after it.",
   undo_run:
     "Roll a session back to its pre-turn checkpoint; with mode files-only|task-only|both restores a shadow commit's files and/or the session tip.",
   undo: "Undo the last snapshot-backed file change.",
@@ -34,6 +70,7 @@ export const METHOD_DOCS: Record<string, string> = {
   agent_message: "Deliver a message to an agent mailbox.",
   agents_list: "List team agents with state, session, and cost.",
   agents_upsert: "Write an agent file and refresh the registry entry.",
+  agents_remove: "Delete the project's file of an agent; the team changes on the next daemon start.",
   agent_inspect: "Timeline, step, or reasoning view over an agent's recorded spans.",
   activity_graph: "Delegation DAG of agents plus tasks with state and cost.",
   board_read: "List board items with status, claim, and scope, plus the event log.",
@@ -83,11 +120,18 @@ export const EVENT_CATALOG: readonly EventDoc[] = [
   { name: "thinking_delta", description: "Reasoning chunk inside a turn stream." },
   { name: "tool_start", description: "A tool call began." },
   { name: "tool_result", description: "A tool call settled." },
-  { name: "turn_complete", description: "A turn finished with stop reason and usage." },
+  {
+    name: "turn_complete",
+    description: "A turn finished with stop reason, usage and timing (ttftMs, streamMs).",
+  },
   { name: "cost_meter", description: "Live turn cost plus run totals and per-agent spend." },
   { name: "cost_report", description: "Per-run totals with tokens, hit rate, and per-agent breakdown." },
   { name: "budget_exceeded", description: "A turn stopped on a budget cap." },
   { name: "heartbeat", description: "Turn liveness marker on silent stretches." },
+  {
+    name: "prompt_suggestion",
+    description: "The small model proposes the next prompt after a turn; only with promptSuggestions on.",
+  },
   { name: "fallback", description: "Turn retried on the fallback model." },
   { name: "approval_requested", description: "An ask is pending; answer via approval_respond." },
   { name: "session.*", description: "Per-session broadcasts such as session_message." },

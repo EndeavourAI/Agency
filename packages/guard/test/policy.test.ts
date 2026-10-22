@@ -152,6 +152,20 @@ describe("PermissionsGate", () => {
     expect(gate.decisionFor({ tool: "read", path: "/c/repo/secrets/key.txt" })).toBe("deny");
   });
 
+  test("names the command patterns that the rules allow, for a refusal to name them", () => {
+    const gate = new PermissionsGate({
+      permissions: { bash: { "*": "ask", "bun test*": "allow", "git status": "allow", "rm *": "deny" } },
+      workspaceRoot: root,
+    });
+    expect(gate.allowedPatterns("bash")).toEqual(["bun test*", "git status"]);
+    expect(gate.withRules({ bash: { "bun x tsc*": "allow" } }).allowedPatterns("bash")).toContain(
+      "bun x tsc*",
+    );
+    expect(
+      new PermissionsGate({ permissions: { bash: "allow" }, workspaceRoot: root }).allowedPatterns("bash"),
+    ).toEqual([]);
+  });
+
   test("a bare deny filters the tool from the offered list", () => {
     const gate = new PermissionsGate({
       permissions: { fetch: "deny" },
@@ -240,6 +254,62 @@ describe("PermissionsGate", () => {
     ).toBe("deny");
   });
 
+  test("plan mode refuses writes, other shell commands and agents, even where a rule allows them", async () => {
+    const plan = new PermissionsGate({
+      permissions: { write: "allow", spawn: "allow" },
+      workspaceRoot: root,
+    }).withMode("plan");
+    const ask = async () => "once" as const;
+    expect({
+      write: await plan.check({ tool: "write", path: "a.txt", riskTier: "moderate" }, ask),
+      edit: await plan.check({ tool: "edit", path: "a.txt", riskTier: "moderate" }, ask),
+      rm: await plan.check({ tool: "bash", command: "rm a.txt", riskTier: "dangerous" }, ask),
+      spawn: await plan.check({ tool: "spawn", riskTier: "safe" }, ask),
+      memory: await plan.check({ tool: "memory", riskTier: "safe" }, ask),
+      read: await plan.check({ tool: "read", path: "a.txt", riskTier: "safe" }, undefined),
+      ls: await plan.check({ tool: "bash", command: "git status", riskTier: "dangerous" }, undefined),
+    }).toEqual({
+      write: "deny",
+      edit: "deny",
+      rm: "deny",
+      spawn: "deny",
+      memory: "deny",
+      read: "allow",
+      ls: "allow",
+    });
+    expect(plan.denyReason({ tool: "write", riskTier: "moderate" })).toContain("plan mode");
+    expect(plan.denyReason({ tool: "read", riskTier: "safe" })).toBeUndefined();
+  });
+
+  test("a refused write to a harness file names the file and says the call can go elsewhere", async () => {
+    // Live: under allow-all, a server log sent to .agency/ was refused, and the model gave up the whole task.
+    const gate = new PermissionsGate({ workspaceRoot: root }).withMode("allow-all");
+    const command = "nohup python3 -m http.server 8765 > .agency/http.log 2>&1 &";
+    const request = { tool: "bash", command, riskTier: "dangerous" } as const;
+    expect(await gate.check(request, undefined)).toBe("deny");
+    expect(gate.denyReason(request)).toContain(".agency/http.log");
+    expect(gate.denyReason(request)).toContain("/tmp");
+    const elsewhere = { ...request, command: command.replace(".agency/http.log", "/tmp/http.log") };
+    expect(await gate.check(elsewhere, undefined)).toBe("allow");
+    expect(gate.denyReason(elsewhere)).toBeUndefined();
+  });
+
+  test("plan mode asks for a web read as ask mode does, and setMode ends it in place", async () => {
+    const plan = new PermissionsGate({ workspaceRoot: root }).withMode("plan");
+    const asked: string[] = [];
+    const ask = async (request: { tool: string }) => {
+      asked.push(request.tool);
+      return "once" as const;
+    };
+    expect(await plan.check({ tool: "fetch", riskTier: "moderate" }, ask)).toBe("allow");
+    expect(asked).toEqual(["fetch"]);
+    const write = { tool: "write", path: "a.txt", riskTier: "moderate" } as const;
+    expect(await plan.check(write, ask)).toBe("deny");
+    plan.setMode("allow-edits");
+    expect(await plan.check(write, undefined)).toBe("allow");
+    expect(plan.denyReason(write)).toBeUndefined();
+  });
+
   test("a ceiling caps an agent gate: above safe, the stricter verdict of the two gates wins", async () => {
     const agentMap = { bash: "allow", write: "allow", read: "allow" } as const;
     const agent = new PermissionsGate({
@@ -250,7 +320,7 @@ describe("PermissionsGate", () => {
     const verdicts = async (run: PermissionsGate) => {
       const capped = agent.withCeiling(run);
       return {
-        bash: await capped.check({ tool: "bash", command: "ls", riskTier: "dangerous" }, undefined),
+        bash: await capped.check({ tool: "bash", command: "npm test", riskTier: "dangerous" }, undefined),
         write: await capped.check({ tool: "write", path: "a.txt", riskTier: "moderate" }, undefined),
         read: await capped.check({ tool: "read", path: "a.txt", riskTier: "safe" }, undefined),
         edit: await capped.check({ tool: "edit", path: "a.txt", riskTier: "moderate" }, undefined),
@@ -260,7 +330,7 @@ describe("PermissionsGate", () => {
       new PermissionsGate({ permissions, workspaceRoot: root });
 
     expect({
-      uncapped: await agent.check({ tool: "bash", command: "ls", riskTier: "dangerous" }, undefined),
+      uncapped: await agent.check({ tool: "bash", command: "npm test", riskTier: "dangerous" }, undefined),
       defaultMode: await verdicts(run()),
       allowEdits: await verdicts(run().withMode("allow-edits")),
       allowAll: await verdicts(run().withMode("allow-all")),
@@ -309,9 +379,9 @@ describe("PermissionsGate", () => {
     expect(mapped.externalDirectoryDecision("/etc/passwd")).toBe("ask");
   });
 
-  test("unconfigured external_directory defaults to deny (historical sandbox behavior)", () => {
+  test("unconfigured external_directory asks, as Claude Code does for a path outside its folder", () => {
     const gate = new PermissionsGate({ workspaceRoot: root });
-    expect(gate.externalDirectoryDecision("/tmp/x")).toBe("deny");
+    expect(gate.externalDirectoryDecision("/tmp/x")).toBe("ask");
   });
 
   test("planner agent: absentToolsDenied filters bash when not in permissions map", () => {

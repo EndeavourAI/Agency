@@ -6,8 +6,792 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-22
+
+### Release
+
+- **Releasing**: bump `version` in the root `package.json` and merge to `master`. The release workflow builds, publishes the
+  eight `@endeavourai` npm packages (a version with `-` goes to the `next` tag) and creates the GitHub release `v<version>`.
+  A merge without a bump does nothing. Publishing uses npm Trusted Publishing (OIDC): for each of the 8 packages
+  (`@endeavourai/agency` and `@endeavourai/agency-<os>-<cpu>[-musl]`) set a trusted publisher with provider GitHub Actions,
+  repository `EndeavourAI/Agency`, workflow `release.yml`, environment `npm`, and "Allow npm publish" checked. A trusted
+  publisher needs an existing package, so the first publish of a new package needs a token: an npm granular access token
+  with read and write on `@endeavourai`, stored as the secret `NPM_TOKEN` of the GitHub environment `npm`. The workflow
+  uses it when set; delete it once every package has a trusted publisher. Add required reviewers to the environment to
+  gate each publish.
+
 ### Changed
 
+- **`tool_result` facts**: the event carries `meta` with `exitCode` (bash), `durationMs`, `added` and `removed` (edit and
+  write, counted against the old file) and `lines` (read), so a client shows "34 lines", "exit 101" and a real +N −M.
+  `shell_run` returns the `exitCode` too. A command that timed out or was cancelled has no `exitCode`, and an edit's +N −M
+  counts exactly for a change of up to 2,000 lines and counts a CRLF to LF rewrite.
+- **`git_commit`**: commits the given paths (or every change of the workspace); a deny rule or an untrusted workspace refuses it, and an ask rule is answered by the call itself. It refuses an
+  unmerged index, runs with literal pathspecs (no `:(top)` magic; a commit without paths takes the workspace only), checks
+  the permission rules against the exact `git add`, `git commit` and `git push <remote> HEAD:<branch>` it runs, and
+  pushes only to the upstream of the current branch, never forced. A staged rename commits both paths and `git_status`
+  gives the `oldPath`. It refuses while a file under the hooks directory has uncommitted changes, as git would run it. `git_status` takes a
+  `sessionId` and returns a `suggestedMessage` from the session's title or last prompt, else the changed files.
+- **How a turn ended**: every turn writes a `turn_end` entry (done, stopped, denied or failed, the commit it made as
+  HEAD before and after, and whether its last test, typecheck, lint or build passed after the last edit). `session_list`
+  rows carry the `outcome` of the last turn, `cost_report` takes `since`, and `session_send` and the `turn_end`
+  event carry the entry as `end`. A turn that its budget stopped is `stopped` (stop reason `budget`), only a refusal that
+  a person answered counts as `denied` (not a cancel or a timeout, and never over a stop or a failure), and a provider
+  error is redacted in the entry and the events.
+- **`providers_list` `keySource`**: where the key of each connected provider comes from (a variable name, `login`,
+  `keychain` or `config`), never the key.
+- **MCP `enabled: false`**: a server with it in the config does not start, and the user's entry beats a project server
+  of that name, in a per-turn `mcp.servers` too.
+- **Fixed: an image sent with `session_send` reached the model twice**: the daemon stored it in the prompt and added it
+  again at the start of the turn. A contract test now drives a whole TUI session over the HTTP gateway.
+- **`git_status` and `git_diff`**: branch, ahead and behind, the last commit and changed files with line counts; the diff
+  against HEAD plus the text of untracked files. They take over from the archived desktop host.
+- **`session_list` for the resume picker**: each row has `lastPrompt`, `branch` (kept on the usage entry of a turn) and
+  `costUsd`, and the method takes a text `query`.
+- **`client_config`**: one method returns the keys a TUI reads (`theme`, `outputStyle`, and the new `keybindings`,
+  `editorMode`, `voice`, `clientPlugins`), merged across the layers.
+- **`status_get` and the `statusLine` key**: model, effort, mode, cost, context used and limit, cache hit, branch and
+  session in one call. A `statusLine.command` gets that JSON on stdin and its output comes back as `line`.
+- **`/btw` and `/recap`**: `/btw <session> <question>` answers from the session with no tools and stores nothing;
+  `/recap <session>` returns a one-line summary. Both ask the configured model (`/recap` the small model first).
+- **`promptSuggestions`** (off by default): the small model proposes the next prompt after each finished turn, sent as
+  the `prompt_suggestion` event. It adds one request per turn, so it stays off until the user turns it on.
+- **`shell_run`** for the `!` mode of a TUI: the command runs through the bash tool under the permission rules, and
+  its output joins the session as a user message.
+- **`history_list`**: each prompt sent with `session_send` is kept per workspace in the data folder; the method
+  returns them newest first, with a query and a limit.
+- **`files_list` for @ completion**: up to 50,000 workspace paths that git does not ignore (nested `.gitignore`
+  files apply to their folder), plus the MCP resources of the session as `server:uri`.
+- **Managed policy at fixed paths**: `loadConfig` reads the managed file from a fixed path of the OS, so every
+  caller gets it. A managed permission rule now comes after every other rule, and `allowManagedPermissionRulesOnly`
+  and `allowManagedHooksOnly` drop the rules and hooks of the user, the project and other agents' settings.
+- **`/model` persists**: it sets the model for the running daemon and writes it to the user config file, so the
+  next session starts on it. A `model` key in a trusted project file still wins, as the layer order says.
+- **Project config loads**: `.agency/config.jsonc` and the new `.agency/config.local.jsonc` (above it, kept out of
+  git; `config_write` with `scope: "local"` writes it) apply in a trusted workspace. `trust.required` comes from
+  the user layer only.
+- **The desktop app is gone**: it lives on as the git tag `archive/desktop`. Its CI step, release job and the
+  `AGENCY_CONFIG_OVERLAY` config layer are removed. Its RPC methods (`config_write`, `config_user`,
+  `daemon_restart`, provider keys, skills) stay as settings methods.
+- **Fixed: a Claude 5 session with no thinking level failed every request after old tool results were pruned**:
+  these models think by default, and the earlier fix bound their thinking blocks only when a level was set. The
+  request now names the default thinking with the binding. In 16 scripted long sessions, 4 of 8 with pruning hit
+  the 400 and failed each later turn.
+- **The doubt gate and the missing-file note apply to headless runs only**: with a user present, the answer goes
+  to the user, who decides. Replayed over 2,148 real Claude Code turns, the doubt gate would have fired on 7% of
+  tool turns, mostly for checks the model cannot do ("I haven't run it in-game"), and the missing-file note on paths
+  named in passing.
+- **The test guard leaves out files git does not track**: deleting a scratch test the model wrote itself
+  (`zz_debug_test.go`, seen in real sessions) weakens no suite. `pending(` counts as a skip only with a reason text.
+- **The notes at the end of a turn go back in one message**: an unrun test of a changed file, a missing output,
+  the headless task review and each stop hook's reason now reach the model together. Sent one at a time, each cost
+  a phase of its own: 4.4 model calls on average in 99 recorded Terminal-Bench runs.
+- **The model runs a check it would list as not run before it answers**: the system prompt asked it to name what
+  was not verified, and the doubt gate then sent that answer back. 46 of 99 recorded runs went back that way, and
+  32 of them changed nothing.
+- **A turn that weakened tests is sent back once** (`testGuard`, on by default): the test files and runner configs
+  are scanned before the first tool of a turn and at its end, so a change by any tool or command counts: a test file
+  deleted (not moved), fewer tests or assertions, more skipped or focused tests, more always-true assertions, or more
+  exclusions in a runner config. The end of the turn names each file and asks to restore them and fix the code
+  instead, unless the task asked for it. A model can make a failing check pass that way.
+- **A headless run keeps its final answer to 3 lines** (`terse`, on by default): what was done and how it was
+  checked. In 99 recorded Terminal-Bench runs the median final answer was 1,467 characters that no one read.
+- **A shell command's progress lines reach the model as a terminal shows them**: output that a progress bar
+  rewrote with `\r` kept every version of the line. Only the last one is kept now. In 98 recorded Terminal-Bench runs
+  that overwritten text was 4.8% of all tool output.
+- **A headless task looks back at its requirements once before it ends**: in `-p` and SDK turns that used tools,
+  the first end is sent back with the task quoted, to confirm each concrete requirement with a command (paths,
+  names, formats, where files must be, what must be running) and fix what does not hold; the files the task names
+  that do not exist are listed in the same note. On Terminal-Bench, runs that did the work well still failed a
+  requirement stated once in the task (build-pmars: the source in `/app`, from the Debian package). It costs one
+  request a run; `verifyGate: false` turns it off. Not measured yet.
+- **The system prompt asks to leave only the asked-for files**: when a task asks for specific output files, the
+  model builds and tests in a temporary folder and removes what it made beside those outputs before it finishes.
+  On Terminal-Bench, polyglot-c-py and polyglot-rust-c failed because the check wanted only the source file and
+  found the compiled test binaries next to it.
+- **A trimmed old tool result no longer ends a run with a 400**: on models with preserved thinking (Haiku 5.5,
+  Sonnet 5.5, Opus 5.5, Fable 5.1) each thinking block is bound to the history before it, and Agency trims old
+  tool results to save input. When a trim came before a replayed thinking block, the API refused the request
+  ("bound to a different conversation"): 4 of 98 Terminal-Bench runs ended this way. Requests with adaptive
+  thinking now set `thinking.block_binding.prefix_mismatch_behavior: "drop_block"` under the
+  `thinking-binding-controls-2026-08-01` beta, so the API drops that stale block and the run goes on.
+- **An edit whose hunks the model cut into its own format is repaired**: Haiku 5.5 sent `hunks` as the string
+  `[{"oldText">OLD` with the new text as the top-level `newText` in 9 of 98 Terminal-Bench runs, and each call was
+  refused (`"hunks" must be array`). Such a call is now the one hunk it meant: oldText is the text after the cut,
+  newText the top-level one. All 9 recorded calls replay into a valid edit; a broken string with no `newText`
+  still gets the error.
+- **Claude Code runs in Harbor with a fast install**: `packages/eval/harbor/claude_code_fast.py` is Harbor's Claude
+  Code agent with one change: on a glibc x64 container it uploads the native `claude` binary (`CLAUDE_BINARY`)
+  instead of installing Node.js and Claude Code in every container. Setup took 4 s instead of about 5 minutes, so a
+  head-to-head no longer spends most of its time on installs. Other containers take Harbor's own install.
+- **A turn that ends while a file the task named is missing is sent back once**: when the model stops and a file
+  that the prompt names (an absolute path, or a relative one with a folder in it) does not exist in a folder that
+  does, it is told to make it, as a best effort is better than none, or to say in one line why not. On
+  Terminal-Bench 4 of 14 failed runs ended with such a file missing (`/app/solution.txt`, `/app/data.comp`). A path
+  in a folder that does not exist (`/path/to/out.txt`) is taken as an example and left alone.
+- **The JSON result of `-p` reports time and failed calls**: `duration_ms` (the run, as Claude Code reports it),
+  `duration_api_ms` (time spent on model replies), `num_tool_calls` and `num_tool_errors`. The Harbor agent gives
+  them to Harbor with the stop reason, so each trial shows where a run went wrong.
+- **A question in a headless run is answered with "no one will answer"**: the `question` tool of a `-p` or SDK turn
+  said that the answer would come in the next message, so the model ended its turn to wait and the run ended with
+  no answer. A headless turn's `question` now says that no one will answer, to choose the most reasonable option,
+  name it in the final answer, and go on.
+- **A fixed Terminal-Bench set and a report**: `packages/eval/harbor/tasks.txt` names 35 Terminal-Bench 2.0 tasks
+  (easy to hard), `run.sh` runs them through Harbor with Agency or another agent (`AGENT=claude-code`), and
+  `report.py` prints the pass rate, time and cost of each task for several jobs side by side. A trial that failed
+  on the machine (a network or Docker fault) is counted apart and left out of the rate.
+- **A turn can have a time limit** (`--max-time <seconds>` with `-p`, `budget.maxSeconds` in the SDK): at three
+  quarters of it the model is told the minutes left and to finish what the task asks for, a shell command's
+  `timeout` is cut to the time left, and the turn ends at the limit with its result and usage written. A
+  benchmark or CI job has a deadline that the model cannot see: live on Terminal-Bench, query-optimize spent its
+  900 s waiting on a slow query twice and was killed with nothing written. The Harbor agent passes 90% of each
+  task's time.
+- **bash says how to wait for long work**: its description now says that a `timeout` of up to 600000 ms keeps a
+  build, a test suite or a long search in the foreground until it ends, and to wait for a background process with
+  `process_output` and `wait`, not with `sleep` loops. Before, `timeout` was described only as a way to kill a
+  hung command, and live a model stopped a long search as too slow while another polled with `sleep 110`.
+- **The system prompt says to copy data before changing it**: before running anything that can change data the
+  model was asked to inspect, repair or recover, it copies it. Live on Terminal-Bench (db-wal-recovery), a model
+  opened the database first, which destroyed the write-ahead log the task asked it to recover.
+- **The notice of a background command gives the call that reads it**: `process_output` is loaded on demand, so the
+  model does not see its arguments. Live on Terminal-Bench (query-optimize, Haiku 5.5), a command that bash moved to
+  the background was read with `process_output {wait: "true"}`, which failed, then `tool_search`, then `call_tool`:
+  three calls for one read. The notice now shows `process_output {"id": "…", "wait": <seconds, at most 600>}` and
+  `process_kill {"id": "…"}`.
+- **A headless run is told that no one will answer**: in `-p` and SDK turns the system prompt now says that no one
+  reads a question before the run ends, so the model picks the most reasonable option, names it, and finishes.
+  Live on Terminal-Bench (crack-7z-hash, Haiku 5.5), a run stopped after 16 calls to ask for "permission to run a
+  longer attack" that no one could give, and the task failed; Claude Code finished the same task.
+- **An answer that says it skipped a check is sent back once to do it**: on Terminal-Bench with Haiku 5.5, 2 of
+  the first 4 failed tasks ended with the model's own word that it had not checked its answer ("I did not run a
+  chess engine to confirm this", "I could not confirm the reference's word size") and nearly all steps unused. The
+  verify gate now sends such an answer back once with that sentence, to do the check or say why it cannot be
+  done. Live, chess-best-move then took 11 calls instead of 3, wrote a mate-in-one search, found the second move
+  it had missed and passed. The system prompt asks the model to name what it did not verify, so the reminder fires
+  on about two answers in three (11 of 17 finished runs); each costs one more request. `verifyGate: false` turns it
+  off with the rest of the gate.
+- **A Harbor agent for Terminal-Bench**: `packages/eval/harbor/agency_agent.py` runs Agency in Harbor
+  (`harbor run -d terminal-bench@2.0 --agent-import-path agency_agent:Agency -m anthropic/<model>`). It uploads
+  the release binary that fits the container (x64 or arm64, glibc or musl, with `libstdc++` added on Alpine), runs
+  `agency -p` under allow-all with 300 steps, and gives Harbor the tokens and cost of the run. Checked through
+  Harbor's own agent base class in an Alpine root: it installed, fixed a bug and reported $0.0005.
+- **Builds for Alpine and other musl systems**: releases add `agency-linux-x64-musl` and
+  `agency-linux-arm64-musl`, and `install.sh` picks one on a musl system. The glibc build does not start on Alpine
+  (many container images, some Terminal-Bench tasks). The musl build needs `libstdc++` and `libgcc`
+  (`apk add libstdc++ libgcc`). Live on Alpine 3.22: the build ran `-p` and fixed a bug.
+- **A binary built on another OS starts**: `scripts/build.ts` compiled bytecode into every target, but bytecode
+  made on another OS aborts at start (a JavaScriptCore assertion): each Linux binary built on Windows crashed on
+  `--version`, found by the first Terminal-Bench run. Bytecode now goes only into targets of the build machine's
+  OS; a target of another OS starts about 45 ms slower. Another CPU or libc is fine: a linux-arm64 build made on
+  x64 ran under qemu, and a musl build made on glibc ran on Alpine. Release builds were made on their own OS and
+  were not affected.
+- **An edit or write with a line that stands for left-out code is refused**: a model that sends
+  `// ... rest of code ...` or `# ... existing code ...` in place of the code would delete that code. `edit`,
+  `write` and `apply_patch` now refuse such a line (one the file did not have already) and say why, as Gemini CLI
+  does. Code and prose that only mention these words pass.
+- **Open coding models get their vendor's temperature**: GLM-4.6 and 4.7 and MiniMax M2 run at 1.0, Kimi K2 at
+  0.6 (its thinking and K2.5 models at 1.0), and Qwen3-Coder at 0.7, as their vendors recommend and OpenCode sends.
+  Before, each request took the default of the provider that served it. Other models are unchanged.
+- **GPT-5 and codex models edit with `apply_patch`**: for a model id with `gpt-5` or later or `codex` (not
+  `gpt-oss`), `edit` and `write` go to the model as Codex's `apply_patch` tool, in the patch format that OpenAI
+  trains these models on; Codex, OpenCode, Cline and Roo do the same. A patch changes one file a call (update, add
+  or delete), so the permission rules see each path; it runs as an `edit` of that file, with its snapshot, undo,
+  formatter and verify gate. A patch of several files is refused with the list of files, to send one call for each.
+  `toolDialect: "codex"` gives this form to any model.
+- **Tool names by model** (`toolDialect`, new, default `"auto"`): `"claude-code"` gives `read`, `write`, `edit`,
+  `bash`, `grep` and `glob` to the model as `Read`, `Write`, `Edit` (`file_path`, `old_string`, `new_string`,
+  `replace_all`, `edits`), `Bash` (`run_in_background`), `Grep` (`-i`) and `Glob`, in the tool list, in the calls
+  of the history and in the errors that name an argument. The session, hooks and permission rules keep this
+  harness's names, and the names follow the model of each request, so a fallback of another family gets its own.
+  `"auto"` does not pick it for Claude or the models tested in Claude Code: on the 13 bench tasks Haiku 5.5 (148
+  runs) and MiniMax M3.1 (12, free) solved every task with either names, with no measurable difference in calls
+  (2% pooled, inside the run-to-run noise).
+- **Tool calls in the names of other harnesses run**: a model trained on Claude Code, Codex, Gemini CLI, OpenCode
+  or Kimi CLI sends that harness's tool and argument names (`Edit` with `file_path`/`old_string`, `read_file`,
+  `exec_command` with `cmd`, Codex's `shell` with an argv, `MultiEdit` with `edits`). Each call is mapped to the
+  names here when it arrives, so the history, the permission rules and the verify gate see one form. Arguments
+  that a model sent as the wrong type are converted from the schema: an array of edits sent as a JSON string
+  (Pi records this of Opus 4.6 and GLM-5.1), a number or a boolean as a string, one edit object where an array
+  goes, and an optional argument sent as null.
+- **The live bench has eight terminal tasks and compares builds**: `packages/eval/bench` gains `tb-*` tasks in the
+  shape of Terminal-Bench (a fetch that needs the network, a server that must outlive the run, a stopped git
+  merge, a 300,000-line log, a two-bug package, a y/N prompt on stdin, a cleanup, a failing test) with checks that
+  run after the agent exits and are not shown to it. `--agency label=path` (repeatable) runs each task on several
+  builds in turn. A self-test checks, with no model, that each check fails at the start and passes on a known
+  answer. On Haiku 5.5 these tasks found most of the faults fixed in this release.
+- **Under allow-all, three equal tool calls in a row no longer end the turn**: the doom-loop stop asks the user,
+  and in a headless run no one answers, so a task that polled a build three times with the same command was lost.
+  allow-all now approves that ask, as it approves the sandbox's other asks; the step limit still ends a real loop.
+  Other modes still ask.
+- **A tool call cut by the output limit does not run, even when its arguments could be repaired**: a cut between
+  two complete arguments (`{"path": "a.py", "oldText": "a", "newText": "b"`) was closed into valid JSON and ran
+  without what the cut took (a `replaceAll`, the rest of a call). It now gets the note that the limit cut it, as
+  a call whose JSON did not parse does. The "truncation poisoning" guard of Pi, in the harness survey of
+  arXiv 2609.00006.
+- **A client does not keep using a daemon of another Agency build**: the instance file names the build that
+  started the daemon (where its code lives, and when that file changed). A client of another build asks it to
+  leave (`daemon_retire`, new); with no other client and no turn it leaves and the client starts its own, while
+  a busy one stays in use. Before, after an upgrade or with a second checkout, a client kept talking to the old
+  code until that daemon idled out.
+- **`agency -p` runs its daemon inside its own process**, as `claude -p` and `codex exec` run: it no longer spawns
+  or reuses the shared daemon of the workspace, which cost 0.25 to 0.65 s of each cold run (WSL), stayed 10 minutes
+  after it, and could be a daemon of an older build: in a live benchmark, every run of a new checkout talked to
+  the daemon of an old one. The interactive app and `agency daemon` keep the shared daemon. A background process
+  of a `-p` run now stops when the run ends.
+- **A passing command that names a test file counts as a check** for the verify reminder (`test_stats`,
+  `parser_test.py`): live, a model ran its tests with `python3 -c "import test_stats; ..."` where pytest was not
+  installed, and the reminder still cost three calls.
+- **No verify reminder in a workspace with nothing to check**: no test file or folder and no project file
+  (`package.json`, `pyproject.toml`, `Makefile`, `Cargo.toml`, `go.mod` and the like) at its root. In 6 of 12 live
+  headless runs on Linux the reminder fired in such a folder, and the model spent one to three calls (up to a
+  quarter of a short task's cost) to find that no check existed. Terminal-Bench adds its tests after the run.
+- **The `bash` tool says that a background process stops when the session ends**, and that one which must
+  outlive it starts with `nohup ... &`. A live headless run (Sonnet 5.5) started a server that the task needed
+  after the run with `background: true`; it lived on only because the command also used `setsid`.
+- **An overload of the provider (Anthropic's 529) is retried for up to 5 minutes**, as a rate limit is, and not
+  four times in about 3.5 s: an overload outlasts that, and the turn ended with an error, so a long benchmark task
+  was lost on one busy minute (Claude Code retries it ten times). With a fallback model, the turn still moves to
+  it after four attempts.
+- **An `overloaded_error` or `rate_limit_error` in Anthropic's stream gets the retries of a 529 or a 429**: an error
+  that came after the 200 was always a transient error, with four attempts.
+- **A file that `edit` changed counts as read**, as the option of the tool said: a later `write` of it no longer
+  warns that the file "was never read this session" (seen live after three edits of one file).
+- **`edit` keeps a conflict marker that the file has as part of `oldText`**: a trailing `>>>>>>> feature` was taken
+  as junk that a model adds and stripped before matching, so the edit removed the lines above it and left the
+  marker in the file. In a live merge task on Linux this happened three times in a row, five extra calls and an
+  amended commit. The junk is now stripped only when `oldText` as given is not in the file.
+- **An `edit` that would leave the file as it is is refused** with a note to read the lines again; before, it said
+  "edited" and the model went on as if it had changed something.
+- **A change of a page or data file (`.html`, `.css`, `.csv`, `.svg`) gets no verify reminder**, as a change of prose
+  gets none: in both live runs of a server task on Linux, a written `index.html` sent the model back to look for
+  project checks that did not exist.
+- **Under allow-all, the `bash` tool no longer tells the model that commands have no network**: its note of the
+  sandbox gives way to "Commands run with the user's rights and have the network". In a live headless run on
+  Linux, the model read "no network", did not try to install pytest, and checked its fix by hand.
+- **A write to a harness file that no one approved is refused with its reason**: the refusal names the file
+  (`.agency/http.log`) and says the call can go again with another path. Before, it read as a refusal of the whole
+  command, and in a live headless run the model gave up starting the server that the task asked for.
+- **A passing run of a changed script counts as its check** for the verify reminder: `python3 fetch.py` or
+  `./run.sh` that exits 0 after an edit of that file. In both live headless runs on Linux, the model ran its new
+  script, saw the right output, and the reminder still sent it back for two or three more calls. Reading a file
+  (`cat`) is no run, and a file that no command ran still gets the reminder.
+- **A file tool asks for a path outside the workspace when the config sets no `external_directory` rule**, as
+  Claude Code asks for a path outside its folder; before, it was refused in every mode. Under allow-all the ask
+  passes, so `read`, `edit` and `write` reach `/etc` or a library's source; a headless run in another mode still
+  refuses it, and an explicit `external_directory` rule still wins. In 584 stored sessions, 36 calls were refused
+  for a real outside path, and the model then mostly turned to `bash`: one wasted reply each.
+- **Under `--permission-mode allow-all`, a `bash` command runs outside the sandbox of the operating system**, with
+  the user's rights, as in Claude Code's bypass mode and Codex's `--yolo`. Under bubblewrap or Seatbelt, allow-all
+  still left everything outside the workspace read-only (`apt install`, `/etc`, `/usr/local`) and gave each command
+  its own `/tmp`: in a live headless run on Linux, a file written to `/tmp` was gone in the next command. Other modes
+  keep the sandbox; a Docker sandbox that the config names stays.
+- **`-p` output keeps an answer that a harness note sent back**: when the untested-edits note made the model check its
+  work, `result` (and text output) held only the reply to the note. In a live run on Linux, the model reported the
+  status code 200, and `.result` said only "No project checks apply". The answers of the run now come first, then
+  the reply to the note; a run with no note prints as before.
+- **Under `--permission-mode allow-all`, a command may pass the network limit of the sandbox**, even in a headless
+  run where no one can be asked, as Claude Code's bypass mode allows everything. Before, a headless run refused every
+  ask, so under the OS sandbox (bubblewrap, macOS) `pip install` failed under allow-all: in a live run on Linux the
+  task could not be done. Other modes still ask, and other asks in a headless run are still refused.
+- **Under the sandbox of the operating system, a long `bash` command moves to the background after 120 seconds**, as
+  the tool's description says and as it does with no OS sandbox: on Linux with bubblewrap and on macOS, a command
+  ran through a path with no detach, so it held the turn until it ended. In a live headless run on Linux, a model's
+  `find /` held the turn for 598 seconds. The command now runs on the host in the sandbox's wrapper, with the same
+  kill, partial output and detach as an unsandboxed one, and the note that names a sandbox denial is kept.
+- **A turn reports its cost, priced request by request**, when the provider reports no charge (Anthropic): the
+  result's `usage.costUsd`, so `agency -p --format json` gives `total_cost_usd` as `claude -p` does, and the session's
+  usage entry takes that cost. In a live run of Claude Haiku 5.5 on Linux the JSON had no `total_cost_usd`, though the
+  session priced the turn at $0.0032. A long-prompt step now applies to each request: the session's price came from
+  the sum of the turn's requests, so 30 requests of 50K tokens would have been priced as one prompt over 100K.
+- **A prompt over a model's long-prompt step is priced at its higher rate**, in the turn's cost budget and in the
+  session's cost: Claude Haiku 5.5 charges $0.10/$0.50 a million tokens up to 100K tokens of prompt and
+  $0.50/$2.50 above, its cached tokens by the same factor. Before, Agency priced every request at the lower rate,
+  so a long Haiku session reported up to a fifth of its real cost and a cost limit let it run five times too far.
+  In the stored sessions of real models, 7 of 9,359 requests passed 100K tokens (0.6% of input); longer tasks, such
+  as those of Terminal-Bench, pass it more often.
+- **Agency knows the price and limits of the current Claude models, and reads models.dev prices in the right
+  unit**: the built-in catalog gains Claude Haiku 5.5, Sonnet 5.5 and Opus 5.5 at Anthropic's prices (1M-token
+  window, 128K output), and Opus 5 and Sonnet 5 get the current prices ($5/$25 and $2/$10, not $15/$75 and $3/$15).
+  Before, a machine with no catalog cache, such as a fresh container, knew no 5.5 model: a turn on one cost $0 in
+  every report and budget, and asked for 8,192 output tokens at most. models.dev lists dollars per million tokens
+  (its Haiku 5.5 entry is 0.1, Anthropic's $0.10/M), but the catalog multiplied them by a million, so a Claude
+  token priced at dollars; the cache version is now 4, so a cache with such prices is read again. Haiku 5.5's
+  higher price for a prompt over 100K tokens ($0.50/$2.50) is not modelled yet.
+- **The OpenRouter model list that a daemon reads is kept in the cache**, so the next daemon knows the model at
+  once: before, each daemon read the whole list (787 KB, 0.23 to 0.32 s) before the first request of a model that
+  the built-in catalog lacks, and the built-in catalog has no OpenRouter model. Every headless run starts a daemon:
+  in the log, the first turn of a new daemon waited a median 249 ms from its start to the first model call (189
+  runs), a turn of a running daemon 81 ms. A list older than a day is read again in the background, and a model the
+  saved list lacks still waits for the read, as before.
+- **A session whose cache reads at a tenth of the input price or less prunes in 20K-token batches**, not 10K: the
+  batch now follows the cache read price of the model in the catalog, as well as what the first three requests
+  cached. On `poolside/laguna-s-2.1` through OpenRouter (input $0.09/M, cache read $0.009/M), uncached input was 57%
+  of the research cost in the stored runs. A replay of 112 research sessions with the repository's own pruning,
+  priced at 0.1x: cost −11% with 20K batches (−13% with 40K, but 32% more input), input +12%; all tasks −9%. At a
+  0.25x read price 10K and 20K differ by 1%, so 10K stays; a model with no known cache price keeps 10K too.
+- **A new daemon runs `git status` for the environment block as it starts**, not before the first request: on
+  Windows the status took 58 ms (36 of them to start the process) on this repository, synchronously, before the
+  first request of each session. In 198 daemon starts in the log, the first turn began a median 98 ms after the
+  daemon was up (10th percentile 83 ms), so the status is ready by then; in the daemon tests the time from start to
+  the first reply fell from 133 to 97 ms. A status older than 10 seconds, and every later session, runs git as
+  before, and `stop()` waits for the spawn so that the folder can be deleted.
+- **The environment block names the files and folders at the project root** (up to 60, a folder with a trailing
+  slash; hidden ones and `node_modules` left out), as Gemini CLI and Cline give the model the folder structure at
+  the start. In 233 stored sessions since 2026-10-15, 34 searched in their first three replies for Python or
+  JavaScript files that the TypeScript project lacks (48 empty searches), and 20 opened by listing the root with
+  `ls`. The line is about 50 tokens for this repository and sits in the first user message, so the shared cached
+  prefix does not change.
+- **`read` and `grep` take the argument names that models bring from other harnesses**: `read` takes
+  `start_offset`/`end_offset` and `start_index`/`end_index` as a line range, and `grep` takes `case_insensitive`
+  and `-i`, `output_mode: "files_with_matches"` (or `outputMode: "filesWithMatches"`) and `extension`. Each was
+  ignored before: in 584 stored sessions, 10 reads with such a range got the whole file (one research session sent
+  the 45K head of `loop.ts` for a ten-line slice, and five such reads sent 136K characters), and greps
+  for a file list or one extension got every match line of the project (up to 20K characters).
+- **A `grep` past its 200-match cap shows the first 100 matches and then the path of each other file that
+  matches**, from a second search with `filesOnly`, instead of 200 match lines that stop partway through the
+  files. Claude Code's Grep lists files by default for the same reason. In 112 stored research sessions, 112 of 714
+  greps hit the cap and held half of all grep text, and the next call was a read in 92 of them. Replayed with
+  `git grep` on the benchmark tree, 106 of those greps get 34% smaller, and of 1,030 reads of a matching file in
+  the next 5 replies, the result now names all 1,030 against 778 before.
+- **A `grep` that hits one or two files, with six matches at most, also shows the code around each match**: the
+  numbered lines from the declaration that holds the match (up to 20 lines above it) to the next declaration, 60
+  lines a match and 120 in all, as a slice read gives them. In 112 stored research sessions, 141 slice reads
+  followed such a grep and 82% of them held a match line (median 50 lines): about one model round trip a session
+  that the result can answer. Aider shows search matches inside their enclosing scopes the same way (grep-ast). A
+  search with `context`, `filesOnly`, more files, a capped search and a minified file show none.
+- **`agency testmap` maps each test to the source lines it runs, and the "untested edits" note then names only the
+  tests that ran a changed line** (bun projects): it runs each tracked test file alone under `bun test --coverage`
+  and keeps the map in the cache. On 43 stored runs of the benchmark edit task (`plural()` in `render.ts`, used in
+  `grep.ts` and `glob.ts`), the import graph named 33 tests and the map 7 in 38 runs, with `builtins-render.test.ts`,
+  the test that such an edit broke in a live run, among them in 40. Lines that every test of a file runs, as an
+  import does at load, do not count. With no map, a changed file the map lacks, or only such lines, the note names
+  the importers as before. Building the map for this repository took 344 s.
+- **In a `code` script, `glob` and `grep` return what they built, not their text**: `glob` an array of paths,
+  `grep` an array of `{ path, line, text }`, or of paths with `filesOnly`; a search with `context`, and any other
+  tool, still returns one string. In live runs on Linux, 37 of 52 scripts failed, most because they iterated the
+  text of `glob` as an array (a description that said so did not help: 11 of 18 still failed). A result whose text
+  a redaction or a hook changed reaches the script as that text. The tool stays opt-in (`codeMode`).
+- **`fetch`, `websearch`, `memory`, `question` and `spawn` wait for `tool_search`** instead of sending their
+  schemas with every request: 0 of 5,583 tool calls in the stored sessions went to them, while the deferred
+  `process_output` was found and called when it was needed. An agent whose role is `researcher` keeps `fetch` and
+  `websearch` in its list, `spawn` stays listed when agent files give it types, and a direct call to a deferred tool
+  still runs. Child agents (dispatch, spawn) get the same rule and now also find the other deferred built-in tools
+  (`browser`, the process tools) with `tool_search`, as the main session does. The tool list of a plain session fell from 7.4K to 5.3K
+  characters, about 530 tokens of every request.
+- **The environment block goes in the first user message, not in the system prompt**, as Codex sends its
+  environment context as a user message. The system prompt and the tools no longer hold the project root, the
+  date or the git state, so sessions in other folders share their cached prefix: on OpenRouter the cross-session
+  cache hit ended at about 480 tokens, where `<environment>` began, out of a static prefix of about 2.8K. The
+  block is added to each request and kept out of the transcript, and a session keeps its first block as before.
+- **Old tool results are pruned at 6 model calls, in batches sized by the cache that the session's provider
+  shows**: the first three requests of a session fix the rule. With no cache, or one that held under half the
+  input, each result goes at age 6; a cache that only reads keeps 10K-token batches; a cache that also reports
+  writes (Anthropic) keeps 40K. Before, every session waited 10 calls and a 20K batch, so a 14-request session
+  never pruned. A replay of 108 stored research sessions with the same actions gives −30% input with no cache,
+  −6% cost with a cache read at 0.25×, and −6% at Anthropic's 0.1× read and 1.25× write; re-reads that a pruned
+  result may cause are not in the replay. The rule lasts across the session's turns, so a later turn does not
+  bring a pruned result back.
+- **An absolute path inside the project is kept relative in the history that the model sees**: a model copies
+  its own earlier calls, and in the stored research sessions the one whose first call wrote the absolute project
+  root wrote it in every later call (up to 38 a session). The tool still gets the path as sent, and the reply is
+  new, so no cached prefix changes. In 8 live research runs after it no call sent an absolute path, though most
+  runs before it sent none either: the habit comes in some sessions only.
+- **`grep` names each file once, above its match lines** (`12:text`), as `rg --heading` and OpenCode's grep print
+  them, instead of the path on every line. On four broad greps that live research sessions sent, the result fell
+  from 47K to 33K characters (−29%) with every match kept. A search with `context` keeps the path on each line.
+- **`glob` lists 100 files at most, not 500**, and says to give a more specific path or pattern, as the Glob
+  tools of Claude Code and OpenCode do: in 3 of 4 live research sessions the first call was a glob of the whole
+  repository, 19K characters that every later request of the session sent again.
+- **A call to `shell` runs `bash`**: models trained on Codex, whose shell tool has that name, sent it 3 times in
+  the benchmark sessions, and each call failed as no such tool. A tool of that name, if one is offered, still wins.
+- **A `read` of a missing file names the project files of that name** (up to five, from the git index and the
+  untracked files that are not ignored): in live sessions, 19 of 26 failed reads named a file that the project
+  has in another folder (`packages/tools/test/read-long.test.ts` for `test/builtins/read-long.test.ts`), and the
+  model then spent a call to find it. OpenCode's `read` suggests similar names, from the same folder only.
+- **The `code` tool is off by default on Linux and macOS too** (set `codeMode: true` to offer it): in live runs on
+  Linux, one free model never called it in 5 sessions, and another wrote 52 scripts, of which 37 failed, most of them
+  because they used the text of a tool result as an array. A fan-out task took 13 to 21 replies with the tool and 6
+  with no tool.
+- **A network failure is retried for up to 5 minutes, and a reply that the network cuts is asked for again**
+  (twice, after 1 s and 2 s): before, four attempts (about 7 seconds) and none for a cut reply. In one burst of
+  network trouble, 5 of 31 live sessions were lost: 2 to a DNS failure (`ENOTFOUND`) and 3 to "The socket
+  connection was closed unexpectedly" in the middle of a reply.
+- **The `bash` tool names the commands that the permission rules allow**, when rules allow some by pattern (up
+  to ten, as `--allowed-tools "Bash(bun test*)"` gives): in 3 of 6 live debug sessions under that rule the first
+  test command was `npx bun test …`, refused, and only the next call wrote `bun test …`.
+- **The `code` tool says that a call returns one string, a list one item a line**: in a live run on Linux two
+  scripts iterated the text of `glob` as if it were an array, read the file `p`, and failed.
+- **A refused command names the command patterns that the rules allow** (up to ten): under
+  `--allowed-tools "Bash(bun test*)"`, a model refused for `npx bun test …` tried two more `npx` forms before it
+  wrote `bun test …` (4 of 5 failed calls of the live debug sessions).
+- **A path from the project root with a leading slash is read in the project root** (`/packages/x/a.ts`) when
+  the disk has neither that path nor its folder and the project has the file or its folder: in live research
+  sessions models wrote such paths for `read`, `grep` and `glob`, and each named the root of the disk and was
+  refused (3 in one session). A path that the disk has keeps its meaning, and none can leave the workspace.
+  This holds for the file tools of a session too, which see the workspace through a view that made the path
+  absolute first: a live session still had three such reads refused.
+- **Three replies in a row of one read-only call each get a reminder**, once a turn, in the last result: calls
+  that do not depend on each other go in one reply. The system prompt asks for that, and still research sessions
+  ran 21 reads in 22 replies, each a round trip that sent the whole history again.
+- **A turn that changed files is told of the tests that it did not run**, once, before it ends: the tests that
+  git tracks and that import a changed file by a relative path (JS and TS), directly or through one more file, or
+  that the turn changed itself, when no test command of the turn named them or ran a whole suite. The note names
+  five and the folders of the rest. In a live edit session a model changed `grep.ts`, ran only the test that it
+  wrote, and ended with `builtins-render.test.ts` broken, which imports `grep.ts` through `builtin-set.ts`.
+  A changed file counts as tested when a test that imports it directly ran: a list of 28 far tests had a model
+  search for four replies after it had run the test of the file that it changed.
+- **A refused shell search names the tools that need no permission**: when a rule refuses a `bash` call that
+  searches or shows files (`grep`, `find`, `cat`, `sed -n` and similar, also after `cd dir &&`), the refusal says
+  that `grep`, `glob` and `read` do it with no ask. Most of 75 refused shell calls in stored sessions were such
+  searches (a recursive `grep`, a `\|` in quotes, `find -exec grep`), and models went on to send others.
+- **A line of a read or of an edit result starts with its number and a tab**, not a number padded to six places
+  and two spaces: measured with o200k on three source files, the padded form added 28% to 34% to the tokens of
+  the file and the tab form 10% to 12%. `edit` takes text copied with either form.
+- **The environment block names the workspace `project root`**, not `cwd`, with the note that the shell starts
+  each command there and tools take paths relative to it: the words of the path rule of the prompt. With
+  `cwd: <path>`, a model wrote that path out in each call of a debug session (4 of 4).
+- **A rate limit is retried for up to 5 minutes**, not 7 attempts (about 60 seconds): in 4 of 13 live sessions
+  on a free model, an upstream limit outlasted the attempts and the whole session was lost, in one after the fix
+  was made. Each wait is still at most 30 seconds, and a retry event says when the next try runs.
+- **The files that a prompt names are read before the first request**, as Claude Code reads a file that a
+  message @-mentions: up to four files of the workspace, each as a `read` call and its result in the transcript.
+  In each live debug and edit session the first reply only read the files that the prompt named: a full round
+  trip to the model for the text the harness could give.
+  A named test file brings the files that it imports by a relative path: in each debug session the next read
+  after the failing test was the file that it tests.
+- **`bash` runs a command in the folder that a `cwd` or `workdir` argument names**, in the workspace only: in
+  two of three live edit sessions a model sent `cwd` unasked, as Codex has models name the folder of each command,
+  and the command ran in the project root instead.
+- **A whole `read` of a file too large to send whole (over 2000 lines or 45 KB) gives its outline**, not its
+  first 45 KB: the numbered line of each declaration (function, class, type, method, Markdown heading), as the
+  file skeletons that Agentless shows a model, and a note to read the lines it needs with offset and limit. The
+  outline of `loop.ts` is 3.1K characters for 70.7K. A smaller file still comes whole: live, an outline of a 30 KB
+  file had a model page through it in seven reads of 100 lines, each a round trip. A file with fewer than three
+  declarations comes as its head, as before, and a read with a range gives the lines.
+- **`read` takes a line range by the names of other harnesses** (`start`/`end`, `start_line`/`end_line`,
+  `startLine`/`endLine`): in a live session a model sent `{start: 940, end: 1020}` twice, the read ignored both
+  and gave the whole file, and the model went on with `sed -n`.
+- **`edit` takes text that a model copied with the line numbers of a read**, as the file has it: each line has
+  the prefix of a read and the numbers count up one by one, which text of a file almost never does. A whole read
+  that fits stays raw: numbering it too, as the Read tool of Claude Code does, was tried live, and in three of
+  three paired runs of a research task it raised input tokens (in the last pair, a median of 846K numbered against
+  725K raw, and 28 replies against 17), while edit and debug runs did not change.
+- **Each `bash` command starts in the project root**, as each command of Codex names its folder: a `cd` lasts
+  for its own command only, and a command with a `cd` that moved says so. In live sessions the folder that a
+  `cd` kept was lost: a model ran `cd packages/tools && bun test` from inside `packages/tools` (`No such file or
+  directory`) and read `./src/render.ts` from the root (`ENOENT`). A command with a `cd` that only reads now
+  runs beside other calls, as it moves no later call.
+- **A compound command runs when each part is allowed or only reads**, as in Claude Code: under
+  `Bash(bun test*)`, `cd packages/tools && bun test x.test.ts` asked before, since no rule names the whole line
+  (two refused calls in a live session). A part that a rule asks for or denies still asks, and git after a `cd`
+  still asks, as git there can run the hooks of another folder.
+- **`grep` names each file relative to the workspace**, as `read` takes it, and no longer by its absolute path:
+  in a live session the path was most of each line, and the same two searches came back at about half the size
+  (45.8K to 21.8K and 46.2K to 24.9K characters). A file as the search root gets its name on each line too.
+- **The `code` tool is on by default on Linux and macOS** (`codeMode` unset): the model can make many tool calls
+  from one script, with one round trip to the model. The script runs in the script sandbox (no network, no
+  writes, none of your files) and acts only through the other tools, each of which the permission gate checks
+  as a direct call, so the script itself asks for no approval (`permissions.code` still sets one). A script runs
+  alone, never beside another call. Tested in WSL 2 with bubblewrap. On Windows it stays opt-in, as its sandbox
+  sets folder rules on the disk; set `codeMode: false` to turn it off.
+- **The system prompt asks for paths relative to the project root**: in live sessions each call wrote out a
+  120-character absolute path (about 30 output tokens, the slow part of a small call), and one model dropped part
+  of it and read a file that does not exist. `edit` and `write` now name the file that way in their result too,
+  not by the path the call gave, so the model sees the short form it can write back.
+- **The system prompt asks for independent tool calls in one reply**, with the reason: they run at the same
+  time, and each extra reply is a full round trip. A trace of a real session showed a model making 32 replies
+  of one read each (about 32 output tokens, 3 seconds per reply).
+- **The sandbox of the OS is the default on Linux and macOS**, as Codex runs its sandbox by default: with no
+  `sandbox.backend`, shell commands run under bubblewrap or Seatbelt, with no network and writes only in the
+  workspace, when the program works there. A command that needs the network asks for it (`network: true`), or set
+  `sandbox.allowNetwork`. Where it does not work, and on Windows, commands run with your rights as before, and the
+  daemon log says why. `sandbox.backend: "software"` keeps the old behavior.
+- **`fetch`, `websearch` and `browser` ask for a host past the network limit of the sandbox**, as the sandbox of
+  Claude Code asks for a new domain: with the OS sandbox and no network, or a host outside `allowedDomains`, they
+  failed with no way on. An "always" answer holds for that host in the session; with no one to ask they are refused.
+- **A sandboxed command can ask for the network**, as the escalation of Codex and the unsandboxed retry of Claude
+  Code: under `sandbox.backend: "os"` with no network, `bash` takes `network: true` for one command (an install, a
+  fetch). You are asked each time, in every permission mode; the command then runs in the same sandbox with the
+  network. Before, such a command had no way on. A network error in a sandboxed command names this way.
+- **A sandboxed command that fails names the rule it can come from**, as Cursor found agents need: under
+  `sandbox.backend: "os"`, "Read-only file system" or "Could not resolve host" in the output of a command gets a
+  line that says the command can write only in the workspace, or has no network (or only the hosts of
+  `allowedDomains`), and not to retry it in another way. Before, a model read these as faults to work around.
+- **A cut tool result keeps its end**, as Codex keeps head and tail: a result over 2,000 lines or 50,000 bytes (an
+  MCP tool, a subagent's answer) keeps its first three quarters and its last quarter, with a note where the middle
+  went. Before, the end was lost, and the error of a run is most often there. `bash` already kept both ends.
+- **An out-of-date read leaves the requests sooner**: a `read` of a file that a later read shows again (the
+  whole file, or the same slice) is due at once, not 10 model calls later, in the same cache-friendly 20,000-token
+  batches. The model no longer reads old text of a file it changed, and each request is smaller. An edit alone
+  does not count: the model anchors its next edits on the text it read. A later read counts only when it holds the text: not a note
+  that points at the earlier result, a read cut by its size, or a failed one.
+- **Read-only calls run together, and start while the reply streams**, as in Claude Code: `fetch`,
+  `websearch`, a read-only shell command with no `cd` (`git status`, `ls`, `cat`) and an MCP tool with
+  `readOnlyHint` now run beside the other read-only calls of a reply, where before each ran alone. A read-only
+  call before the first write of a reply starts as soon as its arguments are complete, while the model still
+  writes the rest; a call whose result the turn does not use is cancelled. Only a call that changes nothing starts
+  early (`read`, `grep`, `glob`, the LSP tools and the read-only calls above), not `spawn`, `memory` or `todo_write`.
+  A call that asks waits until the turn runs the calls of the reply, so you and the auto reviewer see all of it, and
+  a reply that ends without running them asks nothing.
+- **Claude caches a short system prompt and the first messages**: the minimum size of a cache mark counts
+  the tools, the system prompt and the messages before it, as the API does. Before, each part had to pass
+  1,024 tokens alone, so with the default prompt (about 500 tokens) the system prompt and the messages of
+  a new session were sent again uncached at each step until the messages alone passed that size.
+- **`prompt_cache_key` for OpenAI**: each request of a session names the session, so OpenAI sends it to
+  the machine that holds its cached prefix, as Codex does. Other servers of the format do not get the field.
+- **`session_id` for OpenRouter**: OpenRouter keeps each request of a session on one provider from the first request,
+  so the cache of DeepSeek, Gemini, Grok, Moonshot and the others stays warm. Before, it held a session there only
+  after a first cache hit. Run live on OpenRouter.
+- **More rule files**: `.windsurf/rules/` (by `trigger`), `.kilocode/rules/`, Zed's `.rules`,
+  `.trae/rules/project_rules.md`, and the `AGENTS.override.md` of Codex in place of `AGENTS.md`.
+- **`opencode.json` of a workspace**: its `instructions` files, its `command` map and its
+  `agent` map (subagents, with the `tools` it turns off) load in a trusted workspace.
+- **`.claude/CLAUDE.md` and `CLAUDE.local.md`**: the other project instruction files of
+  Claude Code load beside `CLAUDE.md`.
+- **Plugins of the Claude Code settings**: `agency plugin sync` installs the `enabledPlugins`
+  of `.claude/settings.json` from the marketplaces of `extraKnownMarketplaces` or those
+  Claude Code added; `agency plugin install <plugin>@<marketplace>` installs one; a marketplace
+  entry can be a `git-subdir` source.
+- **`env` of `.claude/settings.json`**: in a trusted workspace its variables reach each
+  shell command, as Claude Code sets them for each session.
+- **`agency plugin update <plugin>`**: installs a plugin again from the source of its
+  install; its data folder stays.
+- **Instructions of subfolders**: the `AGENTS.md` or `CLAUDE.md` of a subfolder reaches the
+  model with the result of the first file tool call in that folder, once in a session.
+- **Rules of Claude Code**: `.claude/rules/**/*.md` join the instructions of a trusted
+  workspace, a rule with `paths` for the files that match them.
+- **`@path` imports of `CLAUDE.md` and `GEMINI.md`**: the imported file takes the place of
+  the import, five levels deep, from inside the workspace only. A `CLAUDE.md` that only
+  imports `AGENTS.md` counts once.
+- **User instructions of other agents**: with `"userAgentInstructions": true`, the
+  `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, OpenCode and Pi user
+  instruction files join the instructions of every workspace.
+- **Flags of other agents**: a script for `claude -p`, `codex exec` or `pi -p` runs with `agency`:
+  `-p` with the prompt after the flags, `--output-format`, `--max-turns`, `-c`, `-r`, the
+  permission modes of Claude Code, `--settings` (permissions, model, fallback, effort), `-n`,
+  `--resume <name>`, `--fork-session`, `--system-prompt-file`, `--max-budget-usd`, `--effort`, `-C`,
+  `--output-schema`, `--no-tools` and others; `agency exec [resume|fork] <prompt>` as `codex exec`.
+- **The JSON result of `-p` has the fields of Claude Code**: `result`, `is_error`, `subtype`,
+  `num_turns`, `session_id` and `total_cost_usd`, so `jq -r .result` works.
+- **`--thinking <level>`**: the reasoning effort of a `-p` run, as in Pi.
+- **`--tools <names>`**: `-p` offers only these built-in tools, as in Claude Code. A
+  `--disallowed-tools` of `*` takes every tool away, and of `mcp__*` every MCP tool.
+- **`-o, --output-last-message <file>`**: `-p` writes the answer to a file too, as `codex exec`
+  does.
+- **`--fallback-model <provider/model>`**: `-p` goes on with this model when its model stays
+  overloaded, as in Claude Code. A fallback can now be another model of the same provider.
+- **`-p --worktree <name>`**: the turn runs in the git worktree `.agency/worktrees/<name>`
+  on the branch `agency/<name>`, made when missing, as `claude --worktree` does.
+- **`--mcp-config` and `--strict-mcp-config`**: `-p` takes the MCP servers of a JSON file
+  or of JSON text for one run, as Claude Code does in CI.
+- **MCP files of more clients**: the project files of Copilot CLI (`.github/mcp.json`),
+  Amp, Crush, Qwen Code and Kilo Code give MCP servers, and `agency mcp import` reads the
+  user files of Copilot CLI, Amp, Crush, Goose, Qwen Code, Cline, Roo Code and Kilo Code.
+- **GitHub Copilot files**: the `.github/instructions/*.instructions.md` files (by
+  `applyTo`), the prompt files of `.github/prompts/` as commands, the skills of
+  `.github/skills/`, and the custom agents of `.github/agents/` and `.github/chatmodes/`
+  load in a trusted workspace.
+- **`agency mcp add`, `add-json`, `list`, `get` and `remove`**: add an MCP server with
+  the flags of `claude mcp add` (`--env`, `--header`, `--transport`, `--scope`), to a file
+  of the user config or to the `.mcp.json` of the workspace, and show where each server
+  comes from.
+- **`agency session export <id> [-o <file>]`**: the conversation of a session as Markdown,
+  as `/export` of Claude Code writes it.
+- **Verify before done, built in (`verifyGate`)**: a turn that changed code and ran no passing test, type
+  check, lint or build after is sent back once, as the verification skills and Stop hooks of plugins
+  (superpowers, Gauntlet, hookify rules) do. A/B on DeepSeek V4 Flash, a change that breaks a test: with
+  the gate off, 0 of 8 runs ran the tests and all 8 ended with a failing test; with it on, 8 of 8 ran them
+  and ended green, at $0.0026 a run instead of $0.0010. `"verifyGate": false` turns it off.
+- **A syntax check on each edit**: `edit` and `write` parse a TypeScript, JavaScript, JSON or Python file
+  that they change, and when the change broke a file that parsed before, the result names the error (as
+  the linter on edit of SWE-agent, measured there at +3 points of SWE-bench Lite).
+- **Hook scripts of Claude Code read tool calls as there**: a hook gets `tool_name` `Bash`, `Edit`, `Write`
+  (not `bash`, `edit`) and `tool_input.file_path`, `old_string`, `new_string`; its `updatedInput` comes back
+  in the fields here. Before, a file rule of hookify (official marketplace) never matched: an edit of
+  `secrets.txt` passed a rule on `file_path`; now it is refused (live, with the real plugin).
+- **`-p` keeps a session, as `claude -p`, `codex exec` and `pi -p` do**: the JSON result names it in
+  `session_id`, and `-r <id>` goes on from it; `-n` names it. Before, the `session_id` of a run was null, and
+  `-r` with it began an empty session (seen live). `--no-session-persistence`, `--ephemeral` and
+  `--no-session` keep none. A hook of such a run gets a `transcript_path` that exists.
+- **Plugins that loop or read the transcript, such as ralph-loop, work**: a command that you type runs its
+  fenced ```` ```! ```` blocks as Claude Code does (before, only `` !`cmd` `` ran, and only through
+  `command_run`, never for a command typed as a prompt), in the shell of the `bash` tool rather than cmd.exe;
+  `plugin install` expands `${CLAUDE_PLUGIN_ROOT}` in commands; a hook gets `transcript_path`, and
+  `session_id: default` for a turn with no session (before, a Stop or tool hook of such a turn had none);
+  shell commands get `CLAUDE_CODE_SESSION_ID`. Live: `/ralph-loop` of the official marketplace wrote its
+  state file; before, the model got the script as text and searched the repository for minutes.
+- **`agency import`: what you set up in other agents, with one question per set**. It finds
+  the MCP servers of the user files of 19 clients, the user hooks of Claude Code, Codex, Cursor
+  and Gemini CLI (with the `env` of the Claude Code settings, which those hooks get), the plugins
+  that Claude Code installed, and the user instructions and code plugins of other agents, and
+  shows each set (each hook with its command) before it asks. `--yes` imports all, `--dry-run`
+  only shows; a set that is imported already is not asked again. `agency onboard` asks the same
+  questions, and bare `agency` names the command when it finds something. Before, the user hooks
+  of `~/.claude/settings.json` did not load at all. Settings with no counterpart here (`model`,
+  `permissions.defaultMode`) are named.
+- **The plugins of a Claude Code user come over in one command**: `agency plugin sync` installs
+  each plugin that `enabledPlugins` of `~/.claude/settings.json` turns on, from the copy that
+  Claude Code installed, with no download, and `--scope user` installs any plugin for the user.
+  Plugins of the user load in every workspace (skills, commands, agents, hooks, MCP and LSP
+  servers, modules, output styles). Before, a plugin installed per workspace only, and the
+  plugins of Claude Code did not come over: on a real setup, `plugin list` and `mcp list` showed
+  nothing for 7 enabled plugins; now all 7 install. A plugin with no `plugin.json` (`strict:
+  false`, as the LSP plugins of `claude-plugins-official`) takes its marketplace entry as its
+  manifest.
+- **`context: fork` of a skill**: the skill runs in a subagent of its `agent` type and `model`, and
+  the model gets only the answer, as in Claude Code.
+- **`allowed-tools` of a skill**: its rules run with no prompt for the rest of the turn that loads
+  the skill, by the model or by `/<name>`, as in Claude Code; a deny rule or an ask pattern still
+  holds. `${CLAUDE_SKILL_DIR}` works in a rule.
+- **Old tool results leave the requests**: a result over 2,000 characters of a tool that can run
+  again (`read`, `bash`, `grep`, `glob`, `fetch`, `websearch`, `lsp_*`) that is over 10 model
+  calls old becomes a one-line note, in batches of 20,000 tokens decided by a replay of the
+  history, so the prompt cache holds between two batches. Replayed on a long recorded session
+  (6,354 requests): 25% fewer input tokens and 19% lower cost with cache prices. The session keeps
+  the whole results; `keepToolResults: true` turns it off.
+- **MCP servers over SSE**, the older HTTP transport that many servers still use: `type: "sse"`,
+  a url that ends in `/sse`, the `url` of Gemini CLI and `agency mcp add --transport sse` connect,
+  where before they were refused or failed. The endpoint that the stream names must have its origin.
+- **Shorter shell output with nothing lost**: colour codes go, a line that a progress bar redrew
+  keeps its last text, and a run of the same line is one line and its count.
+- **`agency usage [--by day|month|model] [--since YYYY-MM-DD] [--json]`**: the calls, tokens
+  and cost of the model calls of all workspaces, from the traces of the sessions, as ccusage
+  reports them for Claude Code.
+- **Skills as Claude Code reads them**: a skill is also the command `/<name> [arguments]`;
+  `disable-model-invocation`, `user-invocable`, `when_to_use`, `${CLAUDE_SKILL_DIR}`,
+  `$ARGUMENTS` and `$ARGUMENTS[N]` work; frontmatter takes quotes, `>` and `|` blocks and lists.
+  A skill with no `description` is listed by the first line of its body, where before its whole
+  body went into every system prompt.
+- **Hooks change a tool call and its result**, as in Claude Code: `PreToolUse` runs before the
+  permission check, and its `updatedInput` replaces the input that the rules judge and the tool
+  gets; `permissionDecision` `allow` answers a default prompt and `ask` asks though a rule
+  allows; its `additionalContext` reaches the model. `updatedToolOutput` of `PostToolUse`
+  replaces the result. OpenCode plugins (`output.args`, `output.output`) and Pi extensions
+  (`event.input`, `content` of `tool_result`) do the same. A command-rewriting hook such as that
+  of rtk now works.
+- **Read-only shell commands run without a prompt**, as in Claude Code: `ls`, `cat`, `head`,
+  `grep`, `find`, `wc`, `diff`, `cd`, `git status`, `git diff`, `git log` and similar, on
+  files of the workspace. Before, `-p` in `ask` mode refused even `ls`. An absolute path, `..`,
+  `~`, `$`, an unquoted glob, a `.env` file, a redirect to a file, recursive `grep`, `git` after
+  `cd`, or an `ask` or `deny` pattern for the command still asks.
+- **PDFs**: `read` attaches a PDF, as Claude Code reads one: a document for Anthropic, a file
+  for the Responses API, and a file for OpenRouter, parsed to text with its free engine for
+  any model. `-p --image <file>.pdf` sends one with the prompt.
+- **Jupyter notebooks**: `read` shows a `.ipynb` as its cells and the text of their
+  outputs, and a new `notebook_edit` tool replaces, inserts or deletes a cell, as the
+  NotebookEdit tool of Claude Code does.
+- **`CLAUDE_ENV_FILE`**: a `SessionStart` hook gets it, as in Claude Code, and the
+  `export` lines that it writes there become variables of the later shell commands of
+  the session.
+- **Permission rules of Claude Code**: the `permissions` of `~/.claude/settings.json`
+  and, in a trusted workspace, of `.claude/settings.json` and `.claude/settings.local.json`
+  apply (`Bash(git push *)`, `Edit(src/**)`, MCP tools), with deny winning, under
+  those of the config. `-p` takes `--allowed-tools` and `--disallowed-tools` (also
+  `--allowedTools`, `--disallowedTools`) for one run.
+- **Output styles**: `"outputStyle"` names a Markdown style of `.agency/output-styles/`,
+  `.claude/output-styles/`, the config folder or `~/.claude/output-styles/`, whose text
+  joins the instructions. A plugin installs its `output-styles/`.
+- **Memory**: a `memory` tool keeps notes for the later sessions of a workspace, in a file
+  of the user's data folder, and each turn has them in its instructions, as the auto
+  memory of Claude Code. `"memory": false` turns it off. The notes come as background,
+  for a request that is about them: a note "remember 4172" made DeepSeek V4 Flash answer
+  4172 to "What is 17 * 23?" in 8 of 50 runs before that line, and in 4 of 50 after it.
+- **npm plugins of OpenCode**: a trusted workspace loads the plugins of the `plugin`
+  key of `opencode.json` from where npm or OpenCode installed them (the workspace, or
+  the cache of OpenCode). Agency installs no package. With `userAgentPlugins: true`,
+  the user plugins of OpenCode and the user extensions of Pi load too.
+- **`agent` hooks**: a hook can give its question to an agent with the read tools of the
+  session (`read`, `grep`, `glob`, at most 50 steps), which answers `{"ok", "reason"}`
+  as a prompt hook does.
+- **`mcp_tool` hooks**: a hook can call a tool of an MCP server of the session, as in
+  Claude Code. `${path}` in its `input` takes values of the event, and the text of the
+  tool answers as the stdout of a command.
+- **More of a Claude Code plugin**: `agency plugin install` puts the `bin/` folder of a
+  plugin on the PATH of shell commands, gives `${CLAUDE_PLUGIN_DATA}` a data folder,
+  gives a hook `CLAUDE_PLUGIN_ROOT` and `CLAUDE_PLUGIN_DATA` in its environment, maps
+  `${user_config.KEY}` to the variable `${CLAUDE_PLUGIN_OPTION_KEY}`, installs a root
+  `SKILL.md` and commands that the manifest maps by name, and names the parts that do
+  not install (themes, monitors, workflows, `settings.json`).
+- **LSP servers of plugins**: the `.lsp.json` and `lspServers` of a Claude Code plugin
+  install to `.agency/lsp/<plugin>.json`, and a trusted workspace starts them as the
+  `lspServers` of the config.
+- **`agency mcp serve`**: Agency is an MCP server on stdio with one tool, `agency`, that
+  runs a turn of a session, so that Claude Code, Codex or Cursor can give it a task. The
+  permission mode comes from the flags of the server, never from a call.
+- **Rules and MCP files of Roo Code, Kiro, Junie, Augment and Continue**: their rule
+  files join the instructions of a trusted workspace, with the `inclusion` of Kiro and
+  the `type` of Augment mapped, and `.roo/mcp.json` and `.kiro/settings/mcp.json` give
+  MCP servers.
+- **User files of other agents**: the user skills, commands and agent files of Claude
+  Code, Codex, Cursor, Pi, OpenCode, Gemini CLI and the shared `~/.agents` load in every
+  workspace, below those of Agency. `AGENCY_AGENTS_HOME=off` turns this off.
+- **Code plugins of OpenCode and Pi**: the plugins of `.opencode/plugins/` and the
+  extensions of `.pi/extensions/` run in a trusted workspace through a shim of their
+  API: tools, the tool-call hooks that block, `shell.env`, events, and Pi's `exec`.
+  Agency gives the imports `@opencode-ai/plugin`, `typebox` and the Pi packages. A Pi
+  package that `agency plugin install` installs now runs its extensions too.
+- **Hooks of other agents**: a trusted workspace runs the hooks of
+  `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`,
+  `.cursor/hooks.json` and `.gemini/settings.json`. Cursor and Gemini events map to the
+  events here, and a Cursor hook gets its own input and answers as in Cursor. A
+  matcher can name a tool by its name in another agent (`Shell`, `run_shell_command`,
+  `WebFetch`). The hooks of a Cursor plugin or a Gemini extension install converted.
+- **Plugins of Cursor, Codex, Gemini CLI and Pi**: `agency plugin install` now takes a
+  Cursor plugin (rules, skills, agents, commands, `mcp.json`), a Gemini CLI extension
+  (context file, TOML commands, MCP servers), the portable `plugin.json` of Codex, and
+  a Pi package (skills and prompts; its TypeScript extensions are named as not
+  installed). Plugin agents of any format are written as agent files of Agency, so a
+  Claude Code agent with keys such as maxTurns or memory no longer fails. The marketplace files
+  of Cursor and Codex work as that of Claude Code.
+- **Projects of other agents work as they are**: a trusted workspace now gives the
+  instructions of `GEMINI.md`, `.cursorrules`, `.cursor/rules/*.mdc` (with
+  `alwaysApply`, `globs` and `description`), `.windsurfrules`, `.clinerules` and
+  `.github/copilot-instructions.md`; the skills of `.claude/`, `.agents/`, `.cursor/`,
+  `.codex/`, `.pi/`, `.opencode/` and `.gemini/`; the commands of `.claude/`,
+  `.cursor/`, `.opencode/`, `.pi/prompts` and the TOML commands of Gemini CLI; and
+  the agent files of `.claude/`, `.cursor/`, `.codex/` and `.opencode/`.
+- **MCP servers of other clients**: a trusted workspace now also gives the MCP servers
+  of `.cursor/mcp.json`, `.vscode/mcp.json`, `.gemini/settings.json`, `opencode.json`,
+  `.codex/config.toml`, `.pi/mcp.json` and `.zed/settings.json`, with their keys and
+  variables mapped. `agency mcp import <client>` copies the user-level servers of
+  Claude Code, Claude Desktop, Cursor, Codex, Gemini CLI, OpenCode, Pi, VS Code,
+  Windsurf or Zed into the user config of Agency.
+- **Plugins from git and marketplaces**: `agency plugin install` takes a git URL or
+  `owner/repo` of GitHub (`#ref` for a branch or tag) as well as a folder. A repository
+  with `.claude-plugin/marketplace.json` is a Claude Code marketplace:
+  `agency plugin install owner/repo <plugin>` installs one of its plugins, also one
+  that the marketplace names by its own git source.
+- **Auto permission mode**: `--permission-mode auto` (and `permissionMode: "auto"`
+  of `run_turn`) lets a reviewer model answer the asks, as the auto mode of Claude
+  Code does. Edits run; another ask of a default rule goes to `auto_review_model`
+  (default `small_model`). It sees your messages and the agent's tool calls, never a
+  tool result. A block gives the model the reason; after 3 blocks in a row or 20 in a
+  turn, or with no verdict, you are asked (with `-p`, the call is refused). A new
+  `PermissionDenied` hook runs on a block, and `retry: true` lets the model try again.
+- **Use your ChatGPT plan**: `agency auth login chatgpt` signs in with ChatGPT as
+  OpenAI documents it for open-source apps, and `chatgpt/<model>` then runs on the
+  plan through a new Responses API adapter. `agency auth logout <provider>` removes
+  a key or revokes the ChatGPT sign-in. Tested against a local server only. A Claude
+  plan cannot be used: Anthropic's terms do not permit it in another app, and
+  `auth login anthropic --oauth` now says so.
+- **Prompt hooks**: a hook of `"type": "prompt"` asks a model (`small_model` by
+  default) whether the event meets a condition, and `{"ok": false, "reason"}`
+  blocks, as in Claude Code. Live: a `Stop` hook made DeepSeek V4 Flash add a word it
+  had left out, then let the turn end. `agency plugin install` now installs the
+  prompt hooks of a plugin; it skipped them before. `Stop` and `SubagentStop` hooks
+  get `last_assistant_message`, the text of the last reply.
+- **HTTP hooks**: a hook of `"type": "http"` sends the event as a JSON POST to its
+  `url`, and its JSON answer blocks or adds context as the stdout of a command does.
+  Headers can hold the environment variables of `allowedEnvVars`, as in Claude
+  Code. Before, a config with an http hook was not valid, and the daemon did not
+  start. A plugin with http hooks now installs them.
+- **Shell commands can reach a list of hosts**: `sandbox.allowedDomains` with the `os`
+  backend gives a command only the hosts in the list (`github.com`, `*.npmjs.org`),
+  through a proxy of the daemon, as in Claude Code. Before, a command had all of the
+  network or none of it. Linux needs `socat`; Windows refuses the list.
+- **The OS sandbox ran on Linux**: real commands under bubblewrap (WSL 2, Ubuntu):
+  a write outside the workspace and a direct connection are denied. Before, only
+  the arguments had tests. The same test runs on macOS in CI.
 - **`PostToolBatch` hook**: runs once after all tool calls of one reply, with
   each call and its result, before the next request. A block ends the turn
   with the reason; `additionalContext` reaches the model once. For example, one
@@ -179,6 +963,103 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Fixed
 
+- **A script of the `code` tool that awaits `tools` hangs no more**: the tools object answered every name, `then`
+  too, so `await tools` took it for a promise and waited for a call that never answered. In a live run on Linux
+  each of six scripts began `const { read } = await tools;` and was stopped at the 120-second limit, and the
+  session ran out its 20 minutes.
+- **A model lost track of the folder of the shell**: after `cd packages/tools && ...` the shell stays there, but
+  `read`, `edit` and the other file tools take paths from the project root, and a model then edited `src/a.ts` for
+  `packages/tools/src/a.ts` (seen in a live session). A command that moves the shell now says where it went and
+  that the file tools keep the project root. On Windows `/tmp/...`, which `pwd` of Git Bash prints for a folder in
+  TEMP, now reads as that folder.
+- **A Windows path written as `/C:/...` resolved to `C:\C:\...`**: models write the path of a file URL, and each
+  such read, grep or glob failed (eight calls in one live session). It now reads as `C:/...`, as `/c/...` of Git
+  Bash already did.
+- **`grep -n "a\|b" file` asked for approval**: a backslash in double quotes counted as shell syntax, but there
+  it is text unless a `$`, a backquote, `"`, `\` or a newline follows. Such a grep is read-only again, so it runs
+  in every mode with no prompt (nine refused calls in one live headless session).
+- **`grep` without ripgrep**: on Windows neither `rg` nor `grep` is on the PATH of the app (Git's grep is only on
+  the PATH of Git Bash), so every search failed with "neither ripgrep (rg) nor grep is installed". It now searches
+  in process, with rg's output and rules (`.gitignore`, no hidden or binary files). Where grep is the fallback, it
+  ran in basic regex mode, so a pattern with `|` found nothing (a live session lost five of its first six calls
+  to that), and it searched `.git`: it now runs with `-P` (or `-E` on macOS), skips binary files, `.git` and
+  `node_modules`, and takes rg's `**/*.ts` glob. The description named a `filesWithMatches` parameter that
+  does not exist: it is `filesOnly`. On Windows grep no longer falls back to Git's grep at all: as an MSYS program,
+  its start expands `*` and drops `\` in its arguments, so `\+.*lines` failed with "nothing to repeat".
+
+- **Smaller fixes from a review of the sandbox work**: the sandbox proxy no longer leaves a connection open when
+  its client leaves during the DNS lookup, tries each checked address in turn (as a connect by name does), and
+  counts an IPv4 address carried in an IPv6 one (NAT64, 6to4, `::127.0.0.1`) as that address; an IPv6 entry of
+  `allowedDomains` matches with or without brackets; on macOS a write to `.Claude` counts as one to `.claude`; the
+  default sandbox is tried with the network settings of the config, so `allowedDomains` with no `socat` falls back
+  to software instead of stopping the daemon; a rate limit or a server error no longer turns off the Gemini prefix
+  cache for an hour; and the network prompt of `bash` says that local sockets open too.
+- **A Gemini request no longer waits for a refused cache each time**: when the API refused to make the explicit
+  cache of the prompt prefix (a prefix under the model's minimum, a model with no explicit cache), the refusal was
+  not kept, so each request first made the same refused call. It is now kept for the life of the cache.
+- **A team worktree held the same way out of the sandbox** (security): `.agency/worktrees` is writable, and
+  `-p --worktree <name>` runs that folder as a trusted workspace, so a sandboxed command could write its
+  `.mcp.json` or `.claude/settings.json` and have it run with your rights. In each worktree the same files are now
+  read-only to a command and ask before `edit` or `write` changes them (tested with bubblewrap in WSL 2 and the token
+  of Windows); Seatbelt holds them for worktrees made later too. On Windows a command can still make a missing one.
+- **The desktop showed a context larger than the window** ("812K of 262K tokens"): for a turn saved before each
+  turn kept its context size, the panel showed the input of all the requests of that turn added up. It now says
+  that the size shows after the next turn.
+- **MCP servers over stdio did not start with `sandbox.backend: "os"`**: the backend was taken for a container, so
+  each local server failed with "needs container stdio". They start on this machine again, outside the sandbox,
+  as the docs say.
+- **A sandboxed command on Linux could run a program outside the sandbox** (security): bubblewrap left the
+  sockets of the disk open, so `systemd-run` over the system bus or the user bus, or `docker run`, started a
+  program with no sandbox (seen in WSL 2: a command wrote `/root` through the system bus). The system bus, the
+  runtime folder of the user and the sockets of Docker, containerd, Podman and snapd are now gone in the
+  sandbox. A seccomp filter now also fails `socket(AF_UNIX)` and io_uring, as Claude Code's sandbox does, so no
+  other socket of the host is open: one in the home folder, as Docker Desktop's (reached in WSL 2 before), or
+  X11's abstract one when the command has the network. With `sandbox.allowedDomains` the relay of the proxy
+  needs a Unix socket, so only the masks hold there.
+- **A sandboxed command could change the files of other agents that Agency runs outside the sandbox**
+  (security): with `sandbox.backend: "os"`, a command could write `.mcp.json`, `.claude/settings.json` (hooks),
+  `opencode.json`, `.cursor/hooks.json` and the other files that Agency loads hooks, MCP servers or plugins
+  from, and these ran with your rights at the next start. They are now read-only to a command, as `.agency`
+  is, and so are `.gitmodules`, `.vscode` and `.idea`, as in the sandbox of Claude Code. On Linux a missing one gets
+  an empty read-only placeholder for the length of the command, so the command cannot make it, but `git init` in a
+  new folder still works (tested with bubblewrap in WSL 2). A background command keeps its placeholders until it
+  exits, and a command that ends does not take away those of one that still runs. On Windows the token holds only
+  those that exist.
+  `edit` and `write` ask before they change one, in every mode.
+- **The sandbox proxy refuses a host that resolves to a private address** (security), as the proxy of Claude
+  Code does: an allowed name whose DNS gives 127.0.0.1, a private network or 169.254.169.254 (cloud metadata)
+  reached this machine or the metadata of the cloud. The proxy now connects to the address it checked, and a
+  host with a byte that no host name has (`evil\0.github.com`) never matches a pattern. `localhost` and an
+  address in `allowedDomains` itself still pass.
+- **`fetch` does not follow a redirect to another host** (security): it checked the host of the first URL only,
+  so an allowed host could redirect to any other, `localhost` and the cloud metadata included. A redirect on
+  the same host is followed; one to another host comes back as a note with its URL, and a fetch of that URL
+  goes through the permission and network checks of its own, as WebFetch of Claude Code does.
+- **`*.` entries of `sandbox.allowedDomains` for `fetch`, `websearch` and the browser**: these tools matched the
+  list by exact name, so `*.npmjs.org` refused `registry.npmjs.org` there while shell commands reached it.
+- **The `allowed-tools` of a skill in auto mode**: with the auto reviewer on, a call that the grant of a
+  skill or of `/name` allows went to the reviewer, which could block it.
+- **A deny rule behind `timeout`, `stdbuf`, `builtin` or `noglob`**: a deny of `rm *` let
+  `timeout 5 rm -rf build` run. These wrappers are now taken away before the rules, as Claude
+  Code does.
+- **A Read or Edit deny rule and the shell**: with a deny of `Read(secret.txt)`, the model
+  printed the file with `cat secret.txt` (seen live). The rule now holds for the files that a
+  shell command names (`cat`, `head`, `grep`, `sed`, `< file`; `tee`, `sed -i`, `> file`), as
+  in Claude Code.
+- **An `Edit` rule of Claude Code** held for `edit` only: a deny of `Edit(secrets/**)` let `write`
+  and `notebook_edit` change those files. It now holds for each tool that edits files, and a bare
+  `Read` rule for `grep` and `glob` too, as in Claude Code.
+- **A blank line on the stdout of a stdio MCP server**: the reader of its messages
+  looped on it for ever, and the daemon stopped answering every run of the workspace.
+  Seen with a server that printed a help text and exited.
+- **A deny rule on one command**: the refusal said that the whole tool was not
+  permitted and not to call it again, so a model gave up on the other commands of the
+  task. A refusal of a command or a path now names that call and says that another call
+  of the tool can be permitted.
+- **`shell.env` hooks**: the variables that a `shell.env` hook of a plugin set did not
+  reach the shell command, and an async hook ran after the command started. The loop
+  now waits for the hooks and gives their variables to the command, also to a command
+  in the background.
 - **MCP lists in pages**: the client read only the first page of the
   tools, resources and prompts of a server, so a server that gives
   its lists in pages lost the rest with no error. It now reads all
@@ -976,5 +1857,6 @@ Initial development release. Foundation through ecosystem, built in phases:
   (local-only in v1), per-session cost/token accounting with cache-hit-rate
   reporting, first-run onboarding, `agency debug` bundle.
 
-[Unreleased]: https://github.com/AgencyAgents/Agency/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/AgencyAgents/Agency/releases/tag/v0.1.0
+[Unreleased]: https://github.com/EndeavourAI/Agency/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/EndeavourAI/Agency/releases/tag/v0.2.0
+[0.1.0]: https://github.com/EndeavourAI/Agency/releases/tag/v0.1.0

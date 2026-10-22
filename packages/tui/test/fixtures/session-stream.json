@@ -1,0 +1,619 @@
+{
+  "sessionId": "fixture-session",
+  "turns": [
+    {
+      "turnId": "turn-j9fxun",
+      "prompt": "Make the 54 task runs faster without changing results.",
+      "events": [
+        {
+          "t": 40,
+          "event": {
+            "type": "thinking_delta",
+            "text": "Read the run script first, "
+          }
+        },
+        {
+          "t": 42,
+          "event": {
+            "type": "thinking_delta",
+            "text": "then change the retry flags."
+          }
+        },
+        {
+          "t": 46,
+          "event": {
+            "type": "text_delta",
+            "text": "Looking at the run script.\n"
+          }
+        },
+        {
+          "t": 51,
+          "event": {
+            "type": "tool_start",
+            "id": "c1",
+            "name": "read",
+            "input": {
+              "path": "packages/eval/harbor/run.sh"
+            }
+          }
+        },
+        {
+          "t": 100,
+          "event": {
+            "type": "turn_complete",
+            "stopReason": "tool_use",
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 40,
+              "cachedInputTokens": 600,
+              "costUsd": 0.004
+            },
+            "timing": {
+              "ttftMs": 0.37730000000004793,
+              "streamMs": 12.56899999999996
+            }
+          }
+        },
+        {
+          "t": 100,
+          "event": {
+            "type": "tool_result",
+            "id": "c1",
+            "content": "#!/usr/bin/env bash\nset -euo pipefail\nharbor run --path tasks \\\n  -o \"$jobs\" -y\n",
+            "isError": false
+          }
+        },
+        {
+          "t": 103,
+          "event": {
+            "type": "tool_start",
+            "id": "c2",
+            "name": "edit",
+            "input": {
+              "path": "packages/eval/harbor/run.sh",
+              "oldText": "-o \"$jobs\" -y",
+              "newText": "-o \"$jobs\" -y \\\n  -r 2 --retry-include RuntimeError"
+            }
+          }
+        },
+        {
+          "t": 103,
+          "event": {
+            "type": "tool_start",
+            "id": "c3",
+            "name": "bash",
+            "input": {
+              "command": "bash scripts/dry-run.sh"
+            }
+          }
+        },
+        {
+          "t": 111,
+          "event": {
+            "type": "turn_complete",
+            "stopReason": "tool_use",
+            "usage": {
+              "inputTokens": 1500,
+              "outputTokens": 90,
+              "cachedInputTokens": 750,
+              "costUsd": 0.006
+            },
+            "timing": {
+              "ttftMs": 0.05489999999997508,
+              "streamMs": 0.3353999999999928
+            }
+          }
+        },
+        {
+          "t": 111,
+          "event": {
+            "type": "tool_result",
+            "id": "c2",
+            "content": "edited",
+            "isError": false
+          }
+        },
+        {
+          "t": 111,
+          "event": {
+            "type": "approval_requested",
+            "requestId": "ddcf912e-9d6a-40e9-a9f1-d2cbb05207ab",
+            "sessionId": "fixture-session",
+            "turnId": "turn-j9fxun",
+            "riskTier": "dangerous",
+            "source": "default:risk-tier=dangerous",
+            "argsSummary": "command=bash scripts/dry-run.sh",
+            "request": {
+              "tool": "bash",
+              "title": "bash scripts/dry-run.sh",
+              "command": "bash scripts/dry-run.sh",
+              "riskTier": "dangerous",
+              "source": "default:risk-tier=dangerous",
+              "reason": "`bash` is not on the read-only list",
+              "metadata": {
+                "riskTier": "dangerous",
+                "source": "default:risk-tier=dangerous"
+              },
+              "sessionId": "fixture-session",
+              "turnId": "turn-j9fxun",
+              "argsSummary": "command=bash scripts/dry-run.sh"
+            }
+          }
+        },
+        {
+          "t": 114,
+          "event": {
+            "type": "tool_result",
+            "id": "c3",
+            "content": "ran bash scripts/dry-run.sh\nexit 0",
+            "isError": false
+          }
+        },
+        {
+          "t": 116,
+          "event": {
+            "type": "text_delta",
+            "text": "Retries replace the failed trial in place:\n"
+          }
+        },
+        {
+          "t": 119,
+          "event": {
+            "type": "text_delta",
+            "text": "```sh\n"
+          }
+        },
+        {
+          "t": 123,
+          "event": {
+            "type": "text_delta",
+            "text": "harbor run -r 2 --retry-include RuntimeError\n"
+          }
+        },
+        {
+          "t": 126,
+          "event": {
+            "type": "text_delta",
+            "text": "```\n"
+          }
+        },
+        {
+          "t": 129,
+          "event": {
+            "type": "text_delta",
+            "text": "- `AgentSetupTimeoutError` is a machine fault too\n"
+          }
+        },
+        {
+          "t": 132,
+          "event": {
+            "type": "text_delta",
+            "text": "- a task that fails twice still counts as a fail\n"
+          }
+        },
+        {
+          "t": 269,
+          "event": {
+            "type": "turn_complete",
+            "stopReason": "end_turn",
+            "usage": {
+              "inputTokens": 1800,
+              "outputTokens": 70,
+              "cachedInputTokens": 900,
+              "costUsd": 0.005
+            },
+            "timing": {
+              "ttftMs": 0.059700000000020736,
+              "streamMs": 18.870300000000043
+            }
+          }
+        },
+        {
+          "t": 269,
+          "event": {
+            "type": "cost_meter",
+            "sessionId": "fixture-session",
+            "turnId": "turn-j9fxun",
+            "handle": "lead",
+            "turnCostUsd": 0.015,
+            "turnTokens": 4700,
+            "turnCacheHitRate": 0.5,
+            "runTotalUsd": 0.015,
+            "runTokens": 4700,
+            "runCacheHitRate": 0.5,
+            "perAgent": {
+              "lead": 0.015
+            }
+          }
+        }
+      ],
+      "answers": [
+        {
+          "after": 10,
+          "requestId": "ddcf912e-9d6a-40e9-a9f1-d2cbb05207ab",
+          "decision": "once"
+        }
+      ],
+      "result": {
+        "stopReason": "end_turn",
+        "cancelled": false,
+        "error": null
+      }
+    },
+    {
+      "turnId": "turn-rdgsww",
+      "prompt": "Now clean the build folder.",
+      "events": [
+        {
+          "t": 9,
+          "event": {
+            "type": "tool_start",
+            "id": "c4",
+            "name": "bash",
+            "input": {
+              "command": "rm -rf build"
+            }
+          }
+        },
+        {
+          "t": 53,
+          "event": {
+            "type": "turn_complete",
+            "stopReason": "tool_use",
+            "usage": {
+              "inputTokens": 300,
+              "outputTokens": 20,
+              "cachedInputTokens": 150,
+              "costUsd": 0.001
+            },
+            "timing": {
+              "ttftMs": 0.059499999999957254,
+              "streamMs": 0.2619999999999436
+            }
+          }
+        },
+        {
+          "t": 53,
+          "event": {
+            "type": "approval_requested",
+            "requestId": "b58b0724-0f58-45e3-a078-5baafe9cdf4d",
+            "sessionId": "fixture-session",
+            "turnId": "turn-rdgsww",
+            "riskTier": "dangerous",
+            "source": "default:risk-tier=dangerous",
+            "argsSummary": "command=rm -rf build",
+            "request": {
+              "tool": "bash",
+              "title": "rm -rf build",
+              "command": "rm -rf build",
+              "riskTier": "dangerous",
+              "source": "default:risk-tier=dangerous",
+              "reason": "`rm` is not on the read-only list",
+              "metadata": {
+                "riskTier": "dangerous",
+                "source": "default:risk-tier=dangerous"
+              },
+              "sessionId": "fixture-session",
+              "turnId": "turn-rdgsww",
+              "argsSummary": "command=rm -rf build"
+            }
+          }
+        },
+        {
+          "t": 54,
+          "event": {
+            "type": "tool_result",
+            "id": "c4",
+            "content": "permission denied: bash with \"rm -rf build\" is not permitted by the current permissions policy. Do not send this call again: the answer will be the same. A bash call with another command can be permitted. Continue without this one, or tell the user that the task needs this permission.",
+            "isError": true
+          }
+        },
+        {
+          "t": 57,
+          "event": {
+            "type": "text_delta",
+            "text": "I did not run it.\n"
+          }
+        },
+        {
+          "t": 140,
+          "event": {
+            "type": "turn_complete",
+            "stopReason": "end_turn",
+            "usage": {
+              "inputTokens": 350,
+              "outputTokens": 12,
+              "cachedInputTokens": 175,
+              "costUsd": 0.001
+            },
+            "timing": {
+              "ttftMs": 0.07110000000000127,
+              "streamMs": 3.24899999999991
+            }
+          }
+        },
+        {
+          "t": 140,
+          "event": {
+            "type": "cost_meter",
+            "sessionId": "fixture-session",
+            "turnId": "turn-rdgsww",
+            "handle": "lead",
+            "turnCostUsd": 0.002,
+            "turnTokens": 682,
+            "turnCacheHitRate": 0.5,
+            "runTotalUsd": 0.017,
+            "runTokens": 5382,
+            "runCacheHitRate": 0.5,
+            "perAgent": {
+              "lead": 0.017
+            }
+          }
+        }
+      ],
+      "answers": [
+        {
+          "after": 2,
+          "requestId": "b58b0724-0f58-45e3-a078-5baafe9cdf4d",
+          "decision": "reject"
+        }
+      ],
+      "result": {
+        "stopReason": "end_turn",
+        "cancelled": false,
+        "error": null
+      }
+    }
+  ],
+  "entries": [
+    {
+      "id": "d73d06e9-7818-4805-9378-b76919a8f536",
+      "schemaVersion": 2,
+      "createdAt": "2026-10-22T14:47:48.323Z",
+      "type": "message",
+      "parentId": null,
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Make the 54 task runs faster without changing results."
+          }
+        ]
+      },
+      "turnId": "turn-j9fxun"
+    },
+    {
+      "id": "53a72214-81ca-44a2-a8a0-698fb2ef8e85",
+      "schemaVersion": 2,
+      "createdAt": "2026-10-22T14:47:48.370Z",
+      "type": "message",
+      "parentId": "d73d06e9-7818-4805-9378-b76919a8f536",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "text": "Read the run script first, then change the retry flags."
+          },
+          {
+            "type": "text",
+            "text": "Looking at the run script.\n"
+          },
+          {
+            "type": "tool_call",
+            "id": "c1",
+            "name": "read",
+            "input": {
+              "path": "packages/eval/harbor/run.sh"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "9d1d9f72-83c8-4306-9533-7b0777815d94",
+      "schemaVersion": 2,
+      "createdAt": "2026-10-22T14:47:48.418Z",
+      "type": "message",
+      "parentId": "53a72214-81ca-44a2-a8a0-698fb2ef8e85",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "toolCallId": "c1",
+            "content": "#!/usr/bin/env bash\nset -euo pipefail\nharbor run --path tasks \\\n  -o \"$jobs\" -y\n",
+            "isError": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "3ab0449e-2e16-4a28-a7fb-e62e277bac9f",
+      "schemaVersion": 2,
+      "createdAt": "2026-10-22T14:47:48.420Z",
+      "type": "message",
+      "parentId": "9d1d9f72-83c8-4306-9533-7b0777815d94",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_call",
+            "id": "c2",
+            "name": "edit",
+            "input": {
+              "path": "packages/eval/harbor/run.sh",
+              "oldText": "-o \"$jobs\" -y",
+              "newText": "-o \"$jobs\" -y \\\n  -r 2 --retry-include RuntimeError"
+            }
+          },
+          {
+            "type": "tool_call",
+            "id": "c3",
+            "name": "bash",
+            "input": {
+              "command": "bash scripts/dry-run.sh"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "60a1a46c-dba2-4575-abf7-806a50054b81",
+      "schemaVersion": 2,
+      "createdAt": "2026-10-22T14:47:48.431Z",
+      "type": "message",
+      "parentId": "3ab0449e-2e16-4a28-a7fb-e62e277bac9f",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "toolCallId": "c2",
+            "content": "edited",
+            "isError": false
+          },
+          {
+            "type": "tool_result",
+            "toolCallId": "c3",
+            "content": "ran bash scripts/dry-run.sh\nexit 0",
+            "isError": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "86a6fbfb-be09-4116-86ca-6b24b8e27ee5",
+      "schemaVersion": 2,
+      "createdAt": "2026-10-22T14:47:48.452Z",
+      "type": "message",
+      "parentId": "60a1a46c-dba2-4575-abf7-806a50054b81",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Retries replace the failed trial in place:\n```sh\nharbor run -r 2 --retry-include RuntimeError\n```\n- `AgentSetupTimeoutError` is a machine fault too\n- a task that fails twice still counts as a fail\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "7e00905d-14b5-4ca9-a87f-64af9c532302",
+      "schemaVersion": 2,
+      "createdAt": "2026-10-22T14:47:48.588Z",
+      "parentId": "86a6fbfb-be09-4116-86ca-6b24b8e27ee5",
+      "type": "usage",
+      "model": "fixture-model",
+      "usage": {
+        "inputTokens": 4500,
+        "outputTokens": 200,
+        "cachedInputTokens": 2250,
+        "costUsd": 0.015
+      },
+      "costUsd": 0.015,
+      "cacheHitRate": 0.5,
+      "timing": {
+        "ttftMs": 0.37730000000004793,
+        "streamMs": 31.774699999999996,
+        "outputTokens": 200
+      },
+      "contextTokens": 1870
+    },
+    {
+      "id": "6a48498c-9665-4983-b30d-f60755ecb484",
+      "schemaVersion": 2,
+      "createdAt": "2026-10-22T14:47:48.593Z",
+      "type": "message",
+      "parentId": "7e00905d-14b5-4ca9-a87f-64af9c532302",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Now clean the build folder."
+          }
+        ]
+      },
+      "turnId": "turn-rdgsww"
+    },
+    {
+      "id": "d8c2dafa-6a3f-4b4c-b157-a8dc65718596",
+      "schemaVersion": 2,
+      "createdAt": "2026-10-22T14:47:48.599Z",
+      "type": "message",
+      "parentId": "6a48498c-9665-4983-b30d-f60755ecb484",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_call",
+            "id": "c4",
+            "name": "bash",
+            "input": {
+              "command": "rm -rf build"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "0ba88308-2d2c-4556-9281-1af882d1afa5",
+      "schemaVersion": 2,
+      "createdAt": "2026-10-22T14:47:48.644Z",
+      "type": "message",
+      "parentId": "d8c2dafa-6a3f-4b4c-b157-a8dc65718596",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "toolCallId": "c4",
+            "content": "permission denied: bash with \"rm -rf build\" is not permitted by the current permissions policy. Do not send this call again: the answer will be the same. A bash call with another command can be permitted. Continue without this one, or tell the user that the task needs this permission.",
+            "isError": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "30e1bb01-48ae-42c0-96bf-ae8011217499",
+      "schemaVersion": 2,
+      "createdAt": "2026-10-22T14:47:48.649Z",
+      "type": "message",
+      "parentId": "0ba88308-2d2c-4556-9281-1af882d1afa5",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I did not run it.\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "7ba32090-ba2c-4258-9896-e07371f5ed76",
+      "schemaVersion": 2,
+      "createdAt": "2026-10-22T14:47:48.730Z",
+      "parentId": "30e1bb01-48ae-42c0-96bf-ae8011217499",
+      "type": "usage",
+      "model": "fixture-model",
+      "usage": {
+        "inputTokens": 650,
+        "outputTokens": 32,
+        "cachedInputTokens": 325,
+        "costUsd": 0.002
+      },
+      "costUsd": 0.002,
+      "cacheHitRate": 0.5,
+      "timing": {
+        "ttftMs": 0.059499999999957254,
+        "streamMs": 3.5109999999998536,
+        "outputTokens": 32
+      },
+      "contextTokens": 362
+    }
+  ],
+  "tipId": "7ba32090-ba2c-4258-9896-e07371f5ed76"
+}

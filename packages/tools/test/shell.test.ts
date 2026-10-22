@@ -7,6 +7,7 @@ import {
   resolveConfiguredShell,
   resolveShell,
   setDeniedCommandEnv,
+  setShellEnv,
 } from "../src/shell.ts";
 
 describe("resolveShell", () => {
@@ -67,6 +68,11 @@ describe("parseShellOutput", () => {
     expect(result.output).toBe("hello world");
     expect(result.exitCode).toBe(0);
     expect(result.cwd).toBe("/home/user/project");
+  });
+
+  test("a line that progress output rewrote keeps only what a terminal shows", () => {
+    const raw = `Downloading 10%\rDownloading 55%\rDownloading 100%\r\ndone\r\nnext\n${EXIT_MARKER}0\n`;
+    expect(parseShellOutput(raw, "/fallback").output).toBe("Downloading 100%\ndone\nnext");
   });
 
   test("parses a nonzero exit code", () => {
@@ -149,5 +155,18 @@ describe("modelCommandEnv", () => {
     } finally {
       setDeniedCommandEnv([]);
     }
+  });
+
+  test("shellEnv is added after the filter and wins over the host value, even for a secret name", () => {
+    const env = { GITHUB_TOKEN: "host", FOO: "host", PATH: "/bin" };
+    setDeniedCommandEnv(["NPM_*"]);
+    setShellEnv({ GITHUB_TOKEN: "set", NPM_TOKEN: "n", FOO: "bar" });
+    try {
+      expect(modelCommandEnv(env)).toEqual({ PATH: "/bin", GITHUB_TOKEN: "set", NPM_TOKEN: "n", FOO: "bar" });
+    } finally {
+      setDeniedCommandEnv([]);
+      setShellEnv();
+    }
+    expect(modelCommandEnv(env)).toEqual({ PATH: "/bin", FOO: "host" });
   });
 });

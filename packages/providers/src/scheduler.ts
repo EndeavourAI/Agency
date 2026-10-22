@@ -4,12 +4,14 @@ import { getProviderMetadata } from "./registry.ts";
 export interface SchedulerOptions {
   /** Requests allowed to run at once. */
   maxConcurrent?: number;
-  /** Sustained request rate, refilled continuously (a token bucket, not a hard window). */
+  /** Sustained request rate, refilled continuously (a token bucket, not a hard window). Unset: no pacing. */
   requestsPerMinute?: number;
   /** Retries for a `retryable` AgencyError before giving up. */
   maxAttempts?: number;
   baseDelayMs?: number;
   maxDelayMs?: number;
+  /** How long a rate limit, an overload or a network failure is retried when `maxAttempts` is unset. Default 5 minutes. */
+  rateLimitWindowMs?: number;
 }
 
 export interface ScheduleOptions {
@@ -20,6 +22,8 @@ export interface ScheduleOptions {
    * would overwrite or fire for another's retries - pass the observer here.
    */
   onRetry?: (attempt: number, message: string, next?: number) => void;
+  /** A fallback model waits: an overload ends the call after `maxAttempts`, not after the window. */
+  quickOverload?: boolean;
 }
 
 /** One key slot: a plain id, or an id with a priority (lower runs first). */
@@ -94,9 +98,10 @@ class TokenBucket {
  */
 export class Scheduler {
   private readonly semaphore: Semaphore;
-  private readonly bucket: TokenBucket;
+  private readonly bucket: TokenBucket | undefined;
   private readonly maxAttempts: number;
   private readonly rateLimitAttempts: number;
+  private readonly rateLimitWindowMs: number;
   private readonly baseDelayMs: number;
   private readonly maxDelayMs: number;
   private rotationCursor = 0;
@@ -107,12 +112,14 @@ export class Scheduler {
 
   constructor(options: SchedulerOptions = {}) {
     this.semaphore = new Semaphore(options.maxConcurrent ?? 4);
-    const rpm = options.requestsPerMinute ?? 60;
-    const capacity = Math.max(1, Math.ceil(rpm / 10)); // ~6 seconds of burst headroom
-    this.bucket = new TokenBucket(capacity, rpm / 60_000);
+    // A fixed rate made a fast turn wait about 1 s per request below the real limit of the account.
+    const rpm = options.requestsPerMinute;
+    this.bucket =
+      rpm === undefined ? undefined : new TokenBucket(Math.max(1, Math.ceil(rpm / 10)), rpm / 60_000);
     this.maxAttempts = options.maxAttempts ?? 4;
-    // A rate limit clears in seconds (11 s to 22 s measured on OpenRouter's free models): it gets about 30 s, not 3.5 s.
-    this.rateLimitAttempts = options.maxAttempts ?? 7;
+    // Live: an upstream limit of a free model outlasted 7 attempts (about 60 s) in 4 of 13 sessions, each lost whole.
+    this.rateLimitAttempts = options.maxAttempts ?? Number.POSITIVE_INFINITY;
+    this.rateLimitWindowMs = options.rateLimitWindowMs ?? 300_000;
     this.baseDelayMs = options.baseDelayMs ?? 500;
     this.maxDelayMs = options.maxDelayMs ?? 30_000;
   }
@@ -122,8 +129,12 @@ export class Scheduler {
   async schedule<T>(fn: () => Promise<T>, options?: ScheduleOptions): Promise<T> {
     await this.semaphore.acquire();
     try {
-      await this.bucket.consume();
-      return await this.runWithRetry(fn, options?.onRetry ?? this.onRetry?.bind(this));
+      await this.bucket?.consume();
+      return await this.runWithRetry(
+        fn,
+        options?.onRetry ?? this.onRetry?.bind(this),
+        options?.quickOverload === true,
+      );
     } finally {
       this.semaphore.release();
     }
@@ -153,7 +164,7 @@ export class Scheduler {
 
     await this.semaphore.acquire();
     try {
-      await this.bucket.consume();
+      await this.bucket?.consume();
       return await this.runWithRotation(order, start, quarantineMs, fn, onRetry);
     } finally {
       this.semaphore.release();
@@ -227,7 +238,12 @@ export class Scheduler {
     }
   }
 
-  private async runWithRetry<T>(fn: () => Promise<T>, onRetry: ScheduleOptions["onRetry"]): Promise<T> {
+  private async runWithRetry<T>(
+    fn: () => Promise<T>,
+    onRetry: ScheduleOptions["onRetry"],
+    quickOverload = false,
+  ): Promise<T> {
+    const started = Date.now();
     let attempt = 0;
     while (true) {
       attempt += 1;
@@ -235,8 +251,14 @@ export class Scheduler {
         return await fn();
       } catch (error) {
         if (!(error instanceof AgencyError) || error.retryClass !== "retryable") throw error;
-        const limit = error.code === ErrorCode.RATE_LIMIT ? this.rateLimitAttempts : this.maxAttempts;
-        if (attempt >= limit) throw error;
+        // Live: a DNS failure of about a minute outlasted four attempts (7 s), as rate limits outlasted seven.
+        // An overload (529) lasts as long: Claude Code retries it ten times, not four.
+        const windowed =
+          error.code === ErrorCode.RATE_LIMIT ||
+          error.code === ErrorCode.NETWORK ||
+          (error.code === ErrorCode.OVERLOAD && !quickOverload);
+        if (attempt >= (windowed ? this.rateLimitAttempts : this.maxAttempts)) throw error;
+        if (windowed && Date.now() - started >= this.rateLimitWindowMs) throw error;
 
         const retryAfterMs = extractRetryAfterMs(error);
         // Security bound: a hostile or misconfigured Retry-After must not hang a

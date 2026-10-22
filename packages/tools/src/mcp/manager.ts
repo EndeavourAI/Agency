@@ -43,6 +43,8 @@ export interface McpManager {
   /** The text of the prompt that a slash command names. Undefined: no prompt has that name. */
   promptText(command: string, args: string): Promise<string | undefined>;
   failures: ReadonlyMap<string, string>;
+  /** The resources of every server that declares them. */
+  listResources(): Promise<Array<{ server: string; uri: string; name?: string }>>;
   /**
    * Per-handle identity resolver threaded from scope creation.
    * Call with the agent handle active at call time — `identityFor(server, "alice")`
@@ -350,6 +352,17 @@ export async function startMcpServers(options: McpManagerOptions): Promise<McpMa
     failures,
     identityFor,
     prompts,
+    async listResources() {
+      const rows: Array<{ server: string; uri: string; name?: string }> = [];
+      for (const server of resourceServers) {
+        for (const r of (await clients
+          .get(server)
+          ?.listResources()
+          .catch(() => [])) ?? [])
+          rows.push({ server, uri: r.uri, ...(r.name ? { name: r.name } : {}) });
+      }
+      return rows;
+    },
     async promptText(command, args) {
       const prompt = prompts.find((p) => `mcp__${p.server}__${p.name}` === command);
       const client = prompt ? clients.get(prompt.server) : undefined;

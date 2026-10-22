@@ -1,12 +1,13 @@
 import { join } from "node:path";
 import type { Config } from "@agency/core";
-import { dataDir } from "@agency/core";
+import { dataDir, parseModelRef } from "@agency/core";
 import type { HttpClient } from "@agency/net";
 import {
   createKeychain,
   defaultModelIDs,
   filterModels,
   type KeychainBackend,
+  keySource,
   loadModelsDevCatalog,
   type ModelCapabilities,
   type ModelInfo,
@@ -27,6 +28,7 @@ export interface ProviderListModel {
   releaseDate?: string;
   /** Provider API base URL from the catalog, for gateway-style providers. */
   apiBaseURL?: string;
+  efforts?: ModelInfo["efforts"];
 }
 
 export interface ProviderListEntry {
@@ -40,6 +42,8 @@ export interface ProviderListResult {
   all: ProviderListEntry[];
   default: Record<string, string>;
   connected: string[];
+  /** Where the key of each connected provider comes from: a variable name, "login", "keychain" or "config". */
+  keySource: Record<string, string>;
 }
 
 function toListModel(model: ModelInfo): ProviderListModel {
@@ -52,6 +56,7 @@ function toListModel(model: ModelInfo): ProviderListModel {
     status: model.status,
     releaseDate: model.releaseDate,
     apiBaseURL: model.apiBaseURL,
+    ...(model.efforts ? { efforts: model.efforts } : {}),
   };
 }
 
@@ -65,8 +70,9 @@ async function connectedProviderIds(
   config: Config,
   env: NodeJS.ProcessEnv,
   keychain: KeychainBackend,
-): Promise<string[]> {
+): Promise<{ connected: string[]; keySource: Record<string, string> }> {
   const connected: string[] = [];
+  const keySources: Record<string, string> = {};
   for (const id of providerIds) {
     const providerConfig = config.provider[id];
     const key = await resolveApiKey({
@@ -78,9 +84,18 @@ async function connectedProviderIds(
       oauthClientId: providerConfig?.oauth?.clientId,
       oauthBaseUrl: providerConfig?.oauth?.baseUrl,
     });
-    if (key) connected.push(id);
+    if (!key) continue;
+    connected.push(id);
+    const source = await keySource({
+      provider: id,
+      env,
+      keychain,
+      declaredEnv: providerConfig?.env,
+      config: providerConfig?.apiKey,
+    });
+    if (source) keySources[id] = source;
   }
-  return connected;
+  return { connected, keySource: keySources };
 }
 
 export async function listProviders(options: {
@@ -91,6 +106,8 @@ export async function listProviders(options: {
   /** Pre-loaded catalog models; skips the models.dev fetch (tests, warm daemon). */
   catalog?: readonly ModelInfo[];
   keychain?: KeychainBackend;
+  /** "connected": providers neither connected nor defined in config list no models (the full list is ~9k). */
+  models?: "all" | "connected";
 }): Promise<ProviderListResult> {
   const env = options.env ?? process.env;
   const catalog =
@@ -127,9 +144,22 @@ export async function listProviders(options: {
 
   const keychain = options.keychain ?? (await createKeychain(process.platform, join(dataDir(env), "keys")));
 
+  const { connected, keySource: keySources } = await connectedProviderIds(
+    [...byFamily.keys()],
+    options.config,
+    env,
+    keychain,
+  );
+  const defaultProvider = parseModelRef(options.config.model ?? "")?.provider;
+  const listed = new Set([...connected, ...Object.keys(options.config.provider)]);
+  if (defaultProvider) listed.add(defaultProvider);
   return {
-    all: entries,
+    all:
+      options.models === "connected"
+        ? entries.map((entry) => (listed.has(entry.id) ? entry : { ...entry, models: [] }))
+        : entries,
     default: defaultModelIDs(filtered),
-    connected: await connectedProviderIds([...byFamily.keys()], options.config, env, keychain),
+    connected,
+    keySource: keySources,
   };
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgencyError, ErrorCode } from "@agency/schema";
@@ -41,6 +41,17 @@ describe("SandboxBoundary.resolvePath", () => {
     expect(() => boundary.resolvePath("/c/Windows/System32")).toThrow(AgencyError);
     // The bare drive is the drive root. "C:" alone is the current folder of that drive, which is the sandbox root.
     expect(() => boundary.resolvePath("/c")).toThrow(AgencyError);
+    // The path of a file URL, which models write too: `/C:/...` was read as `C:\C:\...`.
+    expect(boundary.resolvePath("/C:/repo/project/src/index.ts")).toBe(join(root, "src", "index.ts"));
+    expect(() => boundary.resolvePath("/C:/Windows")).toThrow(AgencyError);
+    // Git Bash mounts `/tmp` on TEMP, and its `pwd` prints a workspace there as `/tmp/...`.
+    const inTemp = realpathSync(mkdtempSync(join(tmpdir(), "agency-msys-tmp-")));
+    try {
+      const msys = `/tmp/${inTemp.slice(realpathSync(tmpdir()).length + 1).replace(/\\/g, "/")}/a.ts`;
+      expect(new SandboxBoundary(inTemp).resolvePath(msys)).toBe(join(inTemp, "a.ts"));
+    } finally {
+      rmSync(inTemp, { recursive: true, force: true });
+    }
   });
 
   test("the thrown error carries PERMISSION_DENIED", () => {
@@ -79,6 +90,20 @@ describe("SandboxBoundary.resolvePath symlink handling", () => {
   function linkType(): "junction" | "dir" {
     return process.platform === "win32" ? "junction" : "dir";
   }
+
+  test("a path from the root with a leading slash is read in the root when the disk has no such path", () => {
+    const { root } = setup();
+    writeFileSync(join(root, "sub", "a.ts"), "x");
+    const boundary = new SandboxBoundary(root);
+    // Live: models wrote `/packages/tools/src/truncate.ts`, which named the root of the disk and was refused.
+    expect(boundary.resolvePath("/sub/a.ts")).toBe(join(root, "sub", "a.ts"));
+    expect(boundary.resolvePath("/sub/new.ts")).toBe(join(root, "sub", "new.ts"));
+    expect(() => boundary.resolvePath("/no-such-folder-71c2/a.ts")).toThrow(AgencyError);
+    // Live: the file tools of a session go through a rebased view, which made the path absolute first.
+    const view = rebaseSandbox(boundary, () => join(root, "sub"));
+    expect(view.resolvePath("/sub/a.ts")).toBe(join(root, "sub", "a.ts"));
+    expect(view.resolvePath("a.ts")).toBe(join(root, "sub", "a.ts"));
+  });
 
   test("a symlink inside the root pointing outside it is rejected", () => {
     const { root, outside } = setup();

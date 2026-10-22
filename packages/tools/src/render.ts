@@ -1,3 +1,5 @@
+import { isAbsolute, relative } from "node:path";
+
 const MAX_SUMMARY_CHARS = 120;
 
 export function firstLine(text: string): string {
@@ -29,6 +31,12 @@ export function summarize(text: string, max = MAX_SUMMARY_CHARS): string {
 export function clip(text: string, max = MAX_SUMMARY_CHARS): string {
   const line = firstLine(text);
   return line.length > max ? `${line.slice(0, max)}…` : line;
+}
+
+/** A file as a result names it: from the project root, the form that models should write back; else as given. */
+export function projectPath(root: string, resolved: string, given: string): string {
+  const path = relative(root, resolved);
+  return path === "" || path.startsWith("..") || isAbsolute(path) ? given : path.replace(/\\/g, "/");
 }
 
 /** Tool input fields are model-produced JSON: never trust their runtime type. */

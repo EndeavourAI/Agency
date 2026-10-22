@@ -1,5 +1,6 @@
-import { lstatSync, realpathSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import { AgencyError, ErrorCode } from "@agency/schema";
 import type { RequestApproval } from "./approval.ts";
 import type { Decision } from "./policy.ts";
@@ -12,14 +13,54 @@ export interface CommandPolicy {
 }
 
 /**
- * Workspace paths that a sandboxed command must not change: git, and the hooks, MCP servers and plugins of `.agency`,
- * run later outside the sandbox. `.git` is pinned against a swap; the worktrees of a team stay writable.
+ * Workspace paths that a sandboxed command must not change: git, and the hooks, MCP servers and plugins of `.agency`
+ * and of the other agents whose files Agency loads, run later outside the sandbox; editor folders hold tasks that run
+ * on open, as in Claude Code. `.git` is pinned against a swap; the worktrees of a team stay writable. Lowercase.
  */
 export const PROTECTED_PATHS = {
   pinned: [".git"],
-  readOnly: [".git/hooks", ".git/config", ".agency"],
+  readOnly: [
+    ".git/hooks",
+    ".git/config",
+    ".gitmodules",
+    ".agency",
+    ".claude",
+    ".mcp.json",
+    ".codex",
+    ".cursor",
+    ".gemini",
+    ".opencode",
+    "opencode.json",
+    "opencode.jsonc",
+    ".pi",
+    ".zed",
+    ".kiro",
+    ".qwen",
+    ".amp",
+    ".kilocode",
+    ".roo",
+    "crush.json",
+    ".crush.json",
+    ".github/mcp.json",
+    ".vscode",
+    ".idea",
+  ],
   writable: [".agency/worktrees"],
 } as const;
+
+/** The folder of the team worktrees: `-p --worktree` runs a trusted workspace in each, which loads its own files. */
+export const WORKTREES = ".agency/worktrees";
+
+/** The read-only paths of `PROTECTED_PATHS` in each worktree of the workspace that exists now. */
+export function worktreeProtectedPaths(root: string): string[] {
+  let names: string[] = [];
+  try {
+    names = readdirSync(join(root, WORKTREES), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {}
+  return names.flatMap((name) => PROTECTED_PATHS.readOnly.map((path) => `${WORKTREES}/${name}/${path}`));
+}
 
 /**
  * Decides the verdict for a path that resolves OUTSIDE the sandbox root:
@@ -96,6 +137,7 @@ export class SandboxBoundary implements SandboxBackend {
         tool: opts.tool,
         title: `access outside the workspace: ${candidate}`,
         path: candidate,
+        source: "external_directory",
       });
       if (response === "reject") {
         throw new AgencyError(
@@ -136,7 +178,15 @@ export class SandboxBoundary implements SandboxBackend {
   }
 
   private resolveUncontained(candidate: string): string {
-    return canonicalPath(resolve(this.root, fromMsysPath(candidate)));
+    const path = fromMsysPath(candidate);
+    const resolved = canonicalPath(resolve(this.root, path));
+    // Live: models wrote a path from the root with a leading slash (`/packages/x/a.ts`), which names the root of the
+    // disk. Read so only when the disk has neither that path nor its folder, and the root has the file or its folder.
+    if (/^[\\/](?![\\/])/.test(path) && !this.contains(resolved) && !existsSync(dirname(resolved))) {
+      const inRoot = resolve(this.root, `.${path}`);
+      if (existsSync(inRoot) || existsSync(dirname(inRoot))) return canonicalPath(inRoot);
+    }
+    return resolved;
   }
 
   private contains(resolved: string): boolean {
@@ -174,7 +224,11 @@ function sep(): string {
  * The view inherits from `inner`, so its boundary and every other member stay (a container backend keeps `exec`).
  */
 export function rebaseSandbox<T extends SandboxBackend>(inner: T, base: () => string): T {
-  const at = (candidate: string) => resolve(base(), fromMsysPath(candidate));
+  // A path with one leading slash goes on as it is: the boundary reads it from the project root when the disk has none.
+  const at = (candidate: string) => {
+    const path = fromMsysPath(candidate);
+    return /^[\\/](?![\\/])/.test(path) ? path : resolve(base(), path);
+  };
   return Object.assign(Object.create(inner) as T, {
     resolvePath: (candidate: string) => inner.resolvePath(at(candidate)),
     resolvePathGated: (candidate: string, opts: { tool: string; ask?: RequestApproval }) =>
@@ -185,7 +239,9 @@ export function rebaseSandbox<T extends SandboxBackend>(inner: T, base: () => st
 /** Git Bash prints a drive as `/c/...`, and a model copies that form into the file tools. Windows reads it as `C:\c\...`. */
 export function fromMsysPath(candidate: string): string {
   if (process.platform !== "win32") return candidate;
-  return candidate.replace(/^\/([a-zA-Z])(\/|$)/, (_, drive: string) => `${drive.toUpperCase()}:/`);
+  // `/c/x` of Git Bash, and `/C:/x`, the form of a file URL that models write too. Git Bash mounts `/tmp` on TEMP.
+  if (/^\/tmp(\/|$)/.test(candidate)) return `${tmpdir()}${candidate.slice(4)}`;
+  return candidate.replace(/^\/([a-zA-Z]):?(\/|$)/, (_, drive: string) => `${drive.toUpperCase()}:/`);
 }
 
 function windowsCompareKey(p: string): string {

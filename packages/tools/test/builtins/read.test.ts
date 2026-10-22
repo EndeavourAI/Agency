@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FULL_CAPABILITIES, SandboxBoundary } from "@agency/guard";
@@ -21,15 +22,55 @@ function tempDeps(): { deps: ToolDeps; root: string } {
 const signal = new AbortController().signal;
 
 describe("createReadTool", () => {
-  test("reads a file's exact content", async () => {
+  test("reads a whole file that fits as it is, with no line numbers", async () => {
     const { deps, root } = tempDeps();
-    writeFileSync(join(root, "a.ts"), "export const x = 1;\n");
+    writeFileSync(join(root, "a.ts"), "export const x = 1;\n\nexport const y = 2;\n");
 
     const tool = createReadTool(deps);
     const result = await tool.handler({ path: "a.ts" }, { signal });
 
-    expect(result.content).toBe("export const x = 1;\n");
+    // Numbered whole reads were tried live: research input rose in three of three paired runs.
+    expect(result.content).toBe("export const x = 1;\n\nexport const y = 2;\n");
     expect(result.isError).toBeFalsy();
+  });
+
+  test("a missing file names the tracked files of the same name", async () => {
+    const { deps, root } = tempDeps();
+    mkdirSync(join(root, "test", "builtins"), { recursive: true });
+    writeFileSync(join(root, "test", "builtins", "read.test.ts"), "x\n");
+    writeFileSync(join(root, "other.ts"), "y\n");
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+
+    const tool = createReadTool(deps);
+    const result = await tool.handler({ path: "test/read.test.ts" }, { signal });
+
+    // Live: 19 of 26 failed reads named a file that the project has in another folder.
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("ENOENT");
+    expect(result.content).toContain("test/builtins/read.test.ts");
+    expect(result.content).not.toContain("other.ts");
+  });
+
+  test("takes a line range in the names that models send for it", async () => {
+    const { deps, root } = tempDeps();
+    writeFileSync(join(root, "a.txt"), "one\ntwo\nthree\nfour\n");
+    const tool = createReadTool(deps);
+    // Live: `{start, end}` was ignored, so a model got the whole file (or a note that it was unchanged) twice.
+    for (const range of [
+      { start: 2, end: 3 },
+      { start_line: 2, end_line: 3 },
+      { startLine: 2, endLine: 3 },
+      { offset: 2, end: 3 },
+      // Live: a read with these names sent the whole 45K head of loop.ts, five times in one session.
+      { start_offset: 2, end_offset: 3 },
+      { start_index: 2, end_index: 3 },
+    ]) {
+      const result = await tool.handler({ path: "a.txt", ...range } as { path: string }, { signal });
+      expect(result.content).toBe("2\ttwo\n3\tthree");
+    }
+    const open = await tool.handler({ path: "a.txt", start: 3 } as { path: string }, { signal });
+    expect(open.content).toBe("3\tthree\n4\tfour");
   });
 
   test("rejects a path outside the sandbox root", async () => {
@@ -67,6 +108,12 @@ describe("createReadTool", () => {
 
     const webp = await tool.handler({ path: "pic.webp" }, { signal });
     expect(webp.images?.[0]?.mimeType).toBe("image/webp");
+
+    // A PDF rides the same block: each adapter sends it as the document of its provider.
+    writeFileSync(join(root, "report.PDF"), Buffer.from("%PDF-1.4"));
+    const pdf = await tool.handler({ path: "report.PDF" }, { signal });
+    expect(pdf.content).toBe("Attached report.PDF (application/pdf, 8 bytes).");
+    expect(pdf.images?.[0]?.mimeType).toBe("application/pdf");
   });
 
   test("uppercase extensions and .jpeg map too; unknown extensions stay text", async () => {

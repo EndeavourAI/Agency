@@ -82,8 +82,8 @@ describe("createBrowserTool", () => {
       deps({ ...FULL_CAPABILITIES, network: ["allowed.example.com"] }),
       httpWith(PAGE),
     );
-    await expect(
-      tool.handler({ action: "navigate", url: "https://evil.example.com" }, { signal }),
-    ).rejects.toThrow();
+    // No one to ask: refused.
+    const result = await tool.handler({ action: "navigate", url: "https://evil.example.com" }, { signal });
+    expect(result.isError).toBe(true);
   });
 });

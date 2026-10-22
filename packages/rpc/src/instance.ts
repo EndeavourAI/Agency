@@ -29,6 +29,8 @@ export interface InstanceInfo {
    * file is written user-only (chmod 0600 off-Windows) since it holds it.
    */
   token?: string;
+  /** The Agency build that started the daemon: a client of another build does not keep using it. */
+  build?: string;
 }
 
 /**
@@ -202,6 +204,8 @@ export interface EnsureDaemonOptions {
   lockStaleMs?: number;
   /** Injectable for tests; production callers never need to pass this. */
   connect?: typeof connectToDaemon;
+  /** This client's build: an idle daemon of another build is asked to leave, and a new one starts. */
+  build?: string;
 }
 
 /**
@@ -246,13 +250,30 @@ async function ensureDaemonAlone(
   async function tryConnect(): Promise<{ port: number; client: DaemonClient } | undefined> {
     const info = readInstanceFile(instanceFile);
     if (!info || info.version !== PROTOCOL_VERSION) return undefined;
+    let client: DaemonClient;
     try {
-      const client = await connect(info.port, "127.0.0.1", { token: info.token });
-      return { port: info.port, client };
+      client = await connect(info.port, "127.0.0.1", { token: info.token });
     } catch {
       rmSync(instanceFile, { force: true });
       return undefined;
     }
+    if (options.build === undefined || info.build === options.build) return { port: info.port, client };
+    // Live: every run of a new checkout talked to the daemon of an old one. One that is busy or older than this
+    // check (no daemon_retire) is still used: it may serve another window.
+    const answer = (await client.call("daemon_retire", {}).catch(() => undefined)) as
+      | { leaving?: boolean }
+      | undefined;
+    if (answer?.leaving !== true) return { port: info.port, client };
+    await client.close();
+    const until = Date.now() + spawnTimeoutMs;
+    const stillThere = (): boolean => {
+      const now = readInstanceFile(instanceFile);
+      return now !== undefined && now.port === info.port && now.startedAt === info.startedAt;
+    };
+    while (Date.now() < until && stillThere()) {
+      await new Promise((r) => setTimeout(r, pollIntervalMs));
+    }
+    return undefined;
   }
 
   const existing = await tryConnect();

@@ -1,11 +1,12 @@
-import { requireNetwork } from "@agency/guard";
 import { t } from "@agency/i18n";
 import type { HttpClient } from "@agency/net";
 import type { ToolDeps, ToolSpec } from "../contract.ts";
 import { extractHtmlTitle, htmlToMarkdown } from "../html.ts";
+import { networkOrAsk } from "../network-ask.ts";
 import { clip, str, summarize } from "../render.ts";
 
 const MAX_FETCH_CHARS = 50_000;
+const MAX_REDIRECTS = 10;
 
 /**
  * Turns a raw HTTP body into model-readable text: HTML gets title + a
@@ -33,6 +34,7 @@ export function createFetchTool(deps: ToolDeps, http: HttpClient): ToolSpec {
       required: ["url"],
     },
     riskTier: "moderate",
+    readOnly: () => true,
     renderCall: (input) => `fetch ${summarize(str(input.url))}`,
     renderResult: (result) => {
       const url = str(result.input?.url);
@@ -42,11 +44,21 @@ export function createFetchTool(deps: ToolDeps, http: HttpClient): ToolSpec {
       return `${label}: ${result.content.length} chars (${body})`;
     },
 
-    async handler(input) {
-      const host = new URL(input.url).hostname;
-      requireNetwork(deps.identity, deps.capabilities, host);
-
-      const res = await http.fetch(input.url);
+    async handler(input, ctx) {
+      let url = new URL(input.url);
+      const refused = await networkOrAsk(deps, "fetch", url.hostname, ctx);
+      if (refused !== undefined) return { content: refused, isError: true };
+      // A redirect to another host comes back as a note, as in Claude Code: the next call to that host passes the
+      // permission and network checks of its own. Followed blindly, an allowed host could lead to any other.
+      let res = await http.fetch(url.href, { redirect: "manual" });
+      for (let hops = 0; res.status >= 300 && res.status < 400 && res.headers.has("location"); hops++) {
+        const next = new URL(res.headers.get("location") ?? "", url);
+        if (next.host !== url.host || next.protocol !== url.protocol || hops === MAX_REDIRECTS) {
+          return { content: t("tool.fetch.redirect", { url: input.url, location: next.href }) };
+        }
+        url = next;
+        res = await http.fetch(url.href, { redirect: "manual" });
+      }
       const body = await res.text();
 
       if (!res.ok) {

@@ -2,12 +2,12 @@
 # Installs the Agency binary from a GitHub release. Fails closed: a missing or
 # mismatched checksum aborts the install, nothing is written.
 #
-# Usage: curl -fsSL https://raw.githubusercontent.com/AgencyHarness/Agency/master/scripts/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/EndeavourAI/Agency/master/scripts/install.sh | bash
 # Env overrides: AGENCY_VERSION (default: latest release), AGENCY_INSTALL_DIR (default: ~/.local/bin),
 # AGENCY_RELEASE_BASE_URL (default: the GitHub release download URL; set to a mirror or local server for testing).
 set -euo pipefail
 
-REPO="AgencyHarness/Agency"
+REPO="EndeavourAI/Agency"
 INSTALL_DIR="${AGENCY_INSTALL_DIR:-$HOME/.local/bin}"
 
 os="$(uname -s)"
@@ -30,7 +30,10 @@ else
   [ -n "$version" ] || { echo "install: could not determine the latest release" >&2; exit 1; }
 fi
 
-asset="agency-$os_name-$arch_name"
+# Alpine and other musl systems take the musl build, which needs libstdc++ and libgcc (apk add libstdc++ libgcc).
+libc=""
+if [ "$os_name" = linux ] && { [ -f /etc/alpine-release ] || ldd --version 2>&1 | grep -qi musl; }; then libc="-musl"; fi
+asset="agency-$os_name-$arch_name$libc"
 base_url="${AGENCY_RELEASE_BASE_URL:-https://github.com/$REPO/releases/download/v$version}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

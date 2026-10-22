@@ -135,14 +135,14 @@ describe("session_send over the HTTP gateway", () => {
 
     const shown = await rpcCall(base, token, "session_show", { sessionId: "gw-s1" });
     const types = (shown.entries as Array<{ type: string }>).map((e) => e.type);
-    expect(types).toEqual(["message", "message", "usage"]);
+    expect(types).toEqual(["message", "message", "turn_end", "usage"]);
 
     // Continuing sees the first turn as real history.
     const second = await sessionSend(base, token, { sessionId: "gw-s1", userText: "again" });
     expect(second.stopReason).toBe("end_turn");
     expect(second.messages as unknown[]).toHaveLength(4);
     const shown2 = await rpcCall(base, token, "session_show", { sessionId: "gw-s1" });
-    expect(shown2.entries as unknown[]).toHaveLength(6);
+    expect(shown2.entries as unknown[]).toHaveLength(8);
   });
 
   test("turn events stream over the existing event stream", async () => {
@@ -167,12 +167,22 @@ describe("session_send over the HTTP gateway", () => {
       });
       expect(r.stopReason).toBe("end_turn");
     }
+    const turnId = "gw-auto-last";
+    const sse = collectSseUntil(`${base}/events?stream=turn.${turnId}`, token, (acc) =>
+      acc.includes('"phase":"end"'),
+    );
+    await new Promise((r) => setTimeout(r, 200));
     const last = await sessionSend(base, token, {
       sessionId: "gw-auto",
       userText: "trigger",
       contextWindow: 3000,
+      turnId,
     });
     expect(last.compacted).toBe(true);
+    // The client hears that the session compacts while the summary runs.
+    const acc = await sse;
+    expect(acc.indexOf('"phase":"start"')).toBeGreaterThan(-1);
+    expect(acc.indexOf('"phase":"start"')).toBeLessThan(acc.indexOf('"phase":"end"'));
     const shown = await rpcCall(base, token, "session_show", { sessionId: "gw-auto" });
     expect((shown.entries as Array<{ type: string }>).some((e) => e.type === "compaction_summary")).toBe(
       true,
@@ -230,7 +240,7 @@ describe("session_send over the HTTP gateway", () => {
     for (const r of sends) expect(r.stopReason).toBe("end_turn");
     const shown = await rpcCall(base, token, "session_show", { sessionId: "gw-race" });
     const entries = shown.entries as Array<{ id: string; parentId: string | null; type: string }>;
-    expect(entries).toHaveLength(15);
+    expect(entries).toHaveLength(20);
     const ids = new Set(entries.map((e) => e.id));
     for (const e of entries) {
       if (e.parentId !== null) expect(ids.has(e.parentId)).toBe(true);

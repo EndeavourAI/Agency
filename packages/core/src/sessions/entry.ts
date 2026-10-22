@@ -45,7 +45,17 @@ export type SessionEntry = SessionEntryBase & Record<string, unknown>;
 export interface MessageEntry extends SessionEntryBase {
   type: "message";
   message: Message;
+  /** A user-role message that entered mid-turn: a viewer keeps it inside the running turn, not as a new prompt. */
+  origin?: MessageOrigin;
+  /** On a prompt: the turn it started, whose file writes a rewind puts back. */
+  turnId?: string;
 }
+
+/**
+ * "harness": the loop wrote it (Stop-hook feedback). "inbox": the user or a teammate sent it while the turn ran.
+ * "shell": the output of a command that the user ran with `shell_run`.
+ */
+export type MessageOrigin = "harness" | "inbox" | "shell";
 
 export interface ModelChangeEntry extends SessionEntryBase {
   type: "model_change";
@@ -107,6 +117,28 @@ export interface AgentLifecycleEntry extends SessionEntryBase {
 export interface SessionTitleEntry extends SessionEntryBase {
   type: "session_title";
   title: string;
+}
+
+/** How a turn ended, written for every turn so a reload tells a stop from a finish; none means the daemon died mid-turn. */
+export interface TurnEndEntry extends SessionEntryBase {
+  type: "turn_end";
+  /** Not `turnId`: that field marks a prompt, which rewind and the history read. */
+  forTurn: string;
+  outcome: "done" | "stopped" | "denied" | "failed";
+  stopReason?: string;
+  error?: { code: string; message: string };
+  /** What the person refused, as `tool target`. */
+  deniedBy?: string;
+  /** The short HEAD of the workspace before and after the turn: they differ when the turn committed. */
+  head?: { before: string; after: string };
+  /** The last test, typecheck, lint or build of the turn: passed, failed, or stale when an edit came after it. */
+  checks: "passed" | "failed" | "stale" | "none";
+}
+
+export type TurnEnd = Omit<TurnEndEntry, keyof SessionEntryBase> & { type: "turn_end" };
+
+export function isTurnEndEntry(e: SessionEntry): e is SessionEntry & TurnEndEntry {
+  return e.type === "turn_end";
 }
 
 export function isMessageEntry(e: SessionEntry): e is SessionEntry & MessageEntry {

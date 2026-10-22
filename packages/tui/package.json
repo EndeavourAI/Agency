@@ -1,0 +1,32 @@
+{
+  "name": "@agency/tui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./run": "./src/run.ts"
+  },
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@agency/rpc": "workspace:*",
+    "@agency/sdk": "workspace:*",
+    "@opentui/core": "0.6.6",
+    "@opentui/solid": "0.6.6",
+    "solid-js": "1.9.12"
+  },
+  "devDependencies": {
+    "@agency/cli": "workspace:*",
+    "@agency/core": "workspace:*",
+    "@agency/net": "workspace:*",
+    "@agency/providers": "workspace:*",
+    "@agency/schema": "workspace:*",
+    "@xterm/headless": "6.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --build",
+    "test": "bun test",
+    "spike": "bun scripts/spike.ts"
+  }
+}

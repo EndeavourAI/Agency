@@ -1,5 +1,5 @@
 import type { HttpClient } from "@agency/net";
-import type { ProviderAdapter } from "./types.ts";
+import { type ProviderAdapter, ThinkingLevel } from "./types.ts";
 
 export interface ModelPricing {
   /** USD per million input tokens. */
@@ -10,6 +10,8 @@ export interface ModelPricing {
   cachedInputPerMTok?: number;
   /** USD per million cache-write input tokens, at the provider write premium. */
   cacheWritePerMTok?: number;
+  /** The rates of a prompt over `overTokens` input tokens, where a model has such a step. */
+  longPrompt?: { overTokens: number; inputPerMTok: number; outputPerMTok: number };
 }
 
 export interface ModelCapabilities {
@@ -43,6 +45,9 @@ export interface ModelInfo {
   apiNpm?: string;
   /** Per-model effort-to-provider knob mapping. Absent = model has no variable reasoning. */
   effortMapping?: Record<string, unknown>;
+  /** The reasoning levels the model's API takes, from the catalog. Empty: reasoning only turns on or off.
+   *  Absent: not known, or a token budget that each level maps to. */
+  efforts?: ThinkingLevel[];
 }
 
 /**
@@ -53,14 +58,54 @@ export interface ModelInfo {
  * family's live models endpoint.
  */
 export const BUILTIN_MODELS: ModelInfo[] = [
+  // Anthropic's price table of 2026-10-06.
+  {
+    id: "claude-haiku-5-5",
+    family: "anthropic",
+    name: "Claude Haiku 5.5",
+    providerName: "Anthropic",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    pricing: {
+      inputPerMTok: 0.1,
+      outputPerMTok: 0.5,
+      cachedInputPerMTok: 0.01,
+      cacheWritePerMTok: 0.125,
+      longPrompt: { overTokens: 100_000, inputPerMTok: 0.5, outputPerMTok: 2.5 },
+    },
+    capabilities: { tools: true, vision: true, thinking: true },
+    releaseDate: "2026-10-07",
+  },
+  {
+    id: "claude-sonnet-5-5",
+    family: "anthropic",
+    name: "Claude Sonnet 5.5",
+    providerName: "Anthropic",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    pricing: { inputPerMTok: 2, outputPerMTok: 10, cachedInputPerMTok: 0.2, cacheWritePerMTok: 2.5 },
+    capabilities: { tools: true, vision: true, thinking: true },
+    releaseDate: "2026-09-28",
+  },
+  {
+    id: "claude-opus-5-5",
+    family: "anthropic",
+    name: "Claude Opus 5.5",
+    providerName: "Anthropic",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    pricing: { inputPerMTok: 4, outputPerMTok: 20, cachedInputPerMTok: 0.2, cacheWritePerMTok: 5 },
+    capabilities: { tools: true, vision: true, thinking: true },
+    releaseDate: "2026-09-22",
+  },
   {
     id: "claude-opus-5",
     family: "anthropic",
     name: "Claude Opus 5",
     providerName: "Anthropic",
-    contextWindow: 200_000,
-    maxOutputTokens: 32_000,
-    pricing: { inputPerMTok: 15, outputPerMTok: 75, cachedInputPerMTok: 1.5, cacheWritePerMTok: 18.75 },
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    pricing: { inputPerMTok: 5, outputPerMTok: 25, cachedInputPerMTok: 0.5, cacheWritePerMTok: 6.25 },
     capabilities: { tools: true, vision: true, thinking: true },
     releaseDate: "2026-05-01",
   },
@@ -69,9 +114,9 @@ export const BUILTIN_MODELS: ModelInfo[] = [
     family: "anthropic",
     name: "Claude Sonnet 5",
     providerName: "Anthropic",
-    contextWindow: 200_000,
-    maxOutputTokens: 64_000,
-    pricing: { inputPerMTok: 3, outputPerMTok: 15, cachedInputPerMTok: 0.3, cacheWritePerMTok: 3.75 },
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    pricing: { inputPerMTok: 2, outputPerMTok: 10, cachedInputPerMTok: 0.2, cacheWritePerMTok: 2.5 },
     capabilities: { tools: true, vision: true, thinking: true },
     releaseDate: "2026-02-01",
   },
@@ -124,9 +169,9 @@ export const BUILTIN_MODELS: ModelInfo[] = [
 /**
  * On-disk catalog cache schema version. v1 is the unversioned legacy shape
  * (no `version` field); v2+ stamps it. Lives here (not catalog-cache.ts) so
- * both cache files share one version without an import cycle.
+ * both cache files share one version without an import cycle. v3 adds `efforts`; v4 stops multiplying models.dev prices.
  */
-export const CATALOG_CACHE_VERSION = 2;
+export const CATALOG_CACHE_VERSION = 4;
 
 /**
  * Tolerantly normalizes a parsed cache blob. Unversioned legacy files migrate
@@ -435,12 +480,15 @@ export async function fetchOpenRouterModels(
       pricing?: { prompt?: unknown; completion?: unknown; input_cache_read?: unknown };
       architecture?: { input_modalities?: unknown };
       supported_parameters?: unknown;
+      reasoning?: { supported_efforts?: unknown };
     };
     const window = Number(entry.context_length);
     if (typeof entry.id !== "string" || !(window > 0)) return [];
     const listed = Number(entry.top_provider?.max_completion_tokens) || LEARNED_OUTPUT_DEFAULT;
     const has = (list: unknown, value: string) => Array.isArray(list) && list.includes(value);
     const cached = entry.pricing?.input_cache_read;
+    const thinking = has(entry.supported_parameters, "reasoning");
+    const efforts = entry.reasoning?.supported_efforts;
     return [
       {
         id: entry.id,
@@ -455,8 +503,12 @@ export async function fetchOpenRouterModels(
         capabilities: {
           tools: has(entry.supported_parameters, "tools"),
           vision: has(entry.architecture?.input_modalities, "image"),
-          thinking: has(entry.supported_parameters, "reasoning"),
+          thinking,
         },
+        // No list: reasoning only turns on or off.
+        ...(thinking
+          ? { efforts: ThinkingLevel.filter((level) => level !== "off" && has(efforts, level)) }
+          : {}),
       },
     ];
   });
@@ -598,6 +650,7 @@ const PROVIDER_METADATA_TABLE: readonly ProviderMetadataRow[] = [
   ["groq", 128_000, "cheap", ["api-key"], 300],
   ["xai", 128_000, "standard", ["api-key"], 300],
   ["ollama", 128_000, "cheap", ["none"], undefined],
+  ["chatgpt", 400_000, "subscription", ["oauth"], 300],
 ];
 
 function toProviderMetadata(row: ProviderMetadataRow): ProviderMetadata {

@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SessionStore, type ToolSpec, TraceRecorder } from "@agency/core";
-import { createFileTrustStore } from "@agency/guard";
+import { codeRunnerReadPaths, dataDir, SessionStore, type ToolSpec, TraceRecorder } from "@agency/core";
+import { createFileTrustStore, scriptSandboxAvailable } from "@agency/guard";
 import type { HttpClient } from "@agency/net";
 import type { ModelInfo, ProviderAdapter, StreamEvent } from "@agency/providers";
 import { connectToDaemon, type DaemonClient } from "@agency/rpc";
@@ -16,9 +16,14 @@ import {
   DEFAULT_SYSTEM_PROMPT,
   type RunTurnRpcResult,
   resolveAdapter,
+  resolvePrompt,
   resolveSystemPrompt,
   sessionEnvironmentStore,
 } from "../src/daemon.ts";
+
+/** The code tool needs `codeMode: true` and a script sandbox that starts. */
+const codeSandbox =
+  ["linux", "darwin"].includes(process.platform) && (await scriptSandboxAvailable(codeRunnerReadPaths()));
 
 const noopHttp: HttpClient = { fetch: async () => new Response() };
 
@@ -29,7 +34,7 @@ const dirs: string[] = [];
 afterEach(async () => {
   for (const client of clients.splice(0)) await client.close();
   for (const daemon of daemons.splice(0)) await daemon.stop();
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
 });
 
 function tempInstanceFile(): string {
@@ -617,6 +622,135 @@ describe("createAgentDaemon", () => {
     }
   }, 60_000);
 
+  test("the fallback model of a turn wins over the config, and can be another model of the same provider", async () => {
+    const seen: string[] = [];
+    const adapterFor = (provider: string): ProviderAdapter => ({
+      family: "fake",
+      async *stream(request): AsyncIterable<StreamEvent> {
+        seen.push(`${provider}/${request.model}`);
+        if (request.model === "test-model")
+          throw new AgencyError(ErrorCode.OVERLOAD, "overloaded", { source: "fake" });
+        yield { type: "text_delta", text: "served" };
+        yield { type: "message_stop", stopReason: "end_turn", usage: { inputTokens: 1, outputTokens: 1 } };
+      },
+    });
+    const saved = process.env.AGENCY_ANTHROPIC_API_KEY;
+    process.env.AGENCY_ANTHROPIC_API_KEY = "same-provider-key";
+    try {
+      const { client } = await startFakeDaemon({
+        adapterFor,
+        configDir: writeConfigDir({ fallback_model: "openai/gpt-x" }),
+      });
+      const result = (await client.call("run_turn", {
+        turnId: "t-fallback-flag",
+        provider: "anthropic",
+        model: "test-model",
+        apiKey: "primary-key",
+        systemPrompt: "sys",
+        session: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        fallbackModel: "anthropic/small-model",
+      })) as RunTurnRpcResult;
+
+      expect(result.stopReason).toBe("end_turn");
+      // The primary retries before the fallback, and the model of the config is never asked.
+      expect([...new Set(seen)]).toEqual(["anthropic/test-model", "anthropic/small-model"]);
+    } finally {
+      if (saved === undefined) delete process.env.AGENCY_ANTHROPIC_API_KEY;
+      else process.env.AGENCY_ANTHROPIC_API_KEY = saved;
+    }
+  }, 60_000);
+
+  test("the tools of a turn offer only the listed built-in tools, and an allow rule does not bring one back", async () => {
+    const offered: string[][] = [];
+    const adapterFor = (): ProviderAdapter => ({
+      family: "fake",
+      async *stream(request): AsyncIterable<StreamEvent> {
+        offered.push((request.tools ?? []).map((tool) => tool.name).sort());
+        yield { type: "text_delta", text: "ok" };
+        yield { type: "message_stop", stopReason: "end_turn", usage: { inputTokens: 1, outputTokens: 1 } };
+      },
+    });
+    const spec = (name: string): ToolSpec => ({
+      name,
+      description: name,
+      inputSchema: {},
+      riskTier: "safe",
+      handler: async () => ({ content: "" }),
+    });
+    const mcpTool = { ...spec("docs_search"), origin: "mcp" as const };
+    // No codeMode in the config: no code tool on any platform.
+    const { client } = await startFakeDaemon({
+      adapterFor,
+      tools: [spec("read"), spec("grep"), mcpTool],
+      configDir: writeConfigDir({}),
+    });
+    const turn = (turnId: string, extra: Record<string, unknown>) =>
+      client.call("run_turn", {
+        turnId,
+        provider: "anthropic",
+        model: "test-model",
+        apiKey: "k",
+        systemPrompt: "sys",
+        session: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        ...extra,
+      });
+    await turn("t-tools-all", {});
+    await turn("t-tools-read", { tools: ["read"], permissions: { grep: "allow" } });
+    await turn("t-tools-none", { tools: [] });
+
+    expect(offered).toEqual([["docs_search", "grep", "read"], ["docs_search", "read"], ["docs_search"]]);
+  }, 60_000);
+
+  test.skipIf(!codeSandbox)(
+    "with codeMode true the isolated code tool is offered, and a script runs with no ask",
+    async () => {
+      const requests: Array<{ tools: string[]; results: string[] }> = [];
+      const { client } = await startFakeDaemon({
+        adapterFor: (): ProviderAdapter => ({
+          family: "fake",
+          async *stream(request): AsyncIterable<StreamEvent> {
+            requests.push({
+              tools: (request.tools ?? []).map((tool) => tool.name),
+              results: request.messages.flatMap((m) =>
+                m.content.flatMap((b) => (b.type === "tool_result" ? [String(b.content)] : [])),
+              ),
+            });
+            if (requests.length === 1) {
+              yield { type: "tool_call_start", id: "c1", name: "code" };
+              yield { type: "tool_call_delta", id: "c1", inputJsonDelta: '{"code":"return 6 * 7"}' };
+              yield { type: "tool_call_end", id: "c1" };
+              yield {
+                type: "message_stop",
+                stopReason: "tool_use",
+                usage: { inputTokens: 1, outputTokens: 1 },
+              };
+              return;
+            }
+            yield { type: "text_delta", text: "ok" };
+            yield {
+              type: "message_stop",
+              stopReason: "end_turn",
+              usage: { inputTokens: 1, outputTokens: 1 },
+            };
+          },
+        }),
+        tools: [],
+        configDir: writeConfigDir({ codeMode: true }),
+      });
+      await client.call("run_turn", {
+        turnId: "t-code-default",
+        provider: "anthropic",
+        model: "test-model",
+        apiKey: "k",
+        systemPrompt: "sys",
+        session: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      });
+      expect(requests[0]?.tools).toContain("code");
+      expect(requests[1]?.results).toEqual(["return: 42"]);
+    },
+    60_000,
+  );
+
   test("a key that a tool result holds does not reach the model or the result of the turn", async () => {
     const envKey = "env-key-value-9d2c";
     const turnKey = "turn-key-value-41aa";
@@ -704,7 +838,7 @@ describe("createAgentDaemon", () => {
       const { client } = await startFakeDaemon({
         adapterFor,
         tools: mcpTools,
-        configDir: writeConfigDir({ mcpDeferTools: mode }),
+        configDir: writeConfigDir({ mcpDeferTools: mode, codeMode: false }),
       });
       const turn = (turnId: string) =>
         client.call("run_turn", {
@@ -991,6 +1125,38 @@ describe("createAgentDaemon", () => {
     ]);
   }, 60_000);
 
+  test("the MCP server of a Codex config.toml in the workspace gives its tools to a turn", async () => {
+    const { workspaceRoot, trustStorePath } = trustedWorkspaceWithMcpServer();
+    // The same server, named by the project config of Codex instead of .mcp.json.
+    rmSync(join(workspaceRoot, ".mcp.json"));
+    mkdirSync(join(workspaceRoot, ".codex"));
+    const toml = (value: string) => JSON.stringify(value);
+    writeFileSync(
+      join(workspaceRoot, ".codex", "config.toml"),
+      `[mcp_servers.cdx]\ncommand = ${toml(process.execPath)}\nargs = [${toml(join(workspaceRoot, "server.js"))}]\n`,
+    );
+    let tools: string[] = [];
+    const adapter: ProviderAdapter = {
+      family: "fake",
+      async *stream(request): AsyncIterable<StreamEvent> {
+        tools = (request.tools ?? []).map((t) => t.name);
+        yield { type: "text_delta", text: "ok" };
+        yield { type: "message_stop", stopReason: "end_turn", usage: { inputTokens: 1, outputTokens: 1 } };
+      },
+    };
+    const { client } = await startFakeDaemon({ workspaceRoot, trustStorePath, adapterFor: () => adapter });
+    await client.call("run_turn", {
+      turnId: "t-mcp-codex",
+      sessionId: "s-mcp-codex",
+      provider: "anthropic",
+      model: "test-model",
+      apiKey: "key",
+      systemPrompt: "sys",
+      session: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+    });
+    expect(tools).toContain("cdx_ping");
+  }, 60_000);
+
   test("a daemon that stops does not delete the instance file of the daemon that took its place", async () => {
     const instanceFile = tempInstanceFile();
     const { daemon, client } = await startFakeDaemon({ instanceFile });
@@ -1214,7 +1380,9 @@ describe("createAgentDaemon", () => {
       })) as RunTurnRpcResult;
 
       expect(captured.maxTokens).toBe(12_345);
-      expect(result.usage).toEqual({ inputTokens: 1_000, outputTokens: 100, cachedInputTokens: 0 });
+      // 1,000 input at $3/M and 100 output at $15/M, from the catalog's price.
+      expect(result.usage).toMatchObject({ inputTokens: 1_000, outputTokens: 100, cachedInputTokens: 0 });
+      expect(result.usage.costUsd).toBeCloseTo(0.0045, 12);
     } finally {
       if (previous === undefined) delete process.env[dataEnvKey];
       else process.env[dataEnvKey] = previous;
@@ -1222,6 +1390,7 @@ describe("createAgentDaemon", () => {
   });
 
   test("run_turn takes the limits of an openrouter model from the provider's model list, with one read", async () => {
+    rmSync(join(dataDir(), "cache", "openrouter-models.json"), { force: true });
     const maxTokens: Array<number | undefined> = [];
     const capturingAdapter: ProviderAdapter = {
       family: "fake",
@@ -1262,6 +1431,8 @@ describe("createAgentDaemon", () => {
   });
 
   test("run_turn keeps the default limits when the model list cannot be read", async () => {
+    // A daemon keeps the list it read for the next ones; this one must start with none.
+    rmSync(join(dataDir(), "cache", "openrouter-models.json"), { force: true });
     let maxTokens: number | undefined;
     const capturingAdapter: ProviderAdapter = {
       family: "fake",
@@ -1404,9 +1575,40 @@ describe("system prompt composition", () => {
     expect(trusted.system).toContain("Plugin rule: QUARTZ-881.");
   });
 
-  test("a plain systemPrompt string is used as the base, with the environment block appended", async () => {
+  test("the bash tool that the model gets names the commands that the rules allow", async () => {
+    const descriptions: string[] = [];
+    const { client } = await startFakeDaemon({
+      adapterFor: () => ({
+        family: "fake",
+        async *stream(request) {
+          descriptions.push(request.tools?.find((tool) => tool.name === "bash")?.description ?? "");
+          yield { type: "text_delta", text: "ok" };
+          yield { type: "message_stop", stopReason: "end_turn", usage: { inputTokens: 3, outputTokens: 2 } };
+        },
+      }),
+    });
+    const turn = (turnId: string, permissions?: Record<string, unknown>) =>
+      client.call("run_turn", {
+        turnId,
+        provider: "anthropic",
+        model: "test-model",
+        apiKey: "key",
+        systemPrompt: "sys",
+        session: [],
+        ...(permissions ? { permissions } : {}),
+      });
+    // Live: under `bun test*` a model ran `npx bun test` first, was refused, and only then wrote `bun test`.
+    await turn("allowed-1", { bash: { "bun test*": "allow" } });
+    await turn("allowed-2");
+    expect(descriptions[0]).toContain(
+      "The permission rules let these commands run with no ask: `bun test*`.",
+    );
+    expect(descriptions[1]).not.toContain("The permission rules let");
+  });
+
+  test("a plain systemPrompt string is used as the base, and the environment block stays out of it", async () => {
     const capture = { systems: [] as string[] };
-    const { client, workspaceRoot } = await startFakeDaemon({
+    const { client } = await startFakeDaemon({
       adapterFor: () => textAdapter("ok", capture),
     });
 
@@ -1422,10 +1624,7 @@ describe("system prompt composition", () => {
     expect(capture.systems).toHaveLength(1);
     const system = capture.systems[0] ?? "";
     expect(system.startsWith("sys\n\n")).toBe(true);
-    expect(system).toContain("<environment>");
-    expect(system).toContain(`cwd: ${workspaceRoot}`);
-    expect(system).toContain("date: ");
-    expect(system).not.toContain("git: branch");
+    expect(system).not.toContain("<environment>");
   });
 
   test("systemPromptParts compose identity, role, instructions, and context in order", async () => {
@@ -1447,12 +1646,7 @@ describe("system prompt composition", () => {
     });
 
     const system = capture.systems[0] ?? "";
-    const order = [
-      system.indexOf("IDENTITY"),
-      system.indexOf("INSTR1"),
-      system.indexOf("ROLE"),
-      system.indexOf("<environment>"),
-    ];
+    const order = [system.indexOf("IDENTITY"), system.indexOf("INSTR1"), system.indexOf("ROLE")];
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(system).not.toContain("raw-string-ignored");
   });
@@ -1502,6 +1696,7 @@ describe("system prompt composition", () => {
 });
 
 describe("resolveSystemPrompt", () => {
+  const envOf = (...args: Parameters<typeof resolvePrompt>) => resolvePrompt(...args).context ?? "";
   const params = (overrides: Partial<RunTurnParams> = {}): RunTurnParams => ({
     turnId: "t",
     provider: "p",
@@ -1512,12 +1707,38 @@ describe("resolveSystemPrompt", () => {
     ...overrides,
   });
 
+  test("a headless turn is told that no one will answer a question", () => {
+    const root = tempRoot();
+    expect(
+      resolveSystemPrompt(params({ nonInteractive: true }), { workspaceRoot: root, git: () => null }),
+    ).toContain("no one will read a question or answer it");
+    expect(resolveSystemPrompt(params(), { workspaceRoot: root, git: () => null })).not.toContain(
+      "no one will",
+    );
+  });
+
   test("no reminders and no mcp failures means no reminder block", () => {
     const system = resolveSystemPrompt(params(), {
       workspaceRoot: tempRoot(),
       git: () => null,
     });
     expect(system).not.toContain("<system-reminder>");
+  });
+
+  test("the user instructions of other agents join only with userAgentInstructions", () => {
+    const home = tempRoot();
+    mkdirSync(join(home, ".claude"));
+    writeFileSync(join(home, ".claude", "CLAUDE.md"), "the user rule of claude");
+    const before = process.env.AGENCY_AGENTS_HOME;
+    process.env.AGENCY_AGENTS_HOME = home;
+    try {
+      const prompt = (userAgentInstructions: boolean) =>
+        resolveSystemPrompt(params(), { workspaceRoot: tempRoot(), git: () => null, userAgentInstructions });
+      expect(prompt(true)).toContain("the user rule of claude");
+      expect(prompt(false)).not.toContain("the user rule of claude");
+    } finally {
+      process.env.AGENCY_AGENTS_HOME = before;
+    }
   });
 
   test("mcp start failures become mcp_server_down reminders", () => {
@@ -1530,7 +1751,7 @@ describe("resolveSystemPrompt", () => {
   });
 
   test("the git seam feeds branch and dirty state into the environment block", () => {
-    const system = resolveSystemPrompt(params(), {
+    const system = envOf(params(), {
       workspaceRoot: tempRoot(),
       git: (_cwd, args) => (args.includes("status") ? "## main...origin/main\n M a.ts\n" : null),
     });
@@ -1544,10 +1765,10 @@ describe("resolveSystemPrompt", () => {
       git: () => status,
       environments: new Map<string, string>(),
     };
-    const first = resolveSystemPrompt(params({ sessionId: "s1" }), options);
+    const first = envOf(params({ sessionId: "s1" }), options);
     status = "## main\n M a.ts\n";
-    expect(resolveSystemPrompt(params({ sessionId: "s1" }), options)).toBe(first);
-    expect(resolveSystemPrompt(params({ sessionId: "s2" }), options)).toContain("dirty, 1 changed file");
+    expect(envOf(params({ sessionId: "s1" }), options)).toBe(first);
+    expect(envOf(params({ sessionId: "s2" }), options)).toContain("dirty, 1 changed file");
   });
 
   test("identity falls back to the shared default when parts omit it", () => {
@@ -1555,7 +1776,7 @@ describe("resolveSystemPrompt", () => {
       workspaceRoot: tempRoot(),
       git: () => null,
     });
-    expect(system.startsWith(`${DEFAULT_SYSTEM_PROMPT}\n\nROLE\n\n<environment>`)).toBe(true);
+    expect(system.startsWith(`${DEFAULT_SYSTEM_PROMPT}\n\nROLE\n\n`)).toBe(true);
   });
 
   test("the environment block of a session outlives the daemon, and is made again on another day", () => {
@@ -1569,11 +1790,11 @@ describe("resolveSystemPrompt", () => {
       environments: sessionEnvironmentStore(join(dir, "sessions")),
     });
     const day = new Date(2026, 9, 13, 10);
-    const first = resolveSystemPrompt(params({ sessionId: "s1" }), options(day));
+    const first = envOf(params({ sessionId: "s1" }), options(day));
     status = "## main\n M a.ts\n";
-    expect(resolveSystemPrompt(params({ sessionId: "s1" }), options(day))).toBe(first);
+    expect(envOf(params({ sessionId: "s1" }), options(day))).toBe(first);
     // The date in the prompt must be right, and after a day the cache of the provider is gone.
-    const later = resolveSystemPrompt(params({ sessionId: "s1" }), options(new Date(2026, 9, 14, 10)));
+    const later = envOf(params({ sessionId: "s1" }), options(new Date(2026, 9, 14, 10)));
     expect(later).toContain("date: 2026-10-14");
     expect(later).toContain("dirty, 1 changed file");
     // An id that is not a safe file name is kept in memory only.
@@ -1582,13 +1803,19 @@ describe("resolveSystemPrompt", () => {
   });
 
   test("the shared default carries safety, conventions, tool-use, and shell doctrine", () => {
-    for (const phrase of ["Safety first", "Coding conventions", "Tool-use doctrine", "Shell dialect"]) {
+    for (const phrase of [
+      "Safety first",
+      "Coding conventions",
+      "Parallel calls",
+      "Tool-use doctrine",
+      "Shell dialect",
+    ]) {
       expect(DEFAULT_SYSTEM_PROMPT).toContain(phrase);
     }
   });
 
   test("shellLabel renders into the environment block so the model uses the right dialect", () => {
-    const system = resolveSystemPrompt(params(), {
+    const system = envOf(params(), {
       workspaceRoot: tempRoot(),
       git: () => null,
       shellLabel: "PowerShell",
@@ -1597,7 +1824,7 @@ describe("resolveSystemPrompt", () => {
   });
 
   test("no shellLabel means no shell line", () => {
-    const system = resolveSystemPrompt(params(), {
+    const system = envOf(params(), {
       workspaceRoot: tempRoot(),
       git: () => null,
     });
@@ -1853,7 +2080,10 @@ describe("dispatch cost forecast wiring", () => {
       session: [],
     }) as Promise<RunTurnRpcResult>;
 
-    await new Promise((r) => setTimeout(r, 200));
+    // A fixed wait of 200 ms missed the request under the load of the full suite on Linux.
+    for (let i = 0; i < 100 && !events.some((e) => e.type === "approval_requested"); i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
     const ask = events.find((e) => e.type === "approval_requested");
     expect(ask?.requestId).toBeTruthy();
     await client.call("approval_respond", { requestId: ask?.requestId, decision: "reject" });

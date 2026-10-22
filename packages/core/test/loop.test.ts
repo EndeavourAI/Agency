@@ -4,7 +4,7 @@ import type { HttpClient } from "@agency/net";
 import type { ProviderAdapter, StreamEvent, Usage } from "@agency/providers";
 import { Scheduler } from "@agency/providers";
 import type { Message } from "@agency/schema";
-import { runTurn, type ToolSpec, validateToolInput } from "../src/loop.ts";
+import { runTurn, type ToolSpec, timeNoteDue, validateToolInput } from "../src/loop.ts";
 
 const noopHttp: HttpClient = { fetch: async () => new Response() };
 const user = { type: "user" as const };
@@ -202,6 +202,112 @@ describe("runTurn", () => {
     expect(toolResult.content).toContain("no such tool");
   });
 
+  test("a call to `shell`, the name of the shell tool of Codex, runs bash", async () => {
+    let ran: unknown;
+    const spec: ToolSpec = {
+      name: "bash",
+      description: "runs a command",
+      inputSchema: {},
+      handler: async (input) => {
+        ran = input;
+        return { content: "ran" };
+      },
+    };
+    const result = await runTurn(
+      toolThenDoneAdapter("shell", { command: "git log -1" }),
+      new Scheduler(),
+      noopHttp,
+      {
+        identity: user,
+        capabilities: FULL_CAPABILITIES,
+        systemPrompt: "sys",
+        tools: [spec],
+        model: "test-model",
+        apiKey: "key",
+        session: [],
+      },
+    );
+
+    // Live: 3 calls to `shell` in the benchmark sessions, each refused as no such tool.
+    expect(ran).toEqual({ command: "git log -1" });
+    expect((result.messages[1]!.content[0] as { content: string }).content).toBe("ran");
+  });
+
+  test("a Claude Code Edit call runs edit and the history keeps it in this harness's names", async () => {
+    let ran: unknown;
+    const spec: ToolSpec = {
+      name: "edit",
+      description: "edits",
+      inputSchema: {
+        type: "object",
+        properties: { path: { type: "string" }, oldText: { type: "string" }, newText: { type: "string" } },
+        required: ["path"],
+      },
+      handler: async (input) => {
+        ran = input;
+        return { content: "edited" };
+      },
+    };
+    const result = await runTurn(
+      toolThenDoneAdapter("Edit", { file_path: "a.ts", old_string: "x", new_string: "y" }),
+      new Scheduler(),
+      noopHttp,
+      {
+        identity: user,
+        capabilities: FULL_CAPABILITIES,
+        systemPrompt: "sys",
+        tools: [spec],
+        model: "test-model",
+        apiKey: "key",
+        session: [],
+      },
+    );
+
+    expect(ran).toEqual({ path: "a.ts", oldText: "x", newText: "y" });
+    // prune, the verify gate and the permission rules read `path` from the history.
+    expect(result.messages[0]!.content[0]).toMatchObject({ name: "edit", input: { path: "a.ts" } });
+  });
+
+  test("under toolDialect claude-code the model gets Claude Code's tool names, in its history too", async () => {
+    const sent: { tools: string[]; call?: unknown }[] = [];
+    const base = toolThenDoneAdapter("Edit", { file_path: "a.ts", old_string: "x", new_string: "y" });
+    const adapter: ProviderAdapter = {
+      family: "fake",
+      stream(request, http) {
+        sent.push({
+          tools: (request.tools ?? []).map((tool) => tool.name),
+          call: request.messages.flatMap((m) => m.content).find((block) => block.type === "tool_call"),
+        });
+        return base.stream(request, http);
+      },
+    };
+    const spec: ToolSpec = {
+      name: "edit",
+      description: "edits",
+      inputSchema: { type: "object", properties: { path: { type: "string" } } },
+      handler: async () => ({ content: "edited" }),
+    };
+    const options = {
+      identity: user,
+      capabilities: FULL_CAPABILITIES,
+      systemPrompt: "sys",
+      tools: [spec],
+      apiKey: "key",
+      session: [],
+    };
+    await runTurn(adapter, new Scheduler(), noopHttp, {
+      ...options,
+      model: "claude-haiku-5-5",
+      toolDialect: "claude-code",
+    });
+    expect(sent[0]!.tools).toEqual(["Edit"]);
+    expect(sent[1]!.call).toMatchObject({ name: "Edit", input: { file_path: "a.ts", old_string: "x" } });
+
+    sent.length = 0;
+    await runTurn(adapter, new Scheduler(), noopHttp, { ...options, model: "gemini-3-pro" });
+    expect(sent.map((request) => request.tools[0])).toEqual(["edit"]);
+  });
+
   test("a tool handler that throws becomes a tool_result error, not an unhandled rejection", async () => {
     const spec: ToolSpec = {
       name: "flaky",
@@ -315,6 +421,51 @@ describe("runTurn", () => {
     expect(toolResult.content).toContain("not valid JSON");
   });
 
+  test("a turn with a time limit is told when it runs short, gives its tools the deadline, and stops at the end", async () => {
+    let deadline: number | undefined;
+    const spec: ToolSpec = {
+      name: "bash",
+      description: "runs",
+      inputSchema: {},
+      handler: async (_input, ctx) => {
+        deadline = ctx.deadlineAt;
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        return { content: "ran" };
+      },
+    };
+    const started = Date.now();
+    const result = await runTurn(
+      toolThenDoneAdapter("bash", { command: "make" }),
+      new Scheduler(),
+      noopHttp,
+      {
+        identity: user,
+        capabilities: FULL_CAPABILITIES,
+        systemPrompt: "sys",
+        tools: [spec],
+        model: "test-model",
+        apiKey: "key",
+        session: [],
+        budget: { maxSeconds: 0.1 },
+      },
+    );
+
+    expect(deadline).toBeGreaterThanOrEqual(started + 100);
+    expect(deadline).toBeLessThan(started + 1_000);
+    const toolResult = result.messages[1]!.content[0] as { content: string };
+    expect(toolResult.content).toContain("minutes of this run are left. Finish now");
+    expect(result.budgetExceeded).toBe(true);
+  });
+
+  test("the time note comes when little time is left, not at a share of the limit", () => {
+    // Live (Terminal-Bench gpt2-codegolf, tune-mjcf): a note at 75% of 795 s stopped work with a third of it left.
+    expect(timeNoteDue(596, 795)).toBe(false);
+    expect(timeNoteDue(710, 795)).toBe(true);
+    expect(timeNoteDue(3000, 3600)).toBe(false);
+    expect(timeNoteDue(3250, 3600)).toBe(true);
+    expect(timeNoteDue(0.05, 0.1)).toBe(true);
+  });
+
   test("stops and reports budgetExceeded once the token budget is hit, after closing out pending tool calls", async () => {
     let handlerCalled = false;
     const spec: ToolSpec = {
@@ -403,6 +554,108 @@ describe("runTurn", () => {
     // Two requests at 0.02 pass 0.03. A third request would mean that the charge did not count.
     expect(result.budgetExceeded).toBe(true);
     expect(result.usage.costUsd).toBeCloseTo(0.04, 9);
+  });
+
+  test("a prompt over the long-prompt step of a model is priced at its higher rate", async () => {
+    const long: ProviderAdapter = {
+      family: "fake",
+      async *stream(): AsyncIterable<StreamEvent> {
+        yield { type: "tool_call_start", id: "call_1", name: "read" };
+        yield { type: "tool_call_end", id: "call_1" };
+        yield {
+          type: "message_stop",
+          stopReason: "tool_use",
+          usage: { inputTokens: 150_000, outputTokens: 1_000 },
+        };
+      },
+    };
+    const result = await runTurn(long, new Scheduler(), noopHttp, {
+      identity: user,
+      capabilities: FULL_CAPABILITIES,
+      systemPrompt: "sys",
+      tools: [
+        { name: "read", description: "reads", inputSchema: {}, handler: async () => ({ content: "x" }) },
+      ],
+      model: "test-model",
+      apiKey: "key",
+      session: [],
+      // Claude Haiku 5.5: $0.10/$0.50 a million tokens, $0.50/$2.50 for a prompt over 100K.
+      pricePerMTok: { input: 0.1, output: 0.5, longPrompt: { overTokens: 100_000, input: 0.5, output: 2.5 } },
+      budget: { maxCostUsd: 0.05 },
+    });
+
+    // 0.15 × $0.50 + 0.001 × $2.50 = $0.0775 passes $0.05 at the first request; the flat rate would be $0.0155.
+    expect(result.budgetExceeded).toBe(true);
+    expect(result.messages.filter((message) => message.role === "assistant")).toHaveLength(1);
+    expect(result.usage.costUsd).toBeCloseTo(0.0775, 9);
+  });
+
+  test("a turn reports its cost request by request: two prompts under the step are not priced as their sum", async () => {
+    let call = 0;
+    const twice: ProviderAdapter = {
+      family: "fake",
+      async *stream(): AsyncIterable<StreamEvent> {
+        call += 1;
+        if (call === 1) {
+          yield { type: "tool_call_start", id: "call_1", name: "read" };
+          yield { type: "tool_call_end", id: "call_1" };
+        } else yield { type: "text_delta", text: "done" };
+        const stopReason = call === 1 ? "tool_use" : "end_turn";
+        yield { type: "message_stop", stopReason, usage: { inputTokens: 60_000, outputTokens: 1_000 } };
+      },
+    };
+    const result = await runTurn(twice, new Scheduler(), noopHttp, {
+      identity: user,
+      capabilities: FULL_CAPABILITIES,
+      systemPrompt: "sys",
+      tools: [
+        { name: "read", description: "reads", inputSchema: {}, handler: async () => ({ content: "x" }) },
+      ],
+      model: "test-model",
+      apiKey: "key",
+      session: [],
+      pricePerMTok: { input: 0.1, output: 0.5, longPrompt: { overTokens: 100_000, input: 0.5, output: 2.5 } },
+    });
+    // Live: the headless JSON had no total_cost_usd for an Anthropic model, whose API reports no charge.
+    expect(result.usage.costUsd).toBeCloseTo(2 * (0.006 + 0.0005), 9);
+  });
+
+  test("thinking is not sent back once a request nears the long-prompt step, and stays out", async () => {
+    const sent: boolean[] = [];
+    const inputs = [50_000, 85_000, 60_000, 60_000];
+    const thinker: ProviderAdapter = {
+      family: "fake",
+      async *stream(request): AsyncIterable<StreamEvent> {
+        const call = sent.length;
+        sent.push(request.messages.some((m) => m.content.some((b) => b.type === "thinking")));
+        yield { type: "thinking_delta", text: "reasoning" };
+        yield { type: "thinking_signature", signature: `sig-${call}` };
+        if (call < 3) {
+          yield { type: "tool_call_start", id: `call_${call}`, name: "read" };
+          yield { type: "tool_call_end", id: `call_${call}` };
+        } else yield { type: "text_delta", text: "done" };
+        const stopReason = call < 3 ? "tool_use" : "end_turn";
+        yield {
+          type: "message_stop",
+          stopReason,
+          usage: { inputTokens: inputs[call]!, outputTokens: 1_000 },
+        };
+      },
+    };
+    await runTurn(thinker, new Scheduler(), noopHttp, {
+      identity: user,
+      capabilities: FULL_CAPABILITIES,
+      systemPrompt: "sys",
+      tools: [
+        { name: "read", description: "reads", inputSchema: {}, handler: async () => ({ content: "x" }) },
+      ],
+      model: "test-model",
+      apiKey: "key",
+      session: [],
+      pricePerMTok: { input: 0.1, output: 0.5, longPrompt: { overTokens: 100_000, input: 0.5, output: 2.5 } },
+    });
+    // 51K is under 80% of the step; 86K passes it, and a smaller request after does not bring thinking back.
+    expect(sent).toEqual([false, true, false, false]);
   });
 
   test("maxToolIterations caps a runaway tool-calling loop and says so", async () => {
@@ -682,6 +935,52 @@ describe("runTurn", () => {
     expect(toolResult).toMatchObject({ isError: true, content: expect.stringContaining("output limit") });
   });
 
+  test("a call that the output limit cut between two complete arguments does not run as repaired", async () => {
+    // The repair closes `{... "newText": "b"`, and the edit would run without the replaceAll that the cut took.
+    const ran: unknown[] = [];
+    const edit: ToolSpec = {
+      name: "edit",
+      description: "edit",
+      inputSchema: { type: "object", properties: { path: { type: "string" }, hunks: { type: "array" } } },
+      riskTier: "safe",
+      handler: async (input) => {
+        ran.push(input);
+        return { content: "edited" };
+      },
+    };
+    const adapter: ProviderAdapter = {
+      family: "fake",
+      async *stream(request): AsyncIterable<StreamEvent> {
+        if (request.messages.some((m) => m.content.some((b) => b.type === "tool_result"))) {
+          yield { type: "text_delta", text: "done" };
+          yield { type: "message_stop", stopReason: "end_turn", usage: { inputTokens: 1, outputTokens: 1 } };
+          return;
+        }
+        yield { type: "tool_call_start", id: "c1", name: "edit" };
+        yield {
+          type: "tool_call_delta",
+          id: "c1",
+          inputJsonDelta: '{"path": "a.py", "oldText": "a", "newText": "b"',
+        };
+        yield { type: "tool_call_end", id: "c1" };
+        yield { type: "message_stop", stopReason: "max_tokens", usage: { inputTokens: 1, outputTokens: 1 } };
+      },
+    };
+    const result = await runTurn(adapter, new Scheduler(), noopHttp, {
+      identity: user,
+      capabilities: FULL_CAPABILITIES,
+      systemPrompt: "sys",
+      tools: [edit],
+      model: "test-model",
+      apiKey: "key",
+      session: [{ role: "user", content: [{ type: "text", text: "edit it" }] }],
+    });
+
+    expect(ran).toEqual([]);
+    const toolResult = result.messages.flatMap((m) => m.content).find((b) => b.type === "tool_result");
+    expect(toolResult).toMatchObject({ isError: true, content: expect.stringContaining("output limit") });
+  });
+
   test("a reply that is cut before any text is not continued: there is nothing to go on from", async () => {
     // Measured with a reasoning model and a 40-token limit: each request used the limit for thinking only.
     let requests = 0;
@@ -890,7 +1189,7 @@ describe("runTurn", () => {
 
     const toolResult = result.messages[1]!.content[0] as { type: string; content: string };
     expect(toolResult.type).toBe("tool_result");
-    expect(toolResult.content).toContain("[Output truncated at 50000 bytes]");
+    expect(toolResult.content).toMatch(/\[Output truncated: \d+ bytes omitted here\]/);
     expect(toolResult.content.length).toBeLessThan(60_000);
   });
 
@@ -1052,9 +1351,10 @@ describe("runTurn", () => {
       },
     });
 
-    expect(errors).toEqual(["connection reset"]);
+    // The reply is asked for twice more before the turn gives up with the cause.
+    expect(errors).toEqual(["connection reset", "connection reset", "connection reset"]);
     expect(result.error).toEqual({ code: "network", message: "connection reset" });
-  });
+  }, 15_000);
 
   test.each([
     ["before any content", false],
@@ -1467,11 +1767,80 @@ describe("A5: input validation and permissions gating", () => {
     expect(handlerRan).toBe(false);
     const toolResult = result.messages[1]?.content[0];
     if (toolResult?.type === "tool_result") {
-      expect(toolResult.content).toContain("permission denied");
+      expect(toolResult.content).toContain('permission denied: bash with "rm -rf /"');
       // Without this sentence a weaker model sent the refused call again, 15 times on average in live runs.
-      expect(toolResult.content).toContain("Do not call it again");
+      expect(toolResult.content).toContain("Do not send this call again");
+      // A rule on one command must not read as a refusal of the whole tool: a model then gave up on other commands.
+      expect(toolResult.content).toContain("A bash call with another command can be permitted");
       expect(toolResult.isError).toBe(true);
     }
+  });
+
+  test("a refused shell search names the search tools of the turn, which need no permission", async () => {
+    const tool = (name: string): ToolSpec => ({
+      name,
+      description: name,
+      inputSchema: { type: "object", properties: { command: { type: "string" } } },
+      riskTier: name === "bash" ? "dangerous" : "safe",
+      handler: async () => ({ content: "ran" }),
+    });
+    const refused = async (command: string, names: string[]) => {
+      const result = await runTurn(toolThenDoneAdapter("bash", { command }), new Scheduler(), noopHttp, {
+        identity: user,
+        capabilities: FULL_CAPABILITIES,
+        systemPrompt: "sys",
+        tools: names.map(tool),
+        model: "m",
+        apiKey: "k",
+        session: [],
+        toolPolicy: { check: async () => "deny" as const },
+      });
+      const block = result.messages[1]?.content[0];
+      return block?.type === "tool_result" ? block.content : "";
+    };
+    // Live: most of 75 refused shell calls were `grep -rn`, `find -exec grep` and `sed -n` that these tools do.
+    const search = await refused('grep -rn "a\\|b" packages', ["bash", "grep", "glob", "read"]);
+    expect(search).toContain("The grep, glob and read tools need no permission");
+    expect(await refused("cd src && find . -name '*.ts'", ["bash", "grep", "glob", "read"])).toContain(
+      "grep, glob",
+    );
+    expect(await refused("rm -rf build", ["bash", "grep", "glob", "read"])).not.toContain(
+      "need no permission",
+    );
+    expect(await refused("grep -rn x .", ["bash"])).not.toContain("need no permission");
+  });
+
+  test("a refused command names the command patterns that the rules allow", async () => {
+    const spec: ToolSpec = {
+      name: "bash",
+      description: "runs a command",
+      inputSchema: { type: "object", properties: { command: { type: "string" } } },
+      riskTier: "dangerous",
+      handler: async () => ({ content: "ran" }),
+    };
+    const result = await runTurn(
+      toolThenDoneAdapter("bash", { command: "npx bun test a.test.ts" }),
+      new Scheduler(),
+      noopHttp,
+      {
+        identity: user,
+        capabilities: FULL_CAPABILITIES,
+        systemPrompt: "sys",
+        tools: [spec],
+        model: "m",
+        apiKey: "k",
+        session: [],
+        toolPolicy: {
+          check: async () => "deny" as const,
+          allowedPatterns: () => ["bun test*", "git status"],
+        },
+      },
+    );
+    const block = result.messages[1]?.content[0];
+    // Live: refused under `bun test*`, a model tried `npx bun test` three ways before it wrote `bun test`.
+    expect(block?.type === "tool_result" ? block.content : "").toContain(
+      "The rules allow these bash commands: `bun test*`, `git status`.",
+    );
   });
 
   test("an ask decision routes through requestApproval; once runs, reject refuses", async () => {
@@ -1597,4 +1966,52 @@ describe("A5: input validation and permissions gating", () => {
       expect.unreachable("expected a tool_result message");
     }
   });
+});
+
+test("the catalog's cache read price sets the prune batch of the session", async () => {
+  const cachedUsage = { inputTokens: 10_000, outputTokens: 5, cachedInputTokens: 8_000 };
+  const adapter = (): ProviderAdapter => {
+    let call = 0;
+    return {
+      family: "fake",
+      async *stream(): AsyncIterable<StreamEvent> {
+        call += 1;
+        if (call <= 3) {
+          yield { type: "tool_call_start", id: `call_${call}`, name: "noop" };
+          yield { type: "tool_call_delta", id: `call_${call}`, inputJsonDelta: "{}" };
+          yield { type: "tool_call_end", id: `call_${call}` };
+          yield { type: "message_stop", stopReason: "tool_use", usage: cachedUsage };
+        } else {
+          yield { type: "text_delta", text: "done" };
+          yield { type: "message_stop", stopReason: "end_turn", usage: cachedUsage };
+        }
+      },
+    };
+  };
+  const noop: ToolSpec = {
+    name: "noop",
+    description: "does nothing",
+    inputSchema: { type: "object", properties: {} },
+    riskTier: "safe",
+    handler: async () => ({ content: "ok" }),
+  };
+  const batchAt = async (cachedInput: number | undefined) => {
+    const cacheSeen = { requests: 0, input: 0, cached: 0, written: 0 };
+    await runTurn(adapter(), new Scheduler(), noopHttp, {
+      identity: user,
+      capabilities: FULL_CAPABILITIES,
+      systemPrompt: "sys",
+      tools: [noop],
+      model: "m",
+      apiKey: "k",
+      session: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+      toolPolicy: { check: async () => "allow" as const },
+      cacheSeen,
+      ...(cachedInput === undefined ? {} : { pricePerMTok: { input: 1, output: 2, cachedInput } }),
+    });
+    return (cacheSeen as { rule?: { batchTokens: number } }).rule?.batchTokens;
+  };
+  expect(await batchAt(0.1)).toBe(20_000);
+  expect(await batchAt(0.25)).toBe(10_000);
+  expect(await batchAt(undefined)).toBe(10_000);
 });

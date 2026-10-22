@@ -35,6 +35,13 @@ const echo: ToolSpec = {
   riskTier: "safe",
   handler: async (input) => ({ content: `echo ${input.text}` }),
 };
+const list: ToolSpec = {
+  name: "list",
+  description: "lists files",
+  inputSchema: { type: "object", properties: {} },
+  riskTier: "safe",
+  handler: async () => ({ content: "a.ts\nsecret.ts", value: ["a.ts", "secret.ts"] }),
+};
 let removed = 0;
 const remove: ToolSpec = {
   name: "remove",
@@ -47,16 +54,21 @@ const remove: ToolSpec = {
   },
 };
 
-async function run(code: string, deny: string[] = []): Promise<{ content: string; isError: boolean }> {
+async function run(
+  code: string,
+  deny: string[] = [],
+  redactToolResult?: (text: string) => string,
+): Promise<{ content: string; isError: boolean }> {
   const result = await runTurn(codeThenDone(code), new Scheduler(), noopHttp, {
     identity: { type: "user" },
     capabilities: FULL_CAPABILITIES,
     systemPrompt: "sys",
-    tools: [echo, remove, codeTool(() => ({ ...process.env }) as Record<string, string>)],
+    tools: [echo, remove, list, codeTool(() => ({ ...process.env }) as Record<string, string>)],
     model: "m",
     apiKey: "k",
     session: [],
     toolPolicy: { check: async (request) => (deny.includes(request.tool) ? "deny" : "allow") },
+    ...(redactToolResult === undefined ? {} : { redactToolResult }),
   });
   const block = result.messages[1]?.content[0];
   if (block?.type !== "tool_result") throw new Error("no tool result");
@@ -71,6 +83,22 @@ describe("code tool", () => {
     );
     expect(result).toEqual({ content: "ECHO ONE\nreturn: 8", isError: false });
   });
+
+  test("a script gets the list that a tool built, and the text once a redaction changed it", async () => {
+    // Live: 37 of 52 scripts failed, most of them because they iterated the text of glob as if it were an array.
+    const code =
+      "const files = await tools.list({});\nreturn Array.isArray(files) ? files.map((f) => f.length) : files;";
+    expect(await run(code)).toEqual({ content: "return: [ 4, 9 ]", isError: false });
+    const redacted = await run(code, [], (text) => text.replace("secret", "[redacted]"));
+    expect(redacted).toEqual({ content: "return: a.ts\n[redacted].ts", isError: false });
+    expect(codeTool(() => ({})).description).toContain("glob returns an array of paths");
+  });
+
+  test("a script that awaits the tools object goes on, and is not taken for a call of a tool named then", async () => {
+    // Live: each script of a model began `const { read } = await tools;` and hung until the 120 s limit.
+    const result = await run('const { echo } = await tools;\nreturn await echo({ text: "one" });');
+    expect(result).toEqual({ content: "return: echo one", isError: false });
+  }, 30_000);
 
   test("an inner call meets the permission gate: a denied tool does not run, and the script gets the error", async () => {
     removed = 0;

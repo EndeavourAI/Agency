@@ -1,4 +1,6 @@
+import { resolve } from "node:path";
 import {
+  askModel,
   BUILTIN_COMMANDS,
   compact,
   defaultGitRunner,
@@ -7,6 +9,7 @@ import {
   initDeep,
   parseModelRef,
   renderCommandHelp,
+  renderTranscript,
   resolveCommand,
   splitCommandArgs,
   summarizeTranscript,
@@ -15,7 +18,9 @@ import {
 import { tokenizerFor } from "@agency/providers";
 import type { MethodHandler } from "@agency/rpc";
 import { AgencyError, ErrorCode } from "@agency/schema";
-import type { DaemonContext } from "../types.ts";
+import { resolveConfiguredShell } from "@agency/tools";
+import { sandboxWindowsShell } from "../session-scopes.ts";
+import { type DaemonContext, hookModel } from "../types.ts";
 import { setSessionGoal } from "./goal.ts";
 import { sessionSummarizer } from "./session.ts";
 
@@ -56,6 +61,45 @@ async function call<T>(
 
 function textOf(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+const BTW_SYSTEM =
+  "Answer the user's side question from the conversation so far. You have no tools and change nothing. Be brief.";
+const RECAP_SYSTEM =
+  "Say in one line, at most 200 characters, where this session stands and what comes next. Plain text, no markdown.";
+const RECAP_MAX = 200;
+/** How many of the newest messages a side question reads. */
+const ASK_MESSAGES = 40;
+
+/** One request with no tools over the transcript of a session; the session itself is not touched. */
+async function askAbout(
+  ctx: DaemonContext,
+  sessionId: string,
+  model: string | undefined,
+  system: string,
+  question: string,
+): Promise<string> {
+  const entries = ctx.todoStore.load(sessionId);
+  const tip = ctx.todoStore.latestTip(entries);
+  if (tip === undefined) fail(`session ${sessionId} is empty or unknown`);
+  const messages = ctx.todoStore.messagesFor(entries, tip).slice(-ASK_MESSAGES);
+  const { ref, apiKey } = await hookModel(ctx, model);
+  const answer = await askModel(
+    {
+      adapter: ctx.adapterFor(ref.provider),
+      http: ctx.http,
+      model: ref.model,
+      apiKey,
+      maxTokens: 1024,
+      signal: AbortSignal.timeout(60_000),
+    },
+    system,
+    `${renderTranscript(messages)}
+
+${question}`,
+  );
+  if (answer === undefined) fail("the model gave no answer");
+  return answer;
 }
 
 const BUILTINS: Record<string, BuiltinFn> = {
@@ -139,7 +183,22 @@ const BUILTINS: Record<string, BuiltinFn> = {
       key: "model",
       value: wanted,
     });
-    return { text: `model set to ${wanted} (memory-only until restart)`, data };
+    await call(handlers, "config_write", { key: "model", value: wanted });
+    return { text: `model set to ${wanted}`, data };
+  },
+  btw: async (ctx, _handlers, args) => {
+    const [sessionId, ...words] = args;
+    const question = words.join(" ").trim();
+    if (!sessionId || !question) fail("usage: /btw <session> <question>");
+    const answer = await askAbout(ctx, sessionId, ctx.config.model, BTW_SYSTEM, question);
+    return { text: answer, data: { sessionId, answer } };
+  },
+  recap: async (ctx, _handlers, args) => {
+    const sessionId = args[0];
+    if (!sessionId) fail("usage: /recap <session>");
+    const reply = await askAbout(ctx, sessionId, undefined, RECAP_SYSTEM, "Recap this session.");
+    const recap = (reply.split("\n").find((line) => line.trim() !== "") ?? "").trim().slice(0, RECAP_MAX);
+    return { text: recap, data: { sessionId, recap } };
   },
   sessions: async (_ctx, handlers) => {
     const data = await call<{ sessions: { id: string }[] }>(handlers, "session_list", {});
@@ -345,11 +404,14 @@ const BUILTINS: Record<string, BuiltinFn> = {
     );
     return { text: "permission maps plus offered tools", data };
   },
-  trust: async (ctx) => {
-    const data = {
-      trusted: ctx.trustStore.isTrusted(ctx.options.workspaceRoot),
-      path: ctx.options.workspaceRoot,
-    };
+  trust: async (ctx, _handlers, args) => {
+    const [verb, target] = args;
+    if (verb !== undefined && verb !== "allow" && verb !== "deny") fail(`usage: /trust [allow|deny] [path]`);
+    const path = target ? resolve(ctx.options.workspaceRoot, target) : ctx.options.workspaceRoot;
+    // The trust file is in the config fingerprint, so an idle daemon leaves and the next one loads the new trust.
+    if (verb === "allow") ctx.trustStore.trust(path);
+    else if (verb === "deny") ctx.trustStore.distrust(path);
+    const data = { trusted: ctx.trustStore.isTrusted(path), path };
     return { text: data.trusted ? `${data.path} is trusted` : `${data.path} is not trusted`, data };
   },
   debug: async (_ctx, handlers, args) => {
@@ -422,7 +484,12 @@ export async function runCommand(
     return { name, kind: "builtin", ...out };
   }
   const template = resolved.kind === "template" ? resolved.template.content : resolved.command.template;
-  const expanded = expandCommand(template, argsText, ctx.options.workspaceRoot, { shell: true });
+  // The blocks of a command run in the shell of the bash tool: a plugin's `.sh` script does not run in cmd.exe.
+  const shellCommand = resolveConfiguredShell(process.platform, sandboxWindowsShell(ctx.config));
+  const expanded = expandCommand(template, argsText, ctx.options.workspaceRoot, {
+    shell: true,
+    shellCommand,
+  });
   if (resolved.kind === "plugin") {
     return { name, kind: "plugin", text: expanded, pluginId: resolved.pluginId };
   }

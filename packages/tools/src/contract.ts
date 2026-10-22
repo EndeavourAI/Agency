@@ -37,6 +37,12 @@ export interface ToolContext {
    * tool_progress events. Absent when the caller has no event surface.
    */
   onProgress?: (message: string) => void;
+  /** Variables that plugins add to the environment of a shell command (the `shell.env` event). */
+  env?: Record<string, string>;
+  /** allow-all: a shell command runs with the user's rights, outside the sandbox of the OS. */
+  hostShell?: boolean;
+  /** When the time of the turn ends (epoch ms): a shell command does not wait past it. */
+  deadlineAt?: number;
 }
 
 export interface ToolResult {
@@ -48,6 +54,17 @@ export interface ToolResult {
    * see what the tool read. Absent for text-only results.
    */
   images?: ImageBlock[];
+  /** What a script of the code tool gets in place of the text, as the paths of glob. Absent: the text. */
+  value?: unknown;
+  /** Facts for a client's step line; the model never sees them. */
+  meta?: ToolMeta;
+}
+
+export interface ToolMeta {
+  exitCode?: number;
+  added?: number;
+  removed?: number;
+  lines?: number;
 }
 
 /**
@@ -67,6 +84,10 @@ export interface ToolSpec<Input = Record<string, unknown>> {
   riskTier?: RiskTier;
   /** Set for a tool of an MCP server: the daemon can keep its schema out of the request until the model loads it. */
   origin?: "mcp";
+  /** Seldom needed: out of the request until the model finds it with `tool_search`. */
+  deferred?: boolean;
+  /** True for a call that changes nothing: it runs beside the other calls of the reply, as a `safe` tool does. */
+  readOnly?(input: Input & Record<string, unknown>): boolean;
   handler(input: Input & Record<string, unknown>, ctx: ToolContext): Promise<ToolResult>;
   renderCall?(input: Input & Record<string, unknown>): string;
   renderResult?(result: ToolResult & { input?: Record<string, unknown> }): string;

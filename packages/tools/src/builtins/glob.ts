@@ -6,7 +6,7 @@ import type { ToolDeps, ToolSpec } from "../contract.ts";
 import { loadGitignore } from "../gitignore.ts";
 import { clip, lineCount, str, summarize } from "../render.ts";
 
-const MAX_RESULTS = 500;
+const MAX_RESULTS = 100;
 /** Scan bound before the mtime sort picks the newest MAX_RESULTS. */
 const MAX_SCANNED = 5_000;
 
@@ -25,6 +25,7 @@ export function createGlobTool(deps: ToolDeps): ToolSpec {
       required: ["pattern"],
     },
     riskTier: "safe",
+    readOnly: () => true,
     renderCall: (input) => `glob ${summarize(str(input.pattern))}`,
     renderResult: (result) => {
       const pattern = str(result.input?.pattern);
@@ -62,10 +63,10 @@ export function createGlobTool(deps: ToolDeps): ToolSpec {
       scanned.sort((a, b) => b.mtimeMs - a.mtimeMs);
       const results = scanned.slice(0, MAX_RESULTS).map((entry) => entry.path);
 
-      if (results.length === 0) return { content: t("tool.glob.no_matches") };
+      if (results.length === 0) return { content: t("tool.glob.no_matches"), value: [] };
       const suffix =
         scanned.length > MAX_RESULTS ? `\n${t("tool.glob.truncated", { count: MAX_RESULTS })}` : "";
-      return { content: results.join("\n") + suffix };
+      return { content: results.join("\n") + suffix, value: results };
     },
   };
   return spec;

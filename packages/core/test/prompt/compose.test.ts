@@ -4,6 +4,7 @@ import {
   describePrompt,
   fileChangedReminder,
   formatSystemReminders,
+  headlessReminder,
   mcpServerDownReminder,
   readOnlyReminder,
   resolveFamilyPrompt,
@@ -366,4 +367,9 @@ describe("cache-prefix order with role prompts", () => {
     expect(envIdx).toBeGreaterThan(instrIdx);
     expect(composed.text.endsWith("<environment>ENV</environment>")).toBe(true);
   });
+});
+
+test("terse limits the final answer of a headless run; without it there is no limit", () => {
+  expect(headlessReminder(true).text).toContain("at most 3 lines");
+  expect(headlessReminder().text).not.toContain("at most 3 lines");
 });

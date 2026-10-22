@@ -43,6 +43,8 @@ export function createSpawnTool(deps: SpawnToolDeps): ToolSpec {
       required: ["prompt"],
     },
     riskTier: "safe",
+    // No stored session called it (0 of 5,583 calls); agent types that a user set up mean it is wanted.
+    deferred: types.length === 0,
     renderCall: (input) => `spawn ${summarize(input.prompt.slice(0, 80))}`,
     renderResult: (result) => {
       if (result.isError) return `spawn failed: ${summarize(result.content)}`;

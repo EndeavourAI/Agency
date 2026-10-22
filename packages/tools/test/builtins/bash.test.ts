@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { FULL_CAPABILITIES, SandboxBoundary } from "@agency/guard";
 import { AgencyError, ErrorCode } from "@agency/schema";
-import { type BashState, createBashTool } from "../../src/builtins/bash.ts";
+import {
+  BASH_SANDBOX_NOTE,
+  type BashState,
+  createBashTool,
+  selfKillPattern,
+} from "../../src/builtins/bash.ts";
 import type { ToolDeps } from "../../src/contract.ts";
 import { ProcessManager } from "../../src/process-manager.ts";
 import { resolveConfiguredShell, resolveShell } from "../../src/shell.ts";
@@ -63,17 +68,48 @@ describe("createBashTool", () => {
     }
   }, 30_000);
 
+  test("the variables of the call context (shell.env of plugins) reach a command and a background command", async () => {
+    const { tool } = setup();
+    const env = { ENVTEST_PLUGIN: "from-plugin-8d2e" };
+    const read =
+      process.platform === "win32" ? `Write-Output "[$env:ENVTEST_PLUGIN]"` : `echo "[$ENVTEST_PLUGIN]"`;
+    expect((await tool.handler({ command: read }, { signal, env })).content).toContain("[from-plugin-8d2e]");
+    const manager = managers.at(-1) as ProcessManager;
+    await tool.handler({ command: read, background: true }, { signal, env });
+    const [info] = manager.list();
+    const logs = () => manager.getLogs(info?.id ?? "") ?? "";
+    for (let waited = 0; waited < 20_000 && !logs().includes("[from-plugin"); waited += 100) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(logs()).toContain("[from-plugin-8d2e]");
+  }, 30_000);
+
   // Two sequential real shell spawns; PowerShell's cold start in this
   // sandbox is slow and variable enough that the 5s default is too tight.
-  test("working directory persists across calls within a session", async () => {
+  test("a command runs in the folder that a cwd or workdir argument names, inside the workspace only", async () => {
+    const { tool, state, root } = setup();
+    mkdirSync(join(root, "subdir"));
+    // Live: models sent `cwd` unasked, which the command ignored.
+    for (const key of ["cwd", "workdir"]) {
+      const result = await tool.handler({ command: pwdCommand, [key]: "subdir" }, { signal });
+      expect(result.content.toLowerCase()).toContain("subdir");
+    }
+    expect(state.cwd).toBe(root);
+    await expect(tool.handler({ command: pwdCommand, cwd: ".." }, { signal })).rejects.toThrow();
+  }, 30_000);
+
+  test("a cd lasts for its own command only: the next command starts in the root again", async () => {
     const { tool, state, root } = setup();
     mkdirSync(join(root, "subdir"));
 
-    await tool.handler({ command: "cd subdir" }, { signal });
-    expect(state.cwd.toLowerCase()).toContain("subdir");
+    const moved = await tool.handler({ command: "cd subdir" }, { signal });
+    expect(state.cwd).toBe(root);
+    // Live: models lost track of a folder that a cd kept, and ran `cd packages/x` again from inside it.
+    expect(moved.content).toContain("[the next command starts in the project root again");
 
     const result = await tool.handler({ command: pwdCommand }, { signal });
-    expect(result.content.toLowerCase()).toContain("subdir");
+    expect(result.content.toLowerCase()).not.toContain("subdir");
+    expect(result.content).not.toContain("[the next command");
   }, 15_000);
 
   test("the exit and cwd marker lines are stripped from returned output", async () => {
@@ -152,17 +188,21 @@ describe("createBashTool", () => {
     );
     expect(Date.now() - start).toBeLessThan(2_000);
     expect(result.content).toContain("started background process");
+    // process_output is deferred: the notice gives its call, so the first call has the right arguments.
+    expect(result.content).toContain(`process_output {"id": "`);
   });
 
   test("a background command runs in the sandbox of the backend, and a backend that cannot hold one refuses it", async () => {
     const root = mkdtempSync(join(tmpdir(), "agency-bash-test-"));
     dirs.push(root);
     const wrapped: string[][] = [];
+    let released!: () => void;
+    const release = new Promise<void>((resolve) => (released = resolve));
     const osLike = Object.assign(new SandboxBoundary(root), {
       exec: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
-      wrap: (argv: string[]) => {
+      wrapHeld: (argv: string[]) => {
         wrapped.push(argv);
-        return [process.execPath, "-e", "setTimeout(() => {}, 100)"];
+        return { argv: [process.execPath, "-e", "setTimeout(() => {}, 100)"], release: released };
       },
     });
     const manager = new ProcessManager();
@@ -178,6 +218,8 @@ describe("createBashTool", () => {
     expect(wrapped).toHaveLength(1);
     expect(wrapped[0]?.at(-1)).toContain("echo outside");
     expect(manager.list()[0]?.command).toContain(process.execPath);
+    // The placeholders of the sandbox go once the command exits.
+    await release;
 
     const containerLike = Object.assign(new SandboxBoundary(root), {
       exec: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
@@ -187,6 +229,79 @@ describe("createBashTool", () => {
     expect(result.isError).toBe(true);
     expect(manager.list()).toHaveLength(1);
   });
+
+  test("an offline sandbox puts the note that allow-all replaces into the description", () => {
+    // The daemon swaps this exact note under allow-all: a reworded note would keep "no network" there.
+    const offline = Object.assign(new SandboxBoundary(tmpdir()), { offline: true });
+    const deps: ToolDeps = { identity: { type: "user" }, capabilities: FULL_CAPABILITIES, sandbox: offline };
+    expect(
+      createBashTool(deps, resolveShell(process.platform), { cwd: tmpdir() }, new ProcessManager())
+        .description,
+    ).toContain(BASH_SANDBOX_NOTE);
+  });
+
+  test("under allow-all a command runs outside the OS sandbox, in the foreground and the background", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agency-bash-test-"));
+    dirs.push(root);
+    const wrapped: string[][] = [];
+    const osLike = Object.assign(new SandboxBoundary(root), {
+      exec: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+      wrapHeld: (argv: string[]) => {
+        wrapped.push(argv);
+        return { argv, release: () => {} };
+      },
+    });
+    const manager = new ProcessManager();
+    managers.push(manager);
+    const deps: ToolDeps = {
+      identity: { type: "user" },
+      capabilities: { ...FULL_CAPABILITIES, pathScopes: [root] },
+      sandbox: osLike,
+    };
+    const tool = createBashTool(deps, resolveShell(process.platform), { cwd: root }, manager);
+    const ran = await tool.handler({ command: "echo on-host" }, { signal, hostShell: true });
+    expect(ran.content).toContain("on-host");
+    await tool.handler({ command: "echo on-host", background: true }, { signal, hostShell: true });
+    expect(manager.list()).toHaveLength(1);
+    expect(wrapped).toHaveLength(0);
+    await tool.handler({ command: "echo sandboxed" }, { signal });
+    expect(wrapped).toHaveLength(1);
+  });
+
+  test("a long command under the OS sandbox moves to the background as on the host, with the sandbox's notes", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agency-bash-test-"));
+    dirs.push(root);
+    let released = false;
+    const osLike = Object.assign(new SandboxBoundary(root), {
+      // Live: under bubblewrap a `find /` held the turn for 598 s, as this path has no detach.
+      exec: () => new Promise<never>(() => {}),
+      wrapHeld: (argv: string[]) => ({
+        argv,
+        release: () => {
+          released = true;
+        },
+        explain: (output: string) =>
+          output.includes("denied-here") ? ["[sandbox: that path is read-only]"] : [],
+      }),
+    });
+    const manager = new ProcessManager();
+    managers.push(manager);
+    const deps: ToolDeps = {
+      identity: { type: "user" },
+      capabilities: { ...FULL_CAPABILITIES, pathScopes: [root] },
+      sandbox: osLike,
+    };
+    const tool = createBashTool(deps, resolveShell(process.platform), { cwd: root }, manager, 300);
+    const detached = await tool.handler({ command: `node -e "setTimeout(()=>{}, 5000)"` }, { signal });
+    expect(detached.content).toContain("moved to the background");
+    expect(manager.list()).toHaveLength(1);
+
+    const waiting = createBashTool(deps, resolveShell(process.platform), { cwd: root }, manager);
+    const explained = await waiting.handler({ command: "echo denied-here" }, { signal });
+    expect(explained.content).toContain("[sandbox: that path is read-only]");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(released).toBe(true);
+  }, 10_000);
 
   test("aborting the signal kills the running process", async () => {
     const { tool } = setup();
@@ -314,32 +429,33 @@ describe("createBashTool", () => {
 describe("createBashTool cwd containment (A5: bash calls resolvePath)", () => {
   const signal = new AbortController().signal;
 
-  test("a cd that leaves the workspace is refused and the previous cwd kept", async () => {
+  test("a cd that leaves the workspace does not carry over to the next command", async () => {
     const { tool, state, root } = setup();
     const result = await tool.handler({ command: "cd .." }, { signal });
 
     expect(state.cwd).toBe(root);
-    expect(result.content).toContain("resolves outside the workspace");
+    expect(result.content).toContain("[the next command starts in the project root again");
   }, 30_000);
 
-  test("a cd to a symlinked directory pointing outside is refused too", async () => {
+  test("a cd to a symlinked directory pointing outside does not carry over either", async () => {
     const { tool, state, root } = setup();
     const parent = join(root, "..");
     const linkName = process.platform === "win32" ? "escape-link" : "escape-link";
     const linkPath = join(root, linkName);
     symlinkSync(parent, linkPath, process.platform === "win32" ? "junction" : "dir");
 
-    const result = await tool.handler({ command: `cd ${linkName}` }, { signal });
+    await tool.handler({ command: `cd ${linkName}` }, { signal });
     expect(state.cwd).toBe(root);
-    expect(result.content).toContain("resolves outside the workspace");
+    const where = await tool.handler({ command: pwdCommand }, { signal });
+    expect(where.content.toLowerCase()).not.toContain("escape-link");
   }, 30_000);
 });
 
 describe.skipIf(process.platform !== "win32" || Bun.which("bash") === null)(
   "createBashTool in Git Bash",
   () => {
-    test("a directory change persists across calls, with no notice that it left the workspace", async () => {
-      // Live: `pwd` gave the MSYS form (/tmp/...), no call could change the directory, and each result had the notice.
+    test("a cd works within its command, and a command with no cd gets no notice", async () => {
+      // Live: `pwd` gave the MSYS form (/tmp/...), and each result had the notice.
       const root = mkdtempSync(join(tmpdir(), "agency-bash-test-"));
       dirs.push(root);
       mkdirSync(join(root, "sub"));
@@ -352,10 +468,10 @@ describe.skipIf(process.platform !== "win32" || Bun.which("bash") === null)(
       managers.push(manager);
       const tool = createBashTool(deps, resolveShell("win32", "gitbash"), { cwd: root }, manager);
 
-      const moved = await tool.handler({ command: "cd sub" }, { signal });
-      expect(moved.content).not.toContain("cwd kept");
+      const moved = await tool.handler({ command: 'cd sub && basename "$(pwd)"' }, { signal });
+      expect(moved.content.split("\n")[0]).toBe("sub");
       const where = await tool.handler({ command: 'basename "$(pwd)"' }, { signal });
-      expect(where.content.trim()).toBe("sub");
+      expect(where.content.trim()).toBe(basename(root));
     }, 60_000);
 
     test("aborting stops the command's own child process, through the launcher that Git for Windows installs", async () => {
@@ -433,3 +549,39 @@ describe.skipIf(process.platform !== "win32" || Bun.which("bash") === null)(
     }, 60_000);
   },
 );
+
+describe("selfKillPattern", () => {
+  // Live (Terminal-Bench): `pkill -f pystan_analysis.py` matched the task text in Agency's own argv and ended the run.
+  const own = [
+    "/installed-agent/agency -p Fix /app/pystan_analysis.py and save the results --model x",
+    "bash -c agency",
+  ];
+
+  test("finds a pkill -f pattern that matches Agency's own command line", () => {
+    expect(selfKillPattern("cd /app && pkill -f pystan_analysis.py; ls", own)).toBe("pystan_analysis.py");
+    expect(selfKillPattern(String.raw`pkill --full 'pystan_analysis\.py'`, own)).toBe(
+      String.raw`pystan_analysis\.py`,
+    );
+    expect(selfKillPattern("pkill -9 -f pystan", own)).toBe("pystan");
+  });
+
+  test("the bash tool refuses such a pkill and runs nothing", async () => {
+    const { tool } = setup();
+    // A marker in argv only: should the guard fail, pkill finds no real process with it.
+    process.argv.push("--agency-selfkill-marker-5c2e");
+    try {
+      const result = await tool.handler({ command: "pkill -f agency-selfkill-marker-5c2e" }, { signal });
+      expect(result.isError).toBe(true);
+      expect(result.content).toContain("not run");
+    } finally {
+      process.argv.pop();
+    }
+  });
+
+  test("lets kills through that cannot reach Agency", () => {
+    expect(selfKillPattern("pkill -f uvicorn", own)).toBeUndefined();
+    expect(selfKillPattern("pkill pystan_analysis.py", own)).toBeUndefined();
+    expect(selfKillPattern("pgrep -f pystan_analysis.py", own)).toBeUndefined();
+    expect(selfKillPattern("kill 4242", own)).toBeUndefined();
+  });
+});

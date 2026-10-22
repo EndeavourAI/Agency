@@ -2,6 +2,7 @@ import type { CallerIdentity, Capabilities, RequestApproval, ToolPolicy } from "
 import type { HttpClient } from "@agency/net";
 import type { CacheSegment, ProviderAdapter, Scheduler } from "@agency/providers";
 import type { Message } from "@agency/schema";
+import type { AutoReviewer } from "../auto-review.ts";
 import {
   type Budget,
   type LoopEvent,
@@ -11,6 +12,7 @@ import {
   runTurn,
   type ToolSpec,
 } from "../loop.ts";
+import { deferByRole, deferTools } from "../tool-search.ts";
 import type { TraceRecorder } from "../trace/recorder.ts";
 
 export interface ChildTurnTrace {
@@ -28,6 +30,8 @@ export interface ChildTurnSpec {
   systemPrompt: string;
   systemSegments?: CacheSegment[];
   tools: ToolSpec[];
+  /** The agent's role: picks which seldom used tools wait for `tool_search`. */
+  role?: string;
   model: string;
   apiKey: string;
   provider: string;
@@ -36,6 +40,7 @@ export interface ChildTurnSpec {
   toolPolicy: ToolPolicy;
   /** The approval surface of the turn that started the child. Absent means each ask of the child is refused. */
   requestApproval?: RequestApproval;
+  reviewApproval?: AutoReviewer;
   budget?: Budget;
   pricePerMTok?: PricePerMTok;
   maxTokensPerRequest?: number;
@@ -80,11 +85,12 @@ export async function runChildTurn(deps: ChildTurnDeps, spec: ChildTurnSpec): Pr
       capabilities: spec.capabilities,
       toolPolicy: spec.toolPolicy,
       ...(spec.requestApproval !== undefined ? { requestApproval: spec.requestApproval } : {}),
+      ...(spec.reviewApproval !== undefined ? { reviewApproval: spec.reviewApproval } : {}),
       eventBus: deps.eventBus,
       ...(deps.redactToolResult !== undefined ? { redactToolResult: deps.redactToolResult } : {}),
       systemPrompt: spec.systemPrompt,
       ...(spec.systemSegments !== undefined ? { systemSegments: spec.systemSegments } : {}),
-      tools: spec.tools,
+      tools: deferTools(deferByRole(spec.tools, spec.role), "never"),
       model: spec.model,
       apiKey: spec.apiKey,
       provider: spec.provider,

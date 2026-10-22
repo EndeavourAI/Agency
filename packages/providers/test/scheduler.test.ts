@@ -52,10 +52,10 @@ describe("Scheduler retry behavior", () => {
     expect((err as AgencyError).code).toBe(ErrorCode.RATE_LIMIT);
   });
 
-  test("a rate limit gets more attempts than another retryable failure by default", async () => {
-    // Measured on OpenRouter's free models: a limit clears in 11 s to 22 s. Four attempts span 3.5 s at most.
+  test("a rate limit is retried for a window of time, another retryable failure four times", async () => {
+    // Live: 4 of 13 sessions on a free model ended on an upstream limit that outlasted 7 attempts (about 60 s).
     const attemptsFor = async (code: ErrorCode): Promise<number> => {
-      const scheduler = new Scheduler({ baseDelayMs: 1, maxDelayMs: 2 });
+      const scheduler = new Scheduler({ baseDelayMs: 1, maxDelayMs: 2, rateLimitWindowMs: 200 });
       let calls = 0;
       await scheduler
         .schedule(async () => {
@@ -67,7 +67,25 @@ describe("Scheduler retry behavior", () => {
     };
 
     expect(await attemptsFor(ErrorCode.TRANSIENT)).toBe(4);
-    expect(await attemptsFor(ErrorCode.RATE_LIMIT)).toBe(7);
+    const started = Date.now();
+    expect(await attemptsFor(ErrorCode.RATE_LIMIT)).toBeGreaterThan(7);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(190);
+    // Live: a DNS failure that lasted about a minute outlasted four attempts (7 s) and lost 2 of 31 sessions.
+    expect(await attemptsFor(ErrorCode.NETWORK)).toBeGreaterThan(7);
+    // An overload (Anthropic's 529) lasts longer than four attempts (3.5 s): a benchmark task would end on it.
+    expect(await attemptsFor(ErrorCode.OVERLOAD)).toBeGreaterThan(7);
+    // With a fallback model ready, the turn moves to it after four attempts.
+    let quick = 0;
+    await new Scheduler({ baseDelayMs: 1, maxDelayMs: 2, rateLimitWindowMs: 200 })
+      .schedule(
+        async () => {
+          quick += 1;
+          throw new AgencyError(ErrorCode.OVERLOAD, "529", { source: "test" });
+        },
+        { quickOverload: true },
+      )
+      .catch(() => {});
+    expect(quick).toBe(4);
   });
 
   test("honors a server-provided retryAfterMs instead of the computed backoff", async () => {
@@ -175,6 +193,13 @@ describe("Scheduler rate limiting", () => {
 
     // 60 rpm = 1 token/sec; the 7th request needs to wait a meaningful amount.
     expect(Date.now() - start).toBeGreaterThan(50);
+  });
+
+  test("with no rate set, requests go at once: the 429 of the provider sets the pace", async () => {
+    const scheduler = new Scheduler({ maxConcurrent: 10 });
+    const start = Date.now();
+    for (let i = 0; i < 20; i++) await scheduler.schedule(async () => "x");
+    expect(Date.now() - start).toBeLessThan(500);
   });
 });
 

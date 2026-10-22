@@ -5,6 +5,7 @@ import {
   codeRunner,
   codeRunnerReadPaths,
   codeTool,
+  deferByRole,
   deferTools,
   isTeamLive,
   LEAD_WITHHELD_TOOLS,
@@ -12,28 +13,46 @@ import {
   parseHandles,
   parseSlashInput,
   runCommandHooks,
+  runSetupScript,
   runTurn,
   TraceRecorder,
   withTrace,
 } from "@agency/core";
-import { buildScriptSandboxArgv, scriptSandboxAvailable, scriptSandboxEnv } from "@agency/guard";
+import {
+  buildScriptSandboxArgv,
+  type PermissionMode,
+  type PermissionsGate,
+  scriptSandboxAvailable,
+  scriptSandboxEnv,
+} from "@agency/guard";
 import { clampEffortForModel, type KeychainBackend, keyEnvName, resolveApiKey } from "@agency/providers";
 import type { MethodHandler } from "@agency/rpc";
 import { AgencyError, ErrorCode } from "@agency/schema";
-import { modelCommandEnv, type SessionScope } from "@agency/tools";
+import type { TurnTiming } from "@agency/telemetry";
+import {
+  BASH_HOST_NOTE,
+  BASH_SANDBOX_NOTE,
+  createQuestionTool,
+  modelCommandEnv,
+  resolveConfiguredShell,
+  type SessionScope,
+} from "@agency/tools";
 import {
   assertPreflightCaps,
   estimatePreflightTurnCostUsd,
   modelRunOptions,
   recordTurnCompletion,
 } from "../costing.ts";
+import { sandboxWindowsShell } from "../session-scopes.ts";
 import { assertTaskPreflightCaps } from "../task-ledger.ts";
 import { costUsdForHandle, drainParentInbox, findChildSession, handleForSession } from "../team-context.ts";
 import {
+  autoReviewerFor,
   classifyEffortWithSmallModel,
   type DaemonContext,
   HEARTBEAT_INTERVAL_MS,
   keySourcesFor,
+  PLAN_EXIT_TOOL,
   type RunTurnParams,
   type RunTurnRpcResult,
   resolvePrompt,
@@ -42,8 +61,9 @@ import {
   type TeamBudgets,
 } from "../types.ts";
 import { applyMcpPrompt, applySlashCommand } from "./commands.ts";
-import { createTurnApproval } from "./plan.ts";
+import { createTurnApproval, outstandingApprovals } from "./plan.ts";
 import { generateSessionTitle } from "./session.ts";
+import { suggestNextPrompt } from "./suggest.ts";
 import { writeTurnCassette } from "./trace.ts";
 
 export function registerTurnHandlers(handlers: Record<string, MethodHandler>, ctx: DaemonContext): void {
@@ -70,6 +90,7 @@ export function registerTurnHandlers(handlers: Record<string, MethodHandler>, ct
       provider: meta.provider,
       model: meta.model,
       startedAt: meta.startedAt,
+      approvals: outstandingApprovals(ctx, turnId),
     })),
   });
 }
@@ -100,13 +121,20 @@ function userTextOf(session: RunTurnParams["session"]): string {
   return typeof block?.text === "string" ? block.text : "";
 }
 
+function sessionCache(caches: DaemonContext["cacheSeen"], sessionId: string) {
+  const seen = caches.get(sessionId) ?? { requests: 0, input: 0, cached: 0, written: 0 };
+  caches.set(sessionId, seen);
+  return seen;
+}
+
 /** Runs the prompt hooks of the config. Their text goes to the session inbox: the loop stores it with the turn. */
 async function runPromptHooks(
   ctx: DaemonContext,
   sessionId: string,
   prompt: string,
   session: RunTurnParams["session"],
-  expansion?: PromptExpansion,
+  expansion: PromptExpansion | undefined,
+  setup: { signal: AbortSignal; once: boolean },
 ): Promise<void> {
   const opts = ctx.hookRun;
   const context: string[] = [];
@@ -126,6 +154,16 @@ async function runPromptHooks(
   }
   // No reply in the history yet: this is the first prompt of the session.
   if (!session.some((m) => m.role === "assistant")) {
+    // A turn with no session id has no session to remember the run in: it runs the script every time.
+    if (ctx.config.setupScript && !(setup.once && ctx.setupDone.has(sessionId))) {
+      const failure = await runSetupScript(ctx.config.setupScript, opts, setup.signal);
+      if (failure !== undefined) {
+        throw new AgencyError(ErrorCode.INVALID_REQUEST, `the setup script failed: ${failure}`, {
+          source: PROMPT_HOOK_SOURCE,
+        });
+      }
+      if (setup.once) ctx.setupDone.add(sessionId);
+    }
     const start = await runCommandHooks(
       ctx.commandHooks,
       "SessionStart",
@@ -165,7 +203,11 @@ export async function executeTurn(
   rpc: { clientId: string },
   hooks?: {
     onContextOverflow?: (overheadTokens?: number) => Promise<import("@agency/schema").Message[] | undefined>;
-    onMessage?: (message: import("@agency/schema").Message) => Promise<void>;
+    onMessage?: (
+      message: import("@agency/schema").Message,
+      origin?: import("@agency/core").MessageOrigin,
+    ) => Promise<void>;
+    onSent?: (sent: import("@agency/core").SentRequest) => void;
   },
 ): Promise<RunTurnRpcResult> {
   const {
@@ -312,10 +354,12 @@ export async function executeTurn(
             }
           }
         } else if (mentioned.length === 0 && params.thinkingLevel === undefined) {
-          const cfgAgents = (config as unknown as { agents?: Record<string, { effort: string }> }).agents;
+          const cfgAgents = (
+            config as unknown as { agents?: Record<string, { effort: string; enabled?: boolean }> }
+          ).agents;
           const leaderHandle =
             (config as unknown as { leader?: string }).leader ??
-            (cfgAgents ? Object.keys(cfgAgents)[0] : undefined);
+            Object.keys(cfgAgents ?? {}).find((h) => cfgAgents?.[h]?.enabled);
           const leaderEffort = leaderHandle ? cfgAgents?.[leaderHandle]?.effort : undefined;
           if (leaderEffort === "auto") {
             // Leader case (no dispatcher): use small-model classification
@@ -378,10 +422,25 @@ export async function executeTurn(
         });
         // Usage of the model requests that finished. A turn that then fails or moves to the fallback still spent it.
         let spent: import("@agency/providers").Usage = { inputTokens: 0, outputTokens: 0 };
+        const turnTiming: { value?: TurnTiming } = {};
         const wrappedOnEvent = (event: LoopEvent): void => {
-          if (event.type === "turn_complete") spent = addUsage(spent, event.usage);
+          if (event.type === "turn_complete") {
+            spent = addUsage(spent, event.usage);
+          }
+          // A cancelled request reports no timing, so it adds none to the turn.
+          if (event.type === "turn_complete" && event.timing) {
+            turnTiming.value = {
+              ttftMs: turnTiming.value?.ttftMs ?? event.timing.ttftMs,
+              streamMs: (turnTiming.value?.streamMs ?? 0) + event.timing.streamMs,
+              outputTokens: (turnTiming.value?.outputTokens ?? 0) + event.usage.outputTokens,
+            };
+          }
           collectedTraceEvents.push(event);
-          broadcast(eventStream, event);
+          // A provider error can echo the key that was sent.
+          broadcast(
+            eventStream,
+            event.type === "error" ? { ...event, message: redactor.redact(event.message) } : event,
+          );
         };
         const isNewSession = todoStore.load(sessionId).length === 0 && params.session.length > 0;
         if (isNewSession) {
@@ -396,7 +455,10 @@ export async function executeTurn(
           } catch {}
         }
         const typed = userTextOf(params.session);
-        applySlashCommand(commands, options.workspaceRoot, params.session);
+        applySlashCommand(commands, options.workspaceRoot, params.session, {
+          command: resolveConfiguredShell(process.platform, sandboxWindowsShell(config)),
+          env: { CLAUDE_CODE_SESSION_ID: sessionId },
+        });
         if (params.images?.length) {
           const last = params.session[params.session.length - 1];
           if (last && last.role === "user") {
@@ -407,7 +469,11 @@ export async function executeTurn(
         }
         let turnScope: SessionScope | undefined;
         if (builtinsMode) {
-          turnScope = await getOrCreateScope(sessionId, mentioned.length === 1 ? mentioned[0] : undefined);
+          turnScope = await getOrCreateScope(
+            sessionId,
+            mentioned.length === 1 ? mentioned[0] : undefined,
+            params.mcp,
+          );
           await turnScope.todos.hydrate(sessionId);
           await applyMcpPrompt(turnScope.mcp, params.session);
         }
@@ -424,8 +490,10 @@ export async function executeTurn(
               }
             : undefined;
         const requestApproval = createTurnApproval(ctx, params, sessionId, eventStream);
+        const reviewApproval = autoReviewerFor(ctx, params.permissionMode);
         const fallbackRef = (() => {
-          const fm = (config as unknown as { fallback_model?: string }).fallback_model;
+          const fm =
+            params.fallbackModel ?? (config as unknown as { fallback_model?: string }).fallback_model;
           if (!fm) return undefined;
           const slash = fm.indexOf("/");
           if (slash <= 0) return undefined;
@@ -434,9 +502,12 @@ export async function executeTurn(
 
         // A fallback continues from these: a restart would run the primary's tools a second time.
         const carried: import("@agency/schema").Message[] = [];
-        const onPrimaryMessage = async (message: import("@agency/schema").Message): Promise<void> => {
+        const onPrimaryMessage = async (
+          message: import("@agency/schema").Message,
+          origin?: import("@agency/core").MessageOrigin,
+        ): Promise<void> => {
           carried.push(message);
-          await hooks?.onMessage?.(message);
+          await hooks?.onMessage?.(message, origin);
         };
         let result: Awaited<ReturnType<typeof runTurn>>;
         // The model that produced the result: a fallback has its own name and price in the cost records.
@@ -476,10 +547,72 @@ export async function executeTurn(
                   handler: async () => ({ content: "The answer is recorded. End the turn now." }),
                 },
               ];
+        // An approved plan moves the rest of the turn, and the agents it starts, to allow-edits.
+        let turnMode: PermissionMode = params.permissionMode ?? "ask";
+        // Effort is the client's last choice: a turn that omits it does not reset it. Mode stays per turn, as "ask" is the safe default.
+        const effort = params.thinkingLevel ?? ctx.sessionSettings.get(sessionId)?.effort;
+        ctx.sessionSettings.set(sessionId, { mode: turnMode, ...(effort === undefined ? {} : { effort }) });
+        const planExitTools = (gate: PermissionsGate): CoreToolSpec[] =>
+          turnMode !== "plan" || params.nonInteractive === true
+            ? []
+            : [
+                {
+                  name: PLAN_EXIT_TOOL,
+                  description:
+                    "Plan mode only. Shows the user your finished plan and asks for approval. On approval, plan mode ends and you can edit files and run commands. Call it once, after you explored with read-only tools.",
+                  inputSchema: {
+                    type: "object",
+                    properties: { plan: { type: "string", description: "The full plan, as markdown." } },
+                    required: ["plan"],
+                  },
+                  riskTier: "safe",
+                  handler: async (input) => {
+                    if (turnMode !== "plan") {
+                      return { content: "The plan is already approved: carry it out.", isError: true };
+                    }
+                    const plan = typeof input.plan === "string" ? input.plan.trim() : "";
+                    if (plan === "")
+                      return { content: "plan_exit needs the plan as markdown.", isError: true };
+                    const answer = await requestApproval({
+                      tool: PLAN_EXIT_TOOL,
+                      title: plan,
+                      riskTier: "moderate",
+                      oneTime: true,
+                    });
+                    // Two plans in one batch: the first approval already ended plan mode.
+                    if (turnMode !== "plan") {
+                      return { content: "The plan is already approved: carry it out.", isError: true };
+                    }
+                    if (answer === "reject") {
+                      return {
+                        content:
+                          "The plan was not approved: the user rejected it or did not answer in time. Plan mode stays on. Ask what to change or revise the plan, then call plan_exit again.",
+                      };
+                    }
+                    turnMode = "allow-edits";
+                    gate.setMode(turnMode);
+                    ctx.sessionSettings.set(sessionId, {
+                      ...ctx.sessionSettings.get(sessionId),
+                      mode: turnMode,
+                    });
+                    const meta = activeTurnMeta.get(params.turnId);
+                    if (meta) meta.permissionMode = turnMode;
+                    const changed = { type: "mode_changed" as const, mode: turnMode };
+                    broadcast(eventStream, changed);
+                    if (params.sessionId !== undefined) broadcast(`session.${sessionId}`, changed);
+                    return {
+                      content:
+                        "The user approved the plan. Plan mode is over for this turn: you can write and edit files now. Carry out the plan.",
+                    };
+                  },
+                },
+              ];
         // `true` needs the script sandbox. `"host"` runs the script with the authority of a shell command, so it is
         // only for the software backend: a sandbox for commands must not have a tool that goes around it.
+        // Off by default: in live runs most scripts failed (a result is a string, not an array) and cost more replies.
+        const codeMode = config.codeMode ?? false;
         const isolatedRunner =
-          config.codeMode === true && (await scriptSandboxAvailable(codeRunnerReadPaths()))
+          codeMode === true && (await scriptSandboxAvailable(codeRunnerReadPaths()))
             ? buildScriptSandboxArgv(codeRunner(), codeRunnerReadPaths())
             : undefined;
         if (config.codeMode === true && !isolatedRunner && !codeModeWarned) {
@@ -488,34 +621,78 @@ export async function executeTurn(
             "codeMode is true, but this machine has no sandbox for scripts: the code tool is not offered",
           );
         }
-        const hostCode = config.codeMode === "host" && (config.sandbox?.backend ?? "software") === "software";
+        const hostCode = codeMode === "host" && (config.sandbox?.backend ?? "software") === "software";
         const codeTools = (gate: {
           toolOffered(tool: string, riskTier?: "dangerous"): boolean;
         }): CoreToolSpec[] => {
           if (!gate.toolOffered(CODE_TOOL, "dangerous")) return [];
-          if (isolatedRunner) return [codeTool(() => scriptSandboxEnv(), isolatedRunner)];
+          // An isolated script acts only through tools that the gate checks call by call: it needs no ask of its
+          // own. It can write through them, so it runs alone.
+          if (isolatedRunner) {
+            return [
+              {
+                ...codeTool(() => scriptSandboxEnv(), isolatedRunner),
+                riskTier: "safe",
+                readOnly: () => false,
+              },
+            ];
+          }
           return hostCode ? [codeTool(() => modelCommandEnv())] : [];
         };
+        // A built-in tool that `--tools` leaves out is denied, so it is not offered; this wins over an allow rule.
+        const turnPermissions =
+          params.tools === undefined
+            ? params.permissions
+            : {
+                ...params.permissions,
+                ...Object.fromEntries(
+                  [...(builtinsMode && turnScope ? turnScope.tools : tools), { name: CODE_TOOL }]
+                    .filter((t) => !("origin" in t && t.origin === "mcp") && !params.tools?.includes(t.name))
+                    .map((t) => [t.name, "deny" as const]),
+                ),
+              };
         try {
           const effectiveCapabilities =
             params.capabilities ??
             (builtinsMode ? await defaultCapabilitiesForSession(sessionId) : defaultCapabilitiesSync);
           const effectiveMcpFailures = builtinsMode ? turnScope?.mcpFailures : undefined;
-          const sessionGate = gateForSession(sessionId).withMode(params.permissionMode ?? "ask");
+          const sessionGate = gateForSession(sessionId).withMode(turnMode).withRules(turnPermissions);
           const gatedTools =
             builtinsMode && turnScope
               ? turnScope.tools.filter((t) => sessionGate.toolOffered(t.name, t.riskTier))
               : tools.filter((t) => sessionGate.toolOffered(t.name, t.riskTier));
           const leadTurn = !findChildSession(ctx, sessionId) && !handleForSession(ctx, sessionId);
           const withheld = new Set<string>(LEAD_WITHHELD_TOOLS);
-          const offeredTools =
+          const teamTools =
             leadTurn && isTeamLive(boardStore.list())
               ? gatedTools.filter((t) => !withheld.has(t.name))
               : gatedTools;
+          const handle = handleForSession(ctx, sessionId);
+          const leadTools = deferByRole(
+            teamTools,
+            handle === undefined ? undefined : config.agents?.[handle]?.role,
+          );
+          // Live: under `bun test*` a model ran `npx bun test` first, was refused, and only then wrote `bun test`.
+          const allowedCommands = sessionGate.allowedPatterns("bash").slice(0, 10);
+          const offeredTools = leadTools.map((t) => {
+            // Live: a headless run's question got "the answer comes in your next message", and the run ended there.
+            if (t.name === "question" && params.nonInteractive === true)
+              return { ...t, handler: createQuestionTool({ nonInteractive: true }).handler };
+            if (t.name !== "bash") return t;
+            // Live: under allow-all a model read "no network" and did not try to install pytest.
+            let description =
+              turnMode === "allow-all"
+                ? t.description.replace(BASH_SANDBOX_NOTE, BASH_HOST_NOTE)
+                : t.description;
+            if (allowedCommands.length > 0)
+              description += ` The permission rules let these commands run with no ask: ${allowedCommands.map((p) => `\`${p}\``).join(", ")}.`;
+            return description === t.description ? t : { ...t, description };
+          });
           const effectiveTools = [
             ...deferTools(offeredTools, deferMode),
             ...codeTools(sessionGate),
             ...structuredTools,
+            ...planExitTools(sessionGate),
           ];
           activeTurnMeta.set(params.turnId, {
             capabilities: effectiveCapabilities,
@@ -527,8 +704,9 @@ export async function executeTurn(
             startedAt,
             budget: params.budget,
             taskDepth: (params as unknown as { taskDepth?: number }).taskDepth ?? 0,
-            permissionMode: params.permissionMode,
+            permissionMode: turnMode,
           });
+          ctx.steerableSessions.add(sessionId);
           try {
             // Root turns drain the session inbox (fed by session_message);
             // agent turns additionally drain their own mailbox, same call.
@@ -575,25 +753,46 @@ export async function executeTurn(
                 payload: { sessionId, prompt: promptText },
               });
             } catch {}
-            if (!childInfo) await runPromptHooks(ctx, sessionId, promptText, params.session, expansion);
+            if (!childInfo) {
+              await runPromptHooks(ctx, sessionId, promptText, params.session, expansion, {
+                signal: controller.signal,
+                once: params.sessionId !== undefined,
+              });
+            }
             const mainPrompt = resolvePrompt(params, {
               workspaceRoot: options.workspaceRoot,
               mcpFailures: effectiveMcpFailures,
               shellLabel,
               trustStore,
               pluginInstructions: ctx.pluginInstructions,
+              memoryFile: ctx.memoryFile,
+              userAgentInstructions: ctx.userAgentInstructions,
               environments: ctx.sessionEnvironments,
+              terse: config.terse !== false,
+              git: ctx.git,
             });
             result = await runTurn(adapterFor(resolvedProvider), schedulerFor(resolvedProvider), http, {
               identity,
               capabilities: effectiveCapabilities,
               toolPolicy: sessionGate,
               requestApproval,
+              ...(reviewApproval ? { reviewApproval } : {}),
+              hostShell: turnMode === "allow-all",
+              quickOverload:
+                fallbackRef !== undefined &&
+                (fallbackRef.provider !== params.provider || fallbackRef.model !== params.model),
               eventBus,
               redactToolResult: redactor.redactToolResult,
               drainMailbox: mailboxDrain,
+              // An empty drain here is the turn's last look at the inbox: later messages start a turn instead.
+              drainSteering: () => {
+                const late = sessionInboxes.get(sessionId)?.splice(0) ?? [];
+                if (late.length === 0) ctx.steerableSessions.delete(sessionId);
+                return late;
+              },
               systemPrompt: mainPrompt.text,
               systemSegments: mainPrompt.segments,
+              ...(mainPrompt.context === undefined ? {} : { context: mainPrompt.context }),
               tools: effectiveTools,
               model: resolvedModel,
               apiKey,
@@ -609,19 +808,34 @@ export async function executeTurn(
               turnId: params.turnId,
               sessionId: params.sessionId,
               cwd: options.workspaceRoot,
+              prefetchNamedFiles: true,
+              verifyEdits: true,
+              headless: params.nonInteractive === true,
+              // A headless root turn (a benchmark, CI): no one reviews the result before it counts.
+              ...(params.nonInteractive === true &&
+              config.verifyGate !== false &&
+              ((params as { taskDepth?: number }).taskDepth ?? 0) === 0
+                ? { reviewTask: true }
+                : {}),
               maxToolIterations: params.maxToolIterations ?? config.maxSteps,
               ...(config.compactionInstructions
                 ? { compactionInstructions: config.compactionInstructions }
                 : {}),
               ...(config.compactionLimit ? { compactionLimit: config.compactionLimit } : {}),
+              ...(config.keepToolResults ? { keepToolResults: true } : {}),
+              ...(config.toolDialect ? { toolDialect: config.toolDialect } : {}),
+              cacheSeen: sessionCache(ctx.cacheSeen, sessionId),
+              ...(template && template.allowedTools ? { grantedTools: template.allowedTools } : {}),
               signal: controller.signal,
               taskDepth: (params as unknown as { taskDepth?: number }).taskDepth ?? 0,
               onEvent: wrappedOnEvent,
               ...(hooks?.onContextOverflow ? { onContextOverflow: hooks.onContextOverflow } : {}),
+              ...(hooks?.onSent ? { onSent: hooks.onSent } : {}),
               onMessage: onPrimaryMessage,
             });
           } finally {
             activeTurnMeta.delete(params.turnId);
+            ctx.steerableSessions.delete(sessionId);
           }
         } catch (error) {
           recordFailedSpend(served);
@@ -630,7 +844,11 @@ export async function executeTurn(
             (error.code === ErrorCode.OVERLOAD ||
               error.code === ErrorCode.TRANSIENT ||
               error.code === ErrorCode.RATE_LIMIT);
-          if (isRetryable && fallbackRef && fallbackRef.provider !== params.provider) {
+          if (
+            isRetryable &&
+            fallbackRef &&
+            (fallbackRef.provider !== params.provider || fallbackRef.model !== params.model)
+          ) {
             let fbApiKey: string | undefined;
             try {
               fbApiKey = await resolveApiKey({
@@ -654,7 +872,7 @@ export async function executeTurn(
             try {
               eventBus.emit("model.fallback", fbEvent);
             } catch {}
-            const sessionGate = gateForSession(sessionId).withMode(params.permissionMode ?? "ask");
+            const sessionGate = gateForSession(sessionId).withMode(turnMode).withRules(turnPermissions);
             const fallbackCapabilities =
               params.capabilities ??
               (builtinsMode ? await defaultCapabilitiesForSession(sessionId) : defaultCapabilitiesSync);
@@ -668,6 +886,7 @@ export async function executeTurn(
               ),
               ...codeTools(sessionGate),
               ...structuredTools,
+              ...planExitTools(sessionGate),
             ];
             activeTurnMeta.set(params.turnId, {
               capabilities: fallbackCapabilities,
@@ -679,18 +898,25 @@ export async function executeTurn(
               startedAt,
               budget: params.budget,
               taskDepth: (params as unknown as { taskDepth?: number }).taskDepth ?? 0,
-              permissionMode: params.permissionMode,
+              permissionMode: turnMode,
             });
             // The fallback model's own limits: the primary's output limit can be too large for it.
             const fallbackInfo = catalogModel(fallbackRef.provider, fallbackRef.model);
-            const fallbackPrompt = resolvePrompt(params, {
-              workspaceRoot: options.workspaceRoot,
-              mcpFailures: fallbackMcpFailures,
-              shellLabel,
-              trustStore,
-              pluginInstructions: ctx.pluginInstructions,
-              environments: ctx.sessionEnvironments,
-            });
+            const fallbackPrompt = resolvePrompt(
+              { ...params, permissionMode: turnMode },
+              {
+                workspaceRoot: options.workspaceRoot,
+                mcpFailures: fallbackMcpFailures,
+                shellLabel,
+                trustStore,
+                pluginInstructions: ctx.pluginInstructions,
+                memoryFile: ctx.memoryFile,
+                userAgentInstructions: ctx.userAgentInstructions,
+                environments: ctx.sessionEnvironments,
+                terse: config.terse !== false,
+                git: ctx.git,
+              },
+            );
             try {
               result = await runTurn(
                 adapterFor(fallbackRef.provider),
@@ -701,10 +927,13 @@ export async function executeTurn(
                   capabilities: fallbackCapabilities,
                   toolPolicy: sessionGate,
                   requestApproval,
+                  ...(reviewApproval ? { reviewApproval } : {}),
+                  hostShell: turnMode === "allow-all",
                   eventBus,
                   redactToolResult: redactor.redactToolResult,
                   systemPrompt: fallbackPrompt.text,
                   systemSegments: fallbackPrompt.segments,
+                  ...(fallbackPrompt.context === undefined ? {} : { context: fallbackPrompt.context }),
                   tools: fallbackTools,
                   model: fallbackRef.model,
                   apiKey: fbApiKey,
@@ -720,6 +949,9 @@ export async function executeTurn(
                     ? { compactionInstructions: config.compactionInstructions }
                     : {}),
                   ...(config.compactionLimit ? { compactionLimit: config.compactionLimit } : {}),
+                  ...(config.keepToolResults ? { keepToolResults: true } : {}),
+                  ...(config.toolDialect ? { toolDialect: config.toolDialect } : {}),
+                  ...(template && template.allowedTools ? { grantedTools: template.allowedTools } : {}),
                   signal: controller.signal,
                   taskDepth: (params as unknown as { taskDepth?: number }).taskDepth ?? 0,
                   provider: fallbackRef.provider,
@@ -742,7 +974,7 @@ export async function executeTurn(
           }
         }
         try {
-          if (traceRecorder) {
+          if (traceRecorder && config.trace?.cassettes) {
             const cassetteMcpFailures = builtinsMode ? turnScope?.mcpFailures : undefined;
             const sysPrompt = resolveSystemPrompt(params, {
               workspaceRoot: options.workspaceRoot,
@@ -750,7 +982,11 @@ export async function executeTurn(
               shellLabel,
               trustStore,
               pluginInstructions: ctx.pluginInstructions,
+              memoryFile: ctx.memoryFile,
+              userAgentInstructions: ctx.userAgentInstructions,
               environments: ctx.sessionEnvironments,
+              terse: config.terse !== false,
+              git: ctx.git,
             });
             writeTurnCassette(traceRecorder, params, sysPrompt, collectedTraceEvents, result);
           }
@@ -790,10 +1026,14 @@ export async function executeTurn(
 
         // Generate session title after first turn if none exists yet
         void generateSessionTitle(ctx, params, sessionId);
+        if (!controller.signal.aborted && ((params as { taskDepth?: number }).taskDepth ?? 0) === 0)
+          void suggestNextPrompt(ctx, params, sessionId, result.messages);
 
         const response: RunTurnRpcResult = {
           ...result,
+          ...(turnTiming.value === undefined ? {} : { timing: turnTiming.value }),
           cancelled: controller.signal.aborted,
+          permissionMode: turnMode,
           ...(served.provider === resolvedProvider
             ? {}
             : { servedBy: { provider: served.provider, model: served.model } }),

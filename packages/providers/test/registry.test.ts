@@ -9,6 +9,17 @@ describe("ModelRegistry", () => {
     expect(registry.list("anthropic").every((m) => m.family === "anthropic")).toBe(true);
   });
 
+  test("knows the current Claude models with no network, at Anthropic's prices", () => {
+    const registry = new ModelRegistry();
+    // Live: a fresh machine knew no Claude 5.5 model, so a turn cost $0 and asked for at most 8,192 output tokens.
+    const haiku = registry.list("anthropic").find((m) => m.id === "claude-haiku-5-5");
+    expect(haiku?.pricing).toMatchObject({ inputPerMTok: 0.1, outputPerMTok: 0.5, cachedInputPerMTok: 0.01 });
+    expect(haiku?.contextWindow).toBe(1_000_000);
+    expect(haiku?.maxOutputTokens).toBe(128_000);
+    for (const id of ["claude-sonnet-5-5", "claude-opus-5-5"])
+      expect(registry.list("anthropic").some((m) => m.id === id)).toBe(true);
+  });
+
   test("get returns a known model with pricing and capability data", () => {
     const registry = new ModelRegistry();
     const model = registry.get("claude-opus-5");

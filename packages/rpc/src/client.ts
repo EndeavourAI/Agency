@@ -32,6 +32,8 @@ export interface ConnectToDaemonOptions {
   /** Auto-reconnect (with capped backoff, resubscribing) after an
    *  established connection drops. Default true. */
   reconnect?: boolean;
+  /** Called with false when an established connection drops and with true when a reconnect completes. */
+  onConnection?: (online: boolean) => void;
 }
 
 export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
@@ -152,6 +154,13 @@ export async function connectToDaemon(
     armPing();
   }
 
+  /** A throwing listener must not stop the reconnect: from onClose it escapes the event, from the retry it re-enters it. */
+  function notify(online: boolean) {
+    try {
+      options.onConnection?.(online);
+    } catch {}
+  }
+
   function onClose() {
     clearPing();
     writer?.reset();
@@ -161,6 +170,7 @@ export async function connectToDaemon(
     writer = undefined;
     decoder = undefined;
     if (closedByClient) return;
+    notify(false);
     scheduleReconnect();
   }
 
@@ -178,6 +188,7 @@ export async function connectToDaemon(
             for (const event of subscriptions) sendFrame({ type: "subscribe", event });
           }
           flushOutbox();
+          notify(true);
         })
         .catch(() => scheduleReconnect());
     }, delay);

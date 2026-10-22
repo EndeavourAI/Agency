@@ -36,6 +36,19 @@ describe("createGlobTool", () => {
     expect(result.content).not.toContain("c.md");
   });
 
+  test("a code-mode script gets the paths as an array", async () => {
+    const { deps, root } = setup();
+    writeFileSync(join(root, "a.ts"), "");
+    writeFileSync(join(root, "b.ts"), "");
+
+    const tool = createGlobTool(deps);
+    expect(((await tool.handler({ pattern: "*.ts" }, { signal })).value as string[]).sort()).toEqual([
+      "a.ts",
+      "b.ts",
+    ]);
+    expect((await tool.handler({ pattern: "*.md" }, { signal })).value).toEqual([]);
+  });
+
   test("matches recursively with **", async () => {
     const { deps, root } = setup();
     mkdirSync(join(root, "src", "nested"), { recursive: true });
@@ -75,7 +88,7 @@ describe("createGlobTool", () => {
     expect(result.content).toContain("lib/util.ts");
   });
 
-  test("caps results at 500 and sorts newest first", async () => {
+  test("caps results at 100, as Claude Code and OpenCode do, and says to narrow the pattern", async () => {
     const { deps, root } = setup();
     // Create 600 files
     for (let i = 0; i < 600; i++) {
@@ -86,9 +99,10 @@ describe("createGlobTool", () => {
     const result = await tool.handler({ pattern: "*.ts" }, { signal });
 
     const lines = result.content.split("\n").filter((l) => l.length > 0 && !l.startsWith("no files matched"));
-    // Should have at most 500 file lines (plus optional truncation message)
+    // Live: a first glob of the whole repo sent 19K characters, which each later request of the session resent.
     const fileLines = lines.filter((l) => l.endsWith(".ts"));
-    expect(fileLines.length).toBeLessThanOrEqual(500);
+    expect(fileLines.length).toBe(100);
+    expect(result.content).toContain("more specific");
     // The newest files (highest index) should appear first due to mtime sort
     if (fileLines.length >= 2) {
       const newer = fileLines[0];
@@ -111,8 +125,8 @@ describe("createGlobTool", () => {
 
     const lines = result.content.split("\n").filter((l) => l.length > 0 && !l.startsWith("no files matched"));
     const fileLines = lines.filter((l) => l.endsWith(".ts"));
-    // At most 500 results (the cap), but the scan scanned at most 5000
-    expect(fileLines.length).toBeLessThanOrEqual(500);
+    // At most 100 results (the cap), but the scan scanned at most 5000
+    expect(fileLines.length).toBeLessThanOrEqual(100);
     // Creating 6000 files takes about 5 s on Windows; the tool itself needs 0.5 s.
   }, 30_000);
 });

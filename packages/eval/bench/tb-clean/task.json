@@ -1,0 +1,8 @@
+{
+  "prompt": "The build output is stale. Remove the build and dist folders entirely, then recreate dist/ containing a copy of src/main.py.",
+  "setup": "mkdir -p build/lib dist && printf x > build/lib/a.o && printf x > dist/app.tar",
+  "check": "test ! -e build && test \"$(ls dist)\" = main.py && cmp -s dist/main.py src/main.py",
+  "solution": "rm -rf build dist && mkdir dist && cp src/main.py dist/",
+  "hideCheck": true,
+  "platforms": ["linux", "darwin"]
+}

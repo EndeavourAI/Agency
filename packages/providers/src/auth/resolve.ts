@@ -1,3 +1,4 @@
+import { CHATGPT_PROVIDER, chatgptAccessToken } from "./chatgpt.ts";
 import { oauthKey, refreshOAuthToken } from "./oauth.ts";
 import type { KeychainBackend } from "./types.ts";
 
@@ -29,7 +30,8 @@ export function keyEnvName(provider: string): string {
   return `AGENCY_${envId(provider)}_API_KEY`;
 }
 
-function envNames(provider: string, declared: readonly string[] = []): string[] {
+/** The variables that can hold the key of a provider, in the order that `resolveApiKey` reads them. */
+export function envNames(provider: string, declared: readonly string[] = []): string[] {
   return [...declared, keyEnvName(provider), ...(OWN_ENV[provider] ?? [`${envId(provider)}_API_KEY`])];
 }
 
@@ -47,6 +49,8 @@ export async function resolveApiKey(options: ResolveApiKeyOptions): Promise<stri
   if (fromEnv) return fromEnv;
 
   if (options.keychain) {
+    // The sign-in of a ChatGPT plan has its own client and refresh.
+    if (options.provider === CHATGPT_PROVIDER) return chatgptAccessToken(options.keychain, options.httpFetch);
     const overrides =
       options.oauthClientId !== undefined || options.oauthBaseUrl !== undefined
         ? { clientId: options.oauthClientId, baseUrl: options.oauthBaseUrl }
@@ -86,4 +90,23 @@ export async function resolveApiKey(options: ResolveApiKeyOptions): Promise<stri
   }
 
   return options.config;
+}
+
+/** Where the key comes from, in the order of `resolveApiKey` but with no token refresh: a variable name, "login", "keychain" or "config". */
+export async function keySource(options: ResolveApiKeyOptions): Promise<string | undefined> {
+  const env = options.env ?? process.env;
+  const name = envNames(options.provider, options.declaredEnv).find((n) => env[n]);
+  if (name) return name;
+  if (options.keychain) {
+    if (options.provider === CHATGPT_PROVIDER) return "login";
+    if (await options.keychain.get(oauthKey(options.provider))) return "login";
+    const raw = await options.keychain.get(options.provider);
+    if (raw) {
+      try {
+        if ((JSON.parse(raw) as Record<string, unknown>).type === "oauth") return "login";
+      } catch {}
+      return "keychain";
+    }
+  }
+  return options.config ? "config" : undefined;
 }

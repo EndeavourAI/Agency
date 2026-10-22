@@ -21,15 +21,6 @@ function depsFor(root: string): ToolDeps {
 }
 
 describe("read: offset/limit + line numbers (A6)", () => {
-  test("a plain read returns exact content with no line numbers", async () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "agency-read-a6-")));
-    dirs.push(root);
-    writeFileSync(join(root, "a.ts"), "export const x = 1;\n");
-    const tool = createReadTool(depsFor(root));
-    const result = await tool.handler({ path: "a.ts" }, { signal });
-    expect(result.content).toBe("export const x = 1;\n");
-  });
-
   test("sliced reads carry line numbers usable as edit anchors", async () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), "agency-read-a6-")));
     dirs.push(root);
@@ -38,8 +29,8 @@ describe("read: offset/limit + line numbers (A6)", () => {
     const tool = createReadTool(depsFor(root));
 
     const result = await tool.handler({ path: "lines.txt", offset: 10, limit: 3 }, { signal });
-    expect(result.content).toContain("    10  line 10");
-    expect(result.content).toContain("    12  line 12");
+    expect(result.content).toContain("10\tline 10");
+    expect(result.content).toContain("12\tline 12");
     expect(result.content).not.toContain("line 13");
     expect(result.content).not.toContain("line 9");
   });

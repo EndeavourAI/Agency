@@ -38,7 +38,16 @@ export function createTurnApproval(
       });
       eventBus.emit("event", { event: "permission.asked", payload: { tool: request.tool } });
     } catch {}
-    if (approvals.hasAlways(request)) {
+    // allow-all passes the network limit of the sandbox, the workspace's edge and the doom-loop stop, as Claude Code's
+    // bypass mode allows all: live, a headless run refused `pip install` under allow-all, and the task could not be
+    // done. Three equal polls of a build are no loop, and the step limit still ends a real one.
+    if (
+      approvals.hasAlways(request) ||
+      (params.permissionMode === "allow-all" &&
+        (request.source === "sandbox:network" ||
+          request.source === "external_directory" ||
+          request.tool === "doom-loop"))
+    ) {
       reply("once", "answered");
       return "once";
     }
@@ -79,8 +88,16 @@ export function createTurnApproval(
     };
     broadcast(eventStream, payload);
     if (params.sessionId !== undefined) broadcast(`session.${sessionId}`, payload);
+    const settle = (decision: string): void => {
+      const resolved = { type: "approval_resolved" as const, requestId: id, decision };
+      broadcast(eventStream, resolved);
+      if (params.sessionId !== undefined) broadcast(`session.${sessionId}`, resolved);
+    };
+    const refused = `${request.tool} ${command ?? path ?? title}`;
     if (params.nonInteractive === true) {
       approvals.respond(id, "reject");
+      ctx.turnDenials.set(params.turnId, refused);
+      settle("reject");
       reply("reject", "non-interactive");
       return "reject";
     }
@@ -92,9 +109,40 @@ export function createTurnApproval(
       ctx.hookRun,
     ).catch(() => {});
     const decision = await promise;
+    // A cancelled turn or a timed-out ask also settles as reject, but no person refused anything.
+    if (decision === "reject" && approvals.closeReason(id) === "answered")
+      ctx.turnDenials.set(params.turnId, refused);
+    // Every way an ask settles lands here: a client that did not answer it learns that it is gone.
+    settle(decision);
     reply(decision, approvals.closeReason(id) ?? "answered");
     return decision;
   };
+}
+
+/** The asks a turn still waits on, redacted as the approval_requested broadcast is: a client that joins late shows them. */
+export function outstandingApprovals(ctx: DaemonContext, turnId: string) {
+  const { redactor } = ctx;
+  return [...ctx.approvalManagers.values()]
+    .flatMap((manager) => manager.listPending())
+    .filter((ask) => ask.turnId === turnId)
+    .map(({ id, request }) => {
+      const title = redactor.redact(request.title);
+      const command = request.command !== undefined ? redactor.redact(request.command) : undefined;
+      const path = request.path !== undefined ? redactor.redact(request.path) : undefined;
+      return {
+        requestId: id,
+        tool: request.tool,
+        title,
+        ...(command !== undefined ? { command } : {}),
+        ...(path !== undefined ? { path } : {}),
+        riskTier: request.riskTier ?? "unknown",
+        argsSummary: approvalArgsSummary({
+          ...(command !== undefined ? { command } : {}),
+          ...(path !== undefined ? { path } : {}),
+          title,
+        }),
+      };
+    });
 }
 
 export function registerPlanHandlers(handlers: Record<string, MethodHandler>, ctx: DaemonContext): void {

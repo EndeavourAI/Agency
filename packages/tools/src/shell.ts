@@ -142,6 +142,21 @@ export interface ParsedShellOutput {
   exitCode: number;
 }
 
+/**
+ * Each line as a terminal shows it: progress output rewrites a line with `\r`, and only the last version is seen.
+ * Live (Terminal-Bench): 4.8% of all tool output was such overwritten text.
+ */
+export function lastRewrites(text: string): string {
+  if (!text.includes("\r")) return text;
+  return text
+    .split("\n")
+    .map((line) => {
+      const shown = line.replace(/\r+$/, "");
+      return shown.slice(shown.lastIndexOf("\r") + 1);
+    })
+    .join("\n");
+}
+
 /** Splits the exit-code and cwd marker lines back out of raw shell output. */
 export function parseShellOutput(rawOutput: string, fallbackCwd: string): ParsedShellOutput {
   const cwdIndex = rawOutput.lastIndexOf(CWD_MARKER);
@@ -165,7 +180,7 @@ export function parseShellOutput(rawOutput: string, fallbackCwd: string): Parsed
           ?.trim();
 
   return {
-    output: output.replace(/\r?\n$/, ""),
+    output: lastRewrites(output.replace(/\r?\n$/, "")),
     cwd: cwdLine || fallbackCwd,
     exitCode: exitLine !== undefined && exitLine !== "" ? Number.parseInt(exitLine, 10) : 0,
   };
@@ -173,6 +188,7 @@ export function parseShellOutput(rawOutput: string, fallbackCwd: string): Parsed
 
 let deniedEnv: RegExp[] = [];
 let allowedEnv: RegExp[] = [];
+let addedEnv: Record<string, string> = {};
 
 /** The default of Codex: a name with KEY, SECRET or TOKEN in it, in any case, holds a credential. */
 const SECRET_NAME = /KEY|SECRET|TOKEN/i;
@@ -194,6 +210,11 @@ export function setDeniedCommandEnv(denied: readonly string[], allowed: readonly
   allowedEnv = namePatterns(allowed);
 }
 
+/** `shellEnv` of the config: set on purpose, so a command gets it even when the name looks secret. */
+export function setShellEnv(env: Record<string, string> = {}): void {
+  addedEnv = env;
+}
+
 /**
  * The environment of a command that the model wrote: no provider key of the harness (`AGENCY_<ID>_API_KEY`), no
  * variable of the deny list, and no secret name unless the allow list has it. A command could print such a value
@@ -207,5 +228,5 @@ export function modelCommandEnv(env: NodeJS.ProcessEnv = process.env): Record<st
     if (SECRET_NAME.test(name) && !allowedEnv.some((pattern) => pattern.test(name))) continue;
     out[name] = value;
   }
-  return out;
+  return { ...out, ...addedEnv };
 }

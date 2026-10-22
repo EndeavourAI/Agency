@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   ApprovalRequest,
   CallerIdentity,
@@ -6,11 +7,12 @@ import type {
   RiskTier,
   ToolPolicy,
 } from "@agency/guard";
-import { isCommandPatternTool, isPathPatternTool, requireTool } from "@agency/guard";
+import { isCommandPatternTool, isPathPatternTool, PermissionsGate, requireTool } from "@agency/guard";
 import type { HttpClient } from "@agency/net";
 import {
   type CacheSegment,
   type ProviderAdapter,
+  type ProviderRequest,
   type Scheduler,
   selectModel,
   type ThinkingLevel,
@@ -28,8 +30,21 @@ import {
   type Message,
   type StopReason,
 } from "@agency/schema";
+import type { AutoReviewer } from "./auto-review.ts";
 import { CODE_TOOL } from "./codemode.ts";
-import { HookBlock, HookStop } from "./events.ts";
+import { permissionsFromRules } from "./config/claude-permissions.ts";
+import { type AgencyEvents, HookBlock, HookStop } from "./events.ts";
+import { temperatureFor } from "./model-sampling.ts";
+import { namedFiles } from "./prefetch.ts";
+import {
+  type CacheSeen,
+  dedupeReads,
+  pruneRule,
+  pruneStaleResults,
+  seeCache,
+  seeSize,
+  withoutThinking,
+} from "./prune.ts";
 import {
   compactMessages,
   countMessageTokens,
@@ -37,9 +52,22 @@ import {
   triggerTokens,
   withOverhead,
 } from "./sessions/compaction.ts";
-import { modelSummarizer } from "./sessions/summarize.ts";
+import type { MessageOrigin } from "./sessions/entry.ts";
+import { modelSummarizer, type SentRequest, summarizeAtEnd } from "./sessions/summarize.ts";
+import { canonicalCall, dialectFor, type ToolDialect, wireMessages, wireTools } from "./tool-dialect.ts";
 import type { TraceRecorder } from "./trace/recorder.ts";
+import { relativePaths } from "./transcript.ts";
 import { truncateToolResults } from "./truncate.ts";
+import { missingNote, missingOutputs, reviewNote, untestedEdits, untestedNote } from "./verify.ts";
+
+/** Facts a client shows on a step line; they never reach the model. */
+export interface ToolMeta {
+  exitCode?: number;
+  added?: number;
+  removed?: number;
+  lines?: number;
+  durationMs?: number;
+}
 
 export interface ToolSpec<Input = Record<string, unknown>> extends ToolDefinition {
   handler(
@@ -54,13 +82,21 @@ export interface ToolSpec<Input = Record<string, unknown>> extends ToolDefinitio
       toolCallId?: string;
       requestApproval?: RequestApproval;
       onProgress?: (message: string) => void;
+      /** Variables that plugins add to the environment of a shell command (the `shell.env` event). */
+      env?: Record<string, string>;
+      /** allow-all: a shell command runs with the user's rights, outside the sandbox of the OS. */
+      hostShell?: boolean;
+      /** When the time of the turn ends (epoch ms): a shell command does not wait past it. */
+      deadlineAt?: number;
+      /** Pre-approves tools for the rest of the turn, as rules of Claude Code: the `allowed-tools` of a skill. */
+      grantTools?: (rules: string[]) => void;
       /** Runs another tool of this turn through the same checks as a call of the model. */
       callTool?: (
         name: string,
         input: Record<string, unknown>,
-      ) => Promise<{ content: string; isError: boolean; images?: ImageBlock[] }>;
+      ) => Promise<{ content: string; isError: boolean; images?: ImageBlock[]; value?: unknown }>;
     },
-  ): Promise<{ content: string; isError?: boolean; images?: ImageBlock[] }>;
+  ): Promise<{ content: string; isError?: boolean; images?: ImageBlock[]; value?: unknown; meta?: ToolMeta }>;
   renderCall?(input: Input & Record<string, unknown>): string;
   renderResult?(result: {
     content: string;
@@ -72,8 +108,12 @@ export interface ToolSpec<Input = Record<string, unknown>> extends ToolDefinitio
    *  gate both consume it (`safe` runs freely, the rest asks and needs a
    *  trusted workspace). Unclassified tools are treated as ungated. */
   riskTier?: RiskTier;
-  /** Asked before each request: a hidden tool is not in the tool list, and a call of it is refused. */
+  /** Asked before each request: a hidden tool is not in the tool list, but a call of it by name still runs. */
   hidden?: () => boolean;
+  /** Seldom needed: kept out of the tool list until `tool_search` finds it, so each request is smaller. */
+  deferred?: boolean;
+  /** True for a call that changes nothing: it runs beside the other calls of the reply, as a `safe` tool does. */
+  readOnly?(input: Input & Record<string, unknown>): boolean;
 }
 
 /** Erased tool type for registries holding mixed-input tools. */
@@ -82,10 +122,19 @@ export type AnyToolSpec = ToolSpec<Record<string, unknown>>;
 /** The model is told one time when this number of tool steps is left, and when this share of the cost limit is spent. */
 const LOW_STEPS = 5;
 const COST_NOTE_SHARE = 0.8;
+/** The model is told to finish once 90 s, or a tenth of a long limit, is left: a note at 75% stopped work early. */
+export function timeNoteDue(elapsed: number, limit: number): boolean {
+  return limit - elapsed <= Math.max(90, limit / 10);
+}
+/** The same failure of the same call this many times in a turn gets a note to the model. */
+const REPEATED_FAILURES = 3;
+const SERIAL_READS = 3;
 
 export interface Budget {
   maxTokens?: number;
   maxCostUsd?: number;
+  /** Wall-clock seconds of the turn: a task run by a benchmark or a CI job has a deadline that the model cannot see. */
+  maxSeconds?: number;
 }
 
 export interface PricePerMTok {
@@ -93,15 +142,32 @@ export interface PricePerMTok {
   output: number;
   cachedInput?: number;
   cacheWrite?: number;
+  /** A prompt over `overTokens` is priced at these rates, its cached tokens by the same factor (Claude Haiku 5.5). */
+  longPrompt?: { overTokens: number; input: number; output: number };
+}
+
+/** One model request: request start to its first output (text, thinking or a tool call), then that output to the stream end. */
+export interface RequestTiming {
+  ttftMs: number;
+  streamMs: number;
 }
 
 export type LoopEvent =
   | { type: "text_delta"; text: string }
   | { type: "thinking_delta"; text: string }
+  /** The reasoning of one request ended: how long it ran. */
+  | { type: "thinking_end"; ms: number }
   | { type: "tool_start"; id: string; name: string; input?: Record<string, unknown> }
-  | { type: "tool_result"; id: string; content: string; isError: boolean; images?: ImageBlock[] }
+  | {
+      type: "tool_result";
+      id: string;
+      content: string;
+      isError: boolean;
+      images?: ImageBlock[];
+      meta?: ToolMeta;
+    }
   | { type: "tool_progress"; id: string; name: string; message: string }
-  | { type: "turn_complete"; stopReason: StopReason; usage: Usage }
+  | { type: "turn_complete"; stopReason: StopReason; usage: Usage; timing?: RequestTiming }
   | { type: "budget_exceeded"; spentTokens: number; spentCostUsd: number }
   | { type: "iteration_limit"; iterations: number }
   | { type: "error"; code: string; message: string }
@@ -122,6 +188,8 @@ export interface RunTurnOptions {
   pricePerMTok?: PricePerMTok;
   maxTokensPerRequest?: number;
   drainMailbox?: () => Message[];
+  /** The user's messages sent during the turn, drained once more at its end: team mailboxes stay out of it. */
+  drainSteering?: () => Message[];
   /** Team control (B3): detects identical tool+input 3x consecutively and
    *  halts the turn. Opt-in — enabled for dispatched peers only. */
   doomLoopDetection?: boolean;
@@ -138,6 +206,8 @@ export interface RunTurnOptions {
    * means every ask fails closed (deny) — a headless run never self-approves.
    */
   requestApproval?: RequestApproval;
+  /** Auto mode: answers an ask of a default rule before the user does; an ask rule of the config goes to the user. */
+  reviewApproval?: AutoReviewer;
   /**
    * The permissions gate consulted before each tool handler runs: `deny`
    * produces a per-call error without invoking the handler, `ask` routes
@@ -165,14 +235,29 @@ export interface RunTurnOptions {
    *  the history for the retry (reactive compact-and-retry). Absent means
    *  the loop folds its own transcript in memory. */
   onContextOverflow?: (overheadTokens?: number) => Promise<Message[] | undefined>;
+  /** Runs after each model request: an owner that compacts later can ask its summary at the end of this request. */
+  onSent?: (sent: SentRequest) => void;
   /** The model's window in tokens: sizes the in-memory fold. Default 200k. */
   contextWindow?: number;
   /** `compactionLimit` of the config: the history is compacted at this size also when the window is larger. */
   compactionLimit?: number;
+  /** `keepToolResults` of the config: old results of re-runnable tools stay whole in each request. */
+  keepToolResults?: boolean;
+  /** `toolDialect` of the config: the tool names a model sees. "auto" (default) picks them from the model id. */
+  toolDialect?: ToolDialect | "auto";
+  /** The session's cache so far, so its prune rule lasts across turns. Absent: the turn counts its own. */
+  cacheSeen?: CacheSeen;
+  /** The environment block: each request sends it in the first user message, not in the system prompt. */
+  context?: string;
+  /** Rules of Claude Code that the turn starts with pre-approved: the `allowed-tools` of a skill that `/name` ran. */
+  grantedTools?: string[];
   /** The model takes image input: images that a tool returned go to it. Absent means no. */
   vision?: boolean;
-  /** Runs for each message the turn appends, in order and before the next step: a session owner persists here. */
-  onMessage?: (message: Message) => void | Promise<void>;
+  /** The reasoning levels the model lists (ModelInfo.efforts): a listed level goes to the API unchanged. */
+  efforts?: readonly ThinkingLevel[];
+  /** Runs for each message the turn appends, in order and before the next step: a session owner persists here.
+   *  `origin` marks a user-role message that did not come from the prompt (see MessageOrigin). */
+  onMessage?: (message: Message, origin?: MessageOrigin) => void | Promise<void>;
   /** Prompt version tag for trace attribution (systemPromptParts identity/role version or caller-supplied). */
   promptVersion?: string;
   /** Optional trace recorder: when present runTurn emits turn/model/tool spans. */
@@ -181,12 +266,26 @@ export interface RunTurnOptions {
   provider?: string;
   /** Depth of nested task invocations (0 for root, incremented per child). */
   taskDepth?: number;
+  /** allow-all: shell commands run with the user's rights, outside the sandbox of the OS. */
+  hostShell?: boolean;
+  /** When the time of the turn ends (epoch ms); set from `budget.maxSeconds`, a shell command does not wait past it. */
+  deadlineAt?: number;
+  /** A fallback model is ready: an overload ends the request after a few attempts, not after minutes. */
+  quickOverload?: boolean;
   /** Task category for cheap-model routing (title, summary, background go cheap). */
   taskKind?: string;
   /** Cheap model id; when set with an eligible taskKind the turn routes cheap. */
   cheapModel?: string;
   /** Explicit override; when true the primary model always wins. */
   forcePrimary?: boolean;
+  /** The files that the user's message names are read before the first request, as Claude Code reads an @-mention. */
+  prefetchNamedFiles?: boolean;
+  /** Before the turn ends, the model is told once of tests that import a file it changed and that it did not run. */
+  verifyEdits?: boolean;
+  /** A headless task: before the first end, a turn that used tools re-checks the task's requirements once. */
+  reviewTask?: boolean;
+  /** No one reads the result before it counts (`-p`, the SDK): the notes that stand in for that reader apply. */
+  headless?: boolean;
 }
 
 const NEVER_ABORTED = new AbortController().signal;
@@ -208,6 +307,8 @@ export interface RunTurnResult {
   stopReason: StopReason;
   usage: Usage;
   budgetExceeded: boolean;
+  /** Tokens of the last request, prompt and reply: the context the next request starts from. `usage` sums all. */
+  contextTokens?: number;
   /** Why the turn did not finish: a salvaged stream (stop reason `error`) or the step limit (stop reason `tool_use`).
    *  A turn that fails before any content throws instead. */
   error?: TurnError;
@@ -221,16 +322,54 @@ export type TurnError = { code: string; message: string };
  * drives a full turn, including any tool-calling round-trips it takes to
  * reach a non-tool_use stop reason, a budget breach, or the iteration cap.
  */
+/** The tools pre-approved in a turn; a skill that the model loads adds its rules. */
+const turnGrants = new WeakMap<RunTurnOptions, string[]>();
+
+/**
+ * True when a granted rule allows the call. As in Claude Code, a grant answers only a prompt of no rule: a deny rule
+ * or an ask pattern of the config still holds.
+ */
+function granted(
+  rules: string[],
+  request: { tool: string; command?: string; path?: string },
+  cwd?: string,
+): boolean {
+  if (rules.length === 0) return false;
+  const { permissions } = permissionsFromRules({ allow: rules });
+  const gate = new PermissionsGate({
+    permissions,
+    workspaceRoot: cwd ?? process.cwd(),
+    absentToolsDenied: true,
+  });
+  return gate.decisionFor({ ...request, riskTier: "dangerous" }) === "allow";
+}
+
 export async function runTurn(
   adapter: ProviderAdapter,
   scheduler: Scheduler,
   http: HttpClient,
   options: RunTurnOptions,
 ): Promise<RunTurnResult> {
+  const grants = [...(options.grantedTools ?? [])];
+  turnGrants.set(options, grants);
   const messages = [...options.session];
-  const append = async (message: Message): Promise<void> => {
+  // The reviewer of auto mode reads the transcript of this turn as it grows.
+  const review = options.reviewApproval;
+  const startedAt = Date.now();
+  const maxSeconds = options.budget?.maxSeconds;
+  const toolOptions: RunTurnOptions =
+    review === undefined && maxSeconds === undefined
+      ? options
+      : {
+          ...options,
+          ...(review === undefined ? {} : { reviewApproval: (request) => review(request, messages) }),
+          ...(maxSeconds === undefined ? {} : { deadlineAt: startedAt + maxSeconds * 1000 }),
+        };
+  // Grants are kept by options object: each copy of the options shares the one list.
+  turnGrants.set(toolOptions, grants);
+  const append = async (message: Message, origin?: MessageOrigin): Promise<void> => {
     messages.push(message);
-    await options.onMessage?.(message);
+    await options.onMessage?.(message, origin);
   };
   const maxToolIterations = options.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS;
   const toolDefs = (): ToolDefinition[] =>
@@ -245,6 +384,12 @@ export async function runTurn(
   let spoke = false;
   let outputContinuations = 0;
   let stopBlocked = false;
+  let verifyNoted = false;
+  let outputsNoted = false;
+  let serialReads = 0;
+  let serialNoted = false;
+  const cacheSeen = options.cacheSeen ?? { requests: 0, input: 0, cached: 0, written: 0 };
+  const turnStart = messages.length;
   const tracer = options.traceRecorder;
   const turnSpanId = tracer
     ? tracer.startTurnSpan({
@@ -285,6 +430,8 @@ export async function runTurn(
   // dispatched peers. The solo team keeps its existing semantics: a runaway
   // loop is capped by maxToolIterations, not by input-identity heuristics.
   const doomHistory: string[] = [];
+  /** Failures of this turn by call and error: a model that sends the same failing call again only pays for it. */
+  const failures = new Map<string, number>();
   const doomDetection = options.doomLoopDetection === true;
   const routeSelection = selectModel(options.model, options.cheapModel, {
     ...(options.taskKind !== undefined ? { kind: options.taskKind } : {}),
@@ -299,34 +446,81 @@ export async function runTurn(
       tag: routeSelection.tag,
     });
   }
+  // A read-only call starts as soon as its arguments are whole, while the model still writes the rest of its reply.
+  // An early call that asks waits until its reply is in the transcript: the user and the reviewer see the reply whole.
+  let replyStored: Promise<void> = Promise.resolve();
+  let storeReply = (): void => {};
+  const startCall: StartCall = (call, signal) => {
+    const spec = resolveToolSpec(options.tools, call.name);
+    // Only a call that changes nothing: a safe tool such as spawn or memory may change something before the turn
+    // knows that it will run the calls of this reply.
+    if (spec === undefined || !readOnlyCall(spec, call.input)) return undefined;
+    const afterReply = async (): Promise<boolean> => {
+      await replyStored;
+      return !signal.aborted;
+    };
+    const { requestApproval: askUser, reviewApproval: askReviewer } = toolOptions;
+    const gated: RunTurnOptions = {
+      ...toolOptions,
+      ...(askUser === undefined
+        ? {}
+        : { requestApproval: async (request) => ((await afterReply()) ? askUser(request) : "reject") }),
+      ...(askReviewer === undefined
+        ? {}
+        : {
+            reviewApproval: async (request, seen) =>
+              (await afterReply()) ? askReviewer(request, seen) : undefined,
+          }),
+    };
+    turnGrants.set(gated, grants);
+    return runCall({ call, ...(spec ? { spec } : {}) }, gated, signal);
+  };
   const collectWithFallback = async (): Promise<CollectedTurn> => {
-    const runOne = (model: string): Promise<CollectedTurn> =>
-      scheduler.schedule(
+    const runOne = async (model: string): Promise<CollectedTurn> => {
+      // By the model of this request: a fallback of another family gets its own names.
+      const dialect = dialectFor(model, options.toolDialect);
+      const history = options.keepToolResults ? messages : pruneStaleResults(messages, pruneRule(cacheSeen));
+      const request: ProviderRequest = {
+        model,
+        apiKey: options.apiKey,
+        system: options.systemPrompt,
+        ...(options.systemSegments !== undefined ? { systemSegments: options.systemSegments } : {}),
+        // A copy: the loop changes `messages` in place, and the request is kept for a later compaction.
+        messages: wireMessages(
+          withContext(cacheSeen.thinkingDropped ? withoutThinking(history) : history, options.context),
+          dialect,
+        ),
+        tools: wireTools(toolDefs(), dialect),
+        maxTokens: options.maxTokensPerRequest ?? 8192,
+        thinkingLevel: options.thinkingLevel,
+        ...(temperatureFor(model) === undefined ? {} : { temperature: temperatureFor(model) }),
+        ...(options.vision === undefined ? {} : { vision: options.vision }),
+        ...(options.efforts === undefined ? {} : { efforts: options.efforts }),
+        ...(options.sessionId === undefined ? {} : { cacheKey: options.sessionId }),
+        signal: options.signal,
+      };
+      const turn = await scheduler.schedule(
         () =>
           collectTurn(
             adapter,
             http,
-            {
-              model,
-              apiKey: options.apiKey,
-              system: options.systemPrompt,
-              ...(options.systemSegments !== undefined ? { systemSegments: options.systemSegments } : {}),
-              messages,
-              tools: toolDefs(),
-              maxTokens: options.maxTokensPerRequest ?? 8192,
-              thinkingLevel: options.thinkingLevel,
-              ...(options.vision === undefined ? {} : { vision: options.vision }),
-              signal: options.signal,
-            },
+            request,
             options.onEvent,
             options.streamIdleMs ?? adapter.streamIdleMs,
+            startCall,
+            (call) => canonicalCall(call, options.tools),
           ),
         {
           onRetry: (attempt, message, next) => {
             options.onEvent?.({ type: "retry", attempt, message, next });
           },
+          quickOverload: options.quickOverload === true,
         },
       );
+      lastSent = { request, cached: (turn.usage.cachedInputTokens ?? 0) > 0, at: Date.now() };
+      options.onSent?.(lastSent);
+      return turn;
+    };
     if (!routingActive || routeSelection.routed !== "cheap") {
       return runOne(options.model);
     }
@@ -345,23 +539,67 @@ export async function runTurn(
   let requestTokens = 0;
   let proactiveFolds = true;
   let costNoted = false;
-  const foldInMemory = (overheadTokens = 0): Promise<Message[] | undefined> =>
-    compactMessages(
+  let timeNoted = false;
+  let lastSent: SentRequest | undefined;
+  // The cost of each request, as the price table gives it: a provider such as Anthropic reports no charge.
+  const pricedUsage = (): Usage =>
+    options.pricePerMTok === undefined ? cumulativeUsage : { ...cumulativeUsage, costUsd: spentCostUsd };
+  const paySummary = (usage: Usage): void => {
+    cumulativeUsage = addUsage(cumulativeUsage, usage);
+    spentCostUsd += costOf(usage, options.pricePerMTok);
+  };
+  const foldInMemory = (overheadTokens = 0): Promise<Message[] | undefined> => {
+    const summarize = modelSummarizer({
+      onUsage: paySummary,
+      adapter,
+      http,
+      model: options.model,
+      apiKey: options.apiKey,
+      ...(options.maxTokensPerRequest === undefined ? {} : { maxTokens: options.maxTokensPerRequest }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(options.compactionInstructions === undefined
+        ? {}
+        : { instructions: options.compactionInstructions }),
+    });
+    const sent = lastSent;
+    summarize.whole = () =>
+      summarizeAtEnd(
+        adapter,
+        http,
+        sent,
+        messages.slice(sent?.request.messages.length ?? 0),
+        options.compactionInstructions,
+        paySummary,
+      );
+    return compactMessages(
       messages,
       tokenizerFor(options.provider ?? ""),
       withOverhead(compactionThreshold, overheadTokens),
-      modelSummarizer({
-        adapter,
-        http,
-        model: options.model,
-        apiKey: options.apiKey,
-        ...(options.maxTokensPerRequest === undefined ? {} : { maxTokens: options.maxTokensPerRequest }),
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
-        ...(options.compactionInstructions === undefined
-          ? {}
-          : { instructions: options.compactionInstructions }),
-      }),
+      summarize,
     );
+  };
+  // Live: the first reply of each debug and edit session only read the files that the prompt named.
+  const prompt = messages.at(-1);
+  if (options.prefetchNamedFiles && options.cwd !== undefined && prompt?.role === "user") {
+    const text = prompt.content.every((block) => block.type === "text")
+      ? prompt.content.map((block) => block.text).join("\n")
+      : "";
+    const paths = resolveToolSpec(options.tools, "read") === undefined ? [] : namedFiles(text, options.cwd);
+    if (paths.length > 0) {
+      // Nine letters and digits: the form of a call id that the strictest provider (Mistral) takes.
+      const calls = paths.map((path) => ({
+        type: "tool_call" as const,
+        id: `pf${randomUUID().replace(/-/g, "").slice(0, 7)}`,
+        name: "read",
+        input: { path },
+      }));
+      for (const call of calls)
+        options.onEvent?.({ type: "tool_start", id: call.id, name: call.name, input: call.input });
+      await append({ role: "assistant", content: calls });
+      const results = await runTools(calls, toolOptions, new Map(), options.signal);
+      await append({ role: "user", content: dedupeReads(results, calls, messages.slice(0, -1)) });
+    }
+  }
   for (let iteration = 0; iteration < maxToolIterations; iteration++) {
     // One fold for each request: a long turn can fill the window more than once.
     let overflowRetried = false;
@@ -370,7 +608,7 @@ export async function runTurn(
       try {
         injected = options.drainMailbox();
       } catch {}
-      for (const message of injected) await append(message);
+      for (const message of injected) await append(message, "inbox");
     }
     // Before the provider refuses: a request near the limit costs the most, and a refused one is a lost request.
     let folded = false;
@@ -393,6 +631,10 @@ export async function runTurn(
         promptVersion: options.promptVersion,
       });
     }
+    let discardStarted: (() => void) | undefined;
+    replyStored = new Promise((resolve) => {
+      storeReply = resolve;
+    });
     try {
       let turn: CollectedTurn;
       try {
@@ -414,15 +656,40 @@ export async function runTurn(
         });
         turn = await collectWithFallback();
       }
+      // Live: "The socket connection was closed unexpectedly" ended 3 of 31 sessions in the middle of a reply.
+      for (
+        let attempt = 1;
+        attempt <= STREAM_RETRIES && turn.error?.code === ErrorCode.NETWORK && !options.signal?.aborted;
+        attempt++
+      ) {
+        turn.discard();
+        options.onEvent?.({
+          type: "retry",
+          attempt,
+          message: `${turn.error.message}: asking for the reply again`,
+        });
+        await new Promise((resolve) => setTimeout(resolve, attempt * STREAM_RETRY_MS));
+        turn = await collectWithFallback();
+      }
 
+      discardStarted = turn.discard;
       if (turn.stopReason === "max_tokens" && outputContinuations < MAX_OUTPUT_CONTINUATIONS) {
         turn.content = withoutCutLine(turn.content);
       }
       // A reply with no content is not stored: strict providers reject an empty message.
-      if (turn.content.length > 0) await append({ role: "assistant", content: turn.content });
+      // Live: a session whose first call wrote the absolute root wrote it in every later call; a model copies itself.
+      if (turn.content.length > 0)
+        await append({ role: "assistant", content: relativePaths(turn.content, options.cwd) });
       spoke = turn.content.some((block) => block.type === "text" && block.text.trim() !== "");
       cumulativeUsage = addUsage(cumulativeUsage, turn.usage);
+      const price = options.pricePerMTok;
+      seeCache(
+        cacheSeen,
+        turn.usage,
+        price?.input ? (price.cachedInput ?? price.input) / price.input : undefined,
+      );
       requestTokens = turn.usage.inputTokens + turn.usage.outputTokens;
+      seeSize(cacheSeen, requestTokens, price?.longPrompt?.overTokens);
       // A compaction that left the request at the trigger size cannot help: the next ones would each cost a summary.
       if (folded && requestTokens >= triggerTokens(compactionThreshold)) proactiveFolds = false;
       const turnCost = costOf(turn.usage, options.pricePerMTok);
@@ -436,10 +703,12 @@ export async function runTurn(
       // A reply cut at the output limit can hold complete calls. They run, and a call that the cut broke gets its parse error.
       if (stopReason === "max_tokens" && toolCalls.length > 0) {
         stopReason = "tool_use";
-        for (const id of turn.malformedCalls.keys()) turn.malformedCalls.set(id, CUT_CALL_NOTE);
+        // A call that parsed only after repair was cut too: it would run without the arguments the cut took.
+        for (const id of [...turn.malformedCalls.keys(), ...(turn.repairedCalls ?? [])])
+          turn.malformedCalls.set(id, CUT_CALL_NOTE);
       }
       salvageError = cut ? undefined : turn.error;
-      options.onEvent?.({ type: "turn_complete", stopReason, usage: turn.usage });
+      options.onEvent?.({ type: "turn_complete", stopReason, usage: turn.usage, timing: turn.timing });
       if (tracer && modelSpanId) {
         tracer.endSpan(modelSpanId, {
           status: turn.stopReason === "error" ? "error" : "ok",
@@ -454,14 +723,22 @@ export async function runTurn(
         modelSpanId = null;
       }
 
-      if (exceedsBudget(cumulativeUsage, spentCostUsd, options.budget)) {
+      if (exceedsBudget(cumulativeUsage, spentCostUsd, options.budget, Date.now() - startedAt)) {
         if (toolCalls.length > 0) {
+          // An early call asks only once the turn will run the calls: else the user answers for a thrown-away one.
+          storeReply();
           await append(
             options.signal?.aborted
               ? unrunResults(toolCalls, "cancelled")
               : {
                   role: "user",
-                  content: await runTools(toolCalls, options, turn.malformedCalls, options.signal),
+                  content: await runTools(
+                    toolCalls,
+                    toolOptions,
+                    turn.malformedCalls,
+                    options.signal,
+                    turn.started,
+                  ),
                 },
           );
         }
@@ -471,7 +748,13 @@ export async function runTurn(
           spentCostUsd,
         });
         endTurnOk();
-        return { messages, stopReason, usage: cumulativeUsage, budgetExceeded: true };
+        return {
+          messages,
+          stopReason,
+          usage: pricedUsage(),
+          budgetExceeded: true,
+          ...(requestTokens > 0 ? { contextTokens: requestTokens } : {}),
+        };
       }
 
       if (stopReason !== "tool_use" || options.signal?.aborted) {
@@ -483,23 +766,63 @@ export async function runTurn(
         const cutShort = stopReason === "max_tokens" && !options.signal?.aborted && spoke;
         if (cutShort && outputContinuations < MAX_OUTPUT_CONTINUATIONS) {
           outputContinuations += 1;
-          await append({ role: "user", content: [{ type: "text", text: OUTPUT_CUT_NOTE }] });
+          await append({ role: "user", content: [{ type: "text", text: OUTPUT_CUT_NOTE }] }, "harness");
           continue;
         }
         // A stop hook can refuse the end of the turn: its reason goes to the model. The step limit bounds this.
         const canGoOn =
           stopReason === "end_turn" && !options.signal?.aborted && iteration + 1 < maxToolIterations;
+        // All notes of this end go back in one message. Live (Terminal-Bench): a note sent alone cost 4.4 model calls.
+        const notes: string[] = [];
+        // Live: a model changed a file, ran only its own new test, and ended with the test of that file broken.
+        if (canGoOn && options.verifyEdits && !verifyNoted && options.cwd !== undefined) {
+          const unrun = untestedEdits(messages.slice(turnStart), options.cwd);
+          if (unrun.length > 0) {
+            verifyNoted = true;
+            notes.push(untestedNote(unrun));
+          }
+        }
+        if (canGoOn && options.verifyEdits && !outputsNoted && options.cwd !== undefined) {
+          outputsNoted = true;
+          const asked = messages[turnStart - 1];
+          const text =
+            asked?.role === "user" ? asked.content.flatMap((b) => (b.type === "text" ? [b.text] : [])) : [];
+          const missing = missingOutputs(text.join("\n"), options.cwd);
+          const worked = messages.slice(turnStart).some((m) => m.content.some((b) => b.type === "tool_call"));
+          const note =
+            options.reviewTask && worked
+              ? reviewNote(text.join("\n"), missing)
+              : // Real sessions: a user names files in passing (`/package.json`) and reads the answer anyway.
+                options.headless && missing.length > 0
+                ? missingNote(missing)
+                : undefined;
+          if (note !== undefined) notes.push(note);
+        }
         if (canGoOn && options.eventBus?.emitCollect) {
           const { errors } = await options.eventBus.emitCollect("turn.stop", {
             sessionId: options.sessionId,
             turnId: options.turnId,
             taskDepth: options.taskDepth ?? 0,
             stopHookActive: stopBlocked,
+            lastAssistantMessage: turn.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(""),
+            headless: options.headless === true,
           });
           const reasons = errors.filter((e): e is HookBlock => e instanceof HookBlock).map((e) => e.message);
-          if (reasons.length > 0) {
-            stopBlocked = true;
-            await append({ role: "user", content: [{ type: "text", text: reasons.join("\n\n") }] });
+          if (reasons.length > 0) stopBlocked = true;
+          notes.push(...reasons);
+        }
+        if (notes.length > 0) {
+          await append({ role: "user", content: [{ type: "text", text: notes.join("\n\n") }] }, "harness");
+          continue;
+        }
+        // A message sent while the model gave its last answer would wait for the next turn: answer it now.
+        if (canGoOn && options.drainSteering) {
+          let late: Message[] = [];
+          try {
+            late = options.drainSteering();
+          } catch {}
+          if (late.length > 0) {
+            for (const message of late) await append(message, "inbox");
             continue;
           }
         }
@@ -532,7 +855,14 @@ export async function runTurn(
           }
         }
       }
-      const results = await runTools(toolCalls, options, turn.malformedCalls, options.signal);
+      storeReply();
+      const results = await runTools(
+        toolCalls,
+        toolOptions,
+        turn.malformedCalls,
+        options.signal,
+        turn.started,
+      );
       if (options.eventBus?.emitCollect) {
         const { errors } = await options.eventBus.emitCollect("tool.batch.after", {
           calls: toolCalls.map((tc, i) => {
@@ -565,10 +895,44 @@ export async function runTurn(
       }
       // A model does not know the limits of its turn. The line goes into a result: the history stays append-only.
       const notes: string[] = [];
+      // Live: research sessions ran 21 reads in 22 replies, each a round trip that sent the whole history again.
+      const only = toolCalls.length === 1 ? toolCalls[0] : undefined;
+      const onlySpec = only === undefined ? undefined : resolveToolSpec(options.tools, only.name);
+      serialReads =
+        only !== undefined && onlySpec !== undefined && readOnlyCall(onlySpec, only.input)
+          ? serialReads + 1
+          : 0;
+      if (serialReads === SERIAL_READS && !serialNoted) {
+        serialNoted = true;
+        notes.push(
+          `${SERIAL_READS} replies in a row each made one call that only reads. Make the calls that do not depend on each other in one reply: they run at the same time, and each reply is a full round trip.`,
+        );
+      }
       const stepsLeft = maxToolIterations - iteration - 1;
       if (stepsLeft === LOW_STEPS && maxToolIterations >= 2 * LOW_STEPS) {
         notes.push(
           `${LOW_STEPS} tool steps are left in this turn. Finish the task, or say what is not done.`,
+        );
+      }
+      for (const [index, call] of toolCalls.entries()) {
+        const result = results[index];
+        if (result?.type !== "tool_result" || !result.isError) continue;
+        const key = `${call.name}:${JSON.stringify(call.input)}:${result.content}`;
+        const times = (failures.get(key) ?? 0) + 1;
+        failures.set(key, times);
+        if (times === REPEATED_FAILURES) {
+          notes.push(
+            `${call.name} failed ${times} times with the same input and the same error. Do not send it again unchanged: change the input or the approach, or say what blocks you.`,
+          );
+        }
+      }
+      const timeLimit = options.budget?.maxSeconds;
+      const elapsed = (Date.now() - startedAt) / 1000;
+      if (!timeNoted && timeLimit !== undefined && timeNoteDue(elapsed, timeLimit)) {
+        timeNoted = true;
+        // Live (Terminal-Bench): a run spent its 900 s waiting on a slow query and was stopped with nothing written.
+        notes.push(
+          `About ${Math.max(1, Math.round((timeLimit - elapsed) / 60))} of the ${Math.round(timeLimit / 60)} minutes of this run are left. Finish now: make sure what the task asks for exists (files, outputs, a running service), then stop. Skip extra checks and do not start long commands.`,
         );
       }
       const costLimit = options.budget?.maxCostUsd;
@@ -585,7 +949,8 @@ export async function runTurn(
           content: `${last.content}\n\n[harness: ${notes.join(" ")}]`,
         };
       }
-      await append({ role: "user", content: results });
+      const visible = options.keepToolResults ? messages : pruneStaleResults(messages, pruneRule(cacheSeen));
+      await append({ role: "user", content: dedupeReads(results, toolCalls, visible) });
     } catch (error) {
       if (tracer && modelSpanId) {
         try {
@@ -596,13 +961,21 @@ export async function runTurn(
       if (options.signal?.aborted) {
         if (calls.length > 0) await append(unrunResults(calls, "cancelled"));
         stopReason = "cancelled";
-        options.onEvent?.({ type: "turn_complete", stopReason, usage: { inputTokens: 0, outputTokens: 0 } });
+        options.onEvent?.({
+          type: "turn_complete",
+          stopReason,
+          usage: { inputTokens: 0, outputTokens: 0 },
+        });
         break;
       }
       endTurnError();
       emitErrorEvent(error, options.onEvent);
       if (calls.length > 0) await append(unrunResults(calls, "error"));
       throw error;
+    } finally {
+      // Calls that started early and whose results the turn did not take are cancelled; taken ones are done already.
+      discardStarted?.();
+      storeReply();
     }
   }
 
@@ -638,8 +1011,9 @@ export async function runTurn(
   return {
     messages,
     stopReason,
-    usage: cumulativeUsage,
+    usage: pricedUsage(),
     budgetExceeded: false,
+    ...(requestTokens > 0 ? { contextTokens: requestTokens } : {}),
     ...(turnError ? { error: turnError } : {}),
   };
 }
@@ -655,6 +1029,9 @@ const STREAM_IDLE_MS = 5 * 60_000;
 
 /** How many times in a row the model is asked to go on after a reply that was cut at the output limit. */
 const MAX_OUTPUT_CONTINUATIONS = 3;
+/** A reply that the network cuts is asked for again, after 1 s and then 2 s. */
+const STREAM_RETRIES = 2;
+const STREAM_RETRY_MS = 1_000;
 export const OUTPUT_CUT_NOTE =
   "Your reply was cut at the output limit. Continue from the exact point where it stopped. Do not repeat text.";
 const CUT_CALL_NOTE =
@@ -692,7 +1069,13 @@ function emitErrorEvent(error: unknown, onEvent?: (event: LoopEvent) => void): v
   onEvent?.({ type: "error", ...describeError(error) });
 }
 
-type ToolResultLike = { content: string; isError: boolean; images?: ImageBlock[] };
+type ToolResultLike = {
+  content: string;
+  isError: boolean;
+  images?: ImageBlock[];
+  value?: unknown;
+  meta?: ToolMeta;
+};
 
 interface ToolCallItem {
   call: Extract<ContentBlock, { type: "tool_call" }>;
@@ -704,14 +1087,28 @@ interface ToolCallItem {
 
 /**
  * True when a call can run beside its neighbors without ordering hazards:
- * safe-tier tools (reads) and calls with no handler to run (malformed
+ * safe-tier tools, read-only calls, and calls with no handler to run (malformed
  * arguments, unknown tools — both resolve to fixed error results). Anything
  * mutating, unclassified, or unknown-risk runs alone, in call order.
  */
-function parallelSafe(spec: ToolSpec | undefined, malformed: string | undefined): boolean {
+function parallelSafe(
+  spec: ToolSpec | undefined,
+  malformed: string | undefined,
+  input: Record<string, unknown>,
+): boolean {
   if (malformed !== undefined) return true;
   if (spec === undefined) return true;
-  return spec.riskTier === "safe";
+  // A tool that says which calls only read decides by that, even when it asks for no approval.
+  return spec.readOnly === undefined ? spec.riskTier === "safe" : readOnlyCall(spec, input);
+}
+
+function readOnlyCall(spec: ToolSpec, input: Record<string, unknown>): boolean {
+  try {
+    return spec.readOnly?.(input) === true;
+  } catch {
+    // An input of the wrong shape fails its schema check later; until then it counts as a write.
+    return false;
+  }
 }
 
 async function runTools(
@@ -719,6 +1116,8 @@ async function runTools(
   options: RunTurnOptions,
   malformedCalls: ReadonlyMap<string, string>,
   signal: AbortSignal | undefined,
+  /** Calls that began while the reply streamed (see `CollectedTurn.started`). */
+  started?: ReadonlyMap<string, Promise<ToolResultLike>>,
 ): Promise<ContentBlock[]> {
   const results: Array<Extract<ContentBlock, { type: "tool_result" }>> = new Array(calls.length);
 
@@ -730,7 +1129,7 @@ async function runTools(
   calls.forEach((call, index) => {
     const malformed = malformedCalls.get(call.id);
     const spec = resolveToolSpec(options.tools, call.name);
-    if (!parallelSafe(spec, malformed)) {
+    if (!parallelSafe(spec, malformed, call.input)) {
       if (pending.length > 0) batches.push(pending);
       pending = [];
       batches.push([
@@ -754,6 +1153,7 @@ async function runTools(
       content: result.content,
       isError: result.isError,
       images: result.images,
+      ...(result.meta ? { meta: result.meta } : {}),
     });
   };
 
@@ -787,25 +1187,10 @@ async function runTools(
     }
 
     const settled = await Promise.all(
-      batch.map(async (item): Promise<{ item: ToolCallItem; result: ToolResultLike }> => {
-        const t = options.traceRecorder;
-        const spanId = t ? t.startToolSpan(t.getTurnSpanId(), { toolName: item.call.name }) : null;
-        let result: ToolResultLike;
-        try {
-          result = item.malformed
-            ? { content: item.malformed, isError: true }
-            : await executeOne(item.spec, item.call, options, signal);
-        } catch (error) {
-          result = { content: error instanceof Error ? error.message : String(error), isError: true };
-        }
-        if (t && spanId) {
-          t.endSpan(spanId, {
-            status: result.isError ? "error" : "ok",
-            attributes: { isError: result.isError },
-          });
-        }
-        return { item, result };
-      }),
+      batch.map(async (item) => ({
+        item,
+        result: await (started?.get(item.call.id) ?? runCall(item, options, signal)),
+      })),
     );
     for (const { item, result } of settled) {
       emit(item.call.id, result);
@@ -817,34 +1202,64 @@ async function runTools(
   return truncateToolResults(results);
 }
 
+/** One call in its trace span. It never throws: a failure is an error result. */
+async function runCall(
+  item: Pick<ToolCallItem, "call" | "malformed" | "spec">,
+  options: RunTurnOptions,
+  signal: AbortSignal | undefined,
+): Promise<ToolResultLike> {
+  const t = options.traceRecorder;
+  let spanId: string | null = null;
+  try {
+    spanId = t ? t.startToolSpan(t.getTurnSpanId(), { toolName: item.call.name }) : null;
+  } catch {}
+  let result: ToolResultLike;
+  const startedAt = Date.now();
+  try {
+    result = item.malformed
+      ? { content: item.malformed, isError: true }
+      : await executeOne(item.spec, item.call, options, signal);
+  } catch (error) {
+    result = { content: error instanceof Error ? error.message : String(error), isError: true };
+  }
+  result = { ...result, meta: { ...result.meta, durationMs: Date.now() - startedAt } };
+  try {
+    if (t && spanId) {
+      t.endSpan(spanId, {
+        status: result.isError ? "error" : "ok",
+        attributes: { isError: result.isError },
+      });
+    }
+  } catch {}
+  return result;
+}
+
 function resolveToolSpec(tools: ToolSpec[], name: string): ToolSpec | undefined {
   const exact = tools.find((t) => t.name === name);
   if (exact) return exact;
   // Tool-call repair: providers occasionally mangle tool-name casing; fall back to a
   // case-insensitive match. Mismatch repair for "${name}" is silent by design (no log dependency).
-  return tools.find((t) => t.name.toLowerCase() === name.toLowerCase());
+  const lower = name.toLowerCase();
+  return tools.find((t) => t.name.toLowerCase() === lower);
 }
 
-const MUTATING_TOOLS: ReadonlySet<string> = new Set(["write", "edit", "bash"]);
+const MUTATING_TOOLS: ReadonlySet<string> = new Set(["write", "edit", "notebook_edit", "bash"]);
+const SEARCH_TOOLS = ["grep", "glob", "read"];
+/** A shell command that searches or shows files, after an optional `cd dir &&`. */
+const SHELL_SEARCH = /^\s*(?:cd\s+[^&;|]+&&\s*)?(?:grep|rg|find|ls|cat|head|tail|sed|nl|wc)\b/;
 
 async function executeOne(
   spec: ToolSpec | undefined,
-  call: Extract<ContentBlock, { type: "tool_call" }>,
+  modelCall: Extract<ContentBlock, { type: "tool_call" }>,
   options: RunTurnOptions,
   signal: AbortSignal | undefined,
-  inner = false,
-): Promise<{ content: string; isError: boolean; images?: ImageBlock[] }> {
+): Promise<ToolResultLike> {
+  let call = modelCall;
   const resolved = spec ?? resolveToolSpec(options.tools, call.name);
   if (!resolved) {
     const available = options.tools.map((t) => t.name).join(", ");
     return { content: `no such tool: "${call.name}" (available: ${available})`, isError: true };
   }
-  // A hidden tool is out of the tool list of the request. A call from another tool (call_tool, code) can reach it.
-  if (!inner && resolved.hidden?.()) {
-    const hint = `the tool "${resolved.name}" is not loaded: find it with tool_search, then call it with call_tool`;
-    return { content: hint, isError: true };
-  }
-
   try {
     requireTool(options.identity, options.capabilities, resolved.name);
   } catch (error) {
@@ -859,11 +1274,45 @@ async function executeOne(
     return { content: validationError, isError: true };
   }
 
+  // As in Claude Code, PreToolUse comes before the permission check: the rules judge the input that a hook gave.
+  const before: AgencyEvents["tool.execute.before"] = {
+    tool: resolved.name,
+    input: call.input,
+    sessionId: options.sessionId,
+    turnId: options.turnId,
+  };
+  if (options.eventBus) {
+    try {
+      if (options.eventBus.emitCollect) {
+        const { errors } = await options.eventBus.emitCollect("tool.execute.before", before);
+        if (errors.length > 0) {
+          const first = errors[0];
+          return { content: first instanceof Error ? first.message : String(first), isError: true };
+        }
+      } else if (options.eventBus.emitAsync) {
+        await options.eventBus.emitAsync("tool.execute.before", before);
+      } else {
+        options.eventBus.emit("tool.execute.before", before);
+      }
+    } catch {}
+    options.eventBus.emit("event", { event: "tool.execute.before", payload: before });
+    if (before.input !== call.input) {
+      call = { ...call, input: before.input };
+      const error = validateToolInput(resolved.inputSchema, call.input);
+      if (error)
+        return { content: `the input that a PreToolUse hook gave is not valid: ${error}`, isError: true };
+    }
+  }
+
+  let shellEnv: Record<string, string> | undefined;
   if (options.eventBus && resolved.name === "bash") {
     try {
-      const envPayload = { env: {} as Record<string, string> };
-      options.eventBus.emit("shell.env", envPayload);
+      const envPayload = { env: {} as Record<string, string>, sessionId: options.sessionId };
+      // A listener can be async (an OpenCode plugin): its variables count only once it has run.
+      if (options.eventBus.emitAsync) await options.eventBus.emitAsync("shell.env", envPayload);
+      else options.eventBus.emit("shell.env", envPayload);
       options.eventBus.emit("event", { event: "shell.env", payload: envPayload });
+      if (Object.keys(envPayload.env).length > 0) shellEnv = envPayload.env;
     } catch {}
   }
 
@@ -897,27 +1346,57 @@ async function executeOne(
       // The user who is asked must see the script, not only the name of the tool.
       const title =
         resolved.name === CODE_TOOL && typeof call.input.code === "string" ? { title: call.input.code } : {};
-      // A PermissionRequest hook can answer an ask before the user gets it.
+      // In auto mode the reviewer answers first. A PermissionRequest hook can answer an ask before the user gets it.
       const askUser = options.requestApproval;
+      const review = options.reviewApproval;
+      let blocked: string | undefined;
+      // A PreToolUse `allow` answers the prompt of a default ask only: an ask rule of the config still asks.
+      const hookAllows = before.decision === "allow";
+      const grants = turnGrants.get(options) ?? [];
       const ask: typeof askUser =
-        askUser === undefined || bus?.emitCollect === undefined
-          ? askUser
+        askUser === undefined && review === undefined && !hookAllows && grants.length === 0
+          ? undefined
           : async (request) => {
+              // The ask of no rule: a tool with no entry, or a call that no pattern of its map names.
+              const noRule =
+                request.source?.startsWith("default:") || request.source?.endsWith(":unmatched-map-ask");
+              if (hookAllows && noRule) return "once";
+              if (noRule && granted(grants, request, options.cwd)) return "once";
+              if (askUser === undefined && review === undefined) return "reject";
+              if (review !== undefined && request.source?.startsWith("default:")) {
+                const verdict = await review(request);
+                if (verdict?.allow === true) return "once";
+                if (verdict !== undefined) {
+                  blocked = verdict.reason ?? "no reason given";
+                  return "reject";
+                }
+              }
+              if (askUser === undefined) return "reject";
+              if (bus?.emitCollect === undefined) return askUser(request);
               const asked: { decision?: "allow" | "deny" } & Record<string, unknown> = {
                 sessionId: options.sessionId,
                 tool: request.tool,
                 command: request.command,
                 path: request.path,
               };
-              await bus.emitCollect?.("permission.request", asked);
+              await bus.emitCollect("permission.request", asked);
               if (asked.decision === "allow") return "once";
               if (asked.decision === "deny") return "reject";
               return askUser(request);
             };
-      const verdict = await options.toolPolicy.check(
-        { tool: resolved.name, riskTier: resolved.riskTier, ...subject, ...title },
-        ask,
-      );
+      const policyRequest = { tool: resolved.name, riskTier: resolved.riskTier, ...subject, ...title };
+      let verdict = await options.toolPolicy.check(policyRequest, ask);
+      // A PreToolUse `ask` goes to the user even where a rule or the mode allows; the reviewer cannot answer it.
+      if (verdict === "allow" && before.decision === "ask") {
+        const answer = await askUser?.({
+          tool: resolved.name,
+          title: subject.command ?? subject.path ?? resolved.name,
+          ...subject,
+          riskTier: resolved.riskTier,
+          source: "hook:PreToolUse",
+        });
+        if (answer === undefined || answer === "reject") verdict = "deny";
+      }
       if (bus) {
         try {
           bus.emit("permission.replied", {
@@ -932,39 +1411,57 @@ async function executeOne(
           });
         } catch {}
       }
+      if (verdict === "deny" && blocked !== undefined) {
+        const denied = {
+          sessionId: options.sessionId,
+          tool: resolved.name,
+          input: call.input,
+          toolUseId: call.id,
+          reason: blocked,
+          retry: false,
+        };
+        await bus?.emitCollect?.("permission.denied", denied);
+        const next = denied.retry
+          ? "A PermissionDenied hook says that you may retry this call."
+          : "Do not try to get the same result in another way. Continue without it, or tell the user that the task needs it.";
+        return {
+          content: `permission denied: the auto-mode reviewer blocked this ${resolved.name} call: ${blocked}. ${next}`,
+          isError: true,
+        };
+      }
       if (verdict === "deny") {
+        // A rule on a command or a path refuses this call only: a model told the tool is refused gave up on it.
+        const target = subject.command ?? subject.path;
+        // Live: most of 75 refused shell calls were searches and file views that the safe tools do with no ask.
+        const instead = SEARCH_TOOLS.filter((name) => resolveToolSpec(options.tools, name) !== undefined);
+        const search =
+          resolved.name === "bash" && SHELL_SEARCH.test(subject.command ?? "") && instead.includes("grep")
+            ? ` The ${instead.join(", ").replace(/, (\w+)$/, " and $1")} tools need no permission: search with them, and see lines of a file with read and its offset and limit.`
+            : "";
+        // Live: refused under `bun test*`, a model tried `npx bun test` three ways before it wrote `bun test`.
+        const allowed =
+          subject.command === undefined ? [] : (options.toolPolicy.allowedPatterns?.(resolved.name) ?? []);
+        const hint =
+          search +
+          (allowed.length === 0
+            ? ""
+            : ` The rules allow these ${resolved.name} commands: ${allowed
+                .slice(0, 10)
+                .map((pattern) => `\`${pattern}\``)
+                .join(", ")}.`);
         return {
           // Measured: with the bare first sentence a weaker model sent the same refused call 15 times on average.
-          content: `permission denied: ${resolved.name} is not permitted by the current permissions policy. Do not call it again: the answer will be the same. Continue without it, or tell the user that the task needs this permission.`,
+          content:
+            options.toolPolicy.denyReason?.(policyRequest) ??
+            (target === undefined
+              ? `permission denied: ${resolved.name} is not permitted by the current permissions policy. Do not call it again: the answer will be the same. Continue without it, or tell the user that the task needs this permission.`
+              : `permission denied: ${resolved.name} with ${JSON.stringify(target)} is not permitted by the current permissions policy. Do not send this call again: the answer will be the same. A ${resolved.name} call with another ${subject.command === undefined ? "path" : "command"} can be permitted.${hint} Continue without this one, or tell the user that the task needs this permission.`),
           isError: true,
         };
       }
     } catch (error) {
       return { content: error instanceof Error ? error.message : String(error), isError: true };
     }
-  }
-
-  if (options.eventBus) {
-    const payload = {
-      tool: resolved.name,
-      input: call.input,
-      sessionId: options.sessionId,
-      turnId: options.turnId,
-    };
-    try {
-      if (options.eventBus.emitCollect) {
-        const { errors } = await options.eventBus.emitCollect("tool.execute.before", payload);
-        if (errors.length > 0) {
-          const first = errors[0];
-          return { content: first instanceof Error ? first.message : String(first), isError: true };
-        }
-      } else if (options.eventBus.emitAsync) {
-        await options.eventBus.emitAsync("tool.execute.before", payload);
-      } else {
-        options.eventBus.emit("tool.execute.before", payload);
-      }
-    } catch {}
-    options.eventBus.emit("event", { event: "tool.execute.before", payload });
   }
 
   const toolSignal = signal ?? NEVER_ABORTED;
@@ -974,7 +1471,7 @@ async function executeOne(
     callTool: (name: string, input: Record<string, unknown>) => {
       innerCalls += 1;
       const inner = { type: "tool_call" as const, id: `${call.id}.${innerCalls}`, name, input };
-      return executeOne(undefined, inner, options, signal, true);
+      return executeOne(undefined, inner, options, signal);
     },
     signal: toolSignal,
     turnId: options.turnId,
@@ -984,23 +1481,32 @@ async function executeOne(
     toolCallId: call.id,
     requestApproval: options.requestApproval,
     taskDepth: options.taskDepth,
+    env: shellEnv,
+    hostShell: options.hostShell,
+    deadlineAt: options.deadlineAt,
+    grantTools: (rules: string[]) => {
+      const grants = turnGrants.get(options);
+      if (grants === undefined) turnGrants.set(options, [...rules]);
+      else grants.push(...rules);
+    },
     onProgress: onEvent
       ? (message: string) => {
           onEvent({ type: "tool_progress", id: call.id, name: resolved.name, message });
         }
       : undefined,
   };
-  let result: { content: string; isError?: boolean; images?: ImageBlock[] };
+  let result: { content: string; isError?: boolean; images?: ImageBlock[]; value?: unknown; meta?: ToolMeta };
   try {
     result = await resolved.handler(call.input, toolCtx);
   } catch (error) {
     result = { content: error instanceof Error ? error.message : String(error), isError: true };
   }
+  const built = result.content;
   if (options.redactToolResult)
     result = { ...result, content: options.redactToolResult(result.content, resolved.name) };
 
   if (options.eventBus) {
-    const afterPayload = {
+    const afterPayload: AgencyEvents["tool.execute.after"] = {
       tool: resolved.name,
       input: call.input,
       result: { content: result.content, isError: result.isError ?? false },
@@ -1010,13 +1516,17 @@ async function executeOne(
     try {
       if (options.eventBus.emitCollect) {
         const { errors } = await options.eventBus.emitCollect("tool.execute.after", afterPayload);
+        if (afterPayload.output !== undefined) result = { ...result, content: afterPayload.output };
         const notes = errors.filter((e): e is HookBlock => e instanceof HookBlock).map((e) => e.message);
         if (notes.length > 0) result = { ...result, content: [result.content, ...notes].join("\n\n") };
       } else if (options.eventBus.emitAsync) {
         await options.eventBus.emitAsync("tool.execute.after", afterPayload);
+        if (afterPayload.output !== undefined) result = { ...result, content: afterPayload.output };
       } else options.eventBus.emit("tool.execute.after", afterPayload);
     } catch {}
     options.eventBus.emit("event", { event: "tool.execute.after", payload: afterPayload });
+    if (before.context !== undefined)
+      result = { ...result, content: `${result.content}\n\n${before.context}` };
     if (MUTATING_TOOLS.has(resolved.name)) {
       const target =
         typeof call.input.path === "string"
@@ -1039,7 +1549,7 @@ async function executeOne(
     }
     if (
       !result.isError &&
-      (resolved.name === "write" || resolved.name === "edit") &&
+      (resolved.name === "write" || resolved.name === "edit" || resolved.name === "notebook_edit") &&
       typeof call.input.path === "string"
     ) {
       try {
@@ -1049,7 +1559,14 @@ async function executeOne(
     }
   }
 
-  return { content: result.content, isError: result.isError ?? false, images: result.images };
+  return {
+    content: result.content,
+    isError: result.isError ?? false,
+    images: result.images,
+    ...(result.meta ? { meta: result.meta } : {}),
+    // A redaction or a hook that changed the text would not reach a script through the built value.
+    ...(result.value !== undefined && result.content === built ? { value: result.value } : {}),
+  };
 }
 
 const SIMPLE_TYPES: Record<string, (value: unknown) => boolean> = {
@@ -1125,8 +1642,21 @@ interface CollectedTurn {
   usage: Usage;
   /** Tool-call ids whose streamed arguments never parsed, mapped to the per-call error message. */
   malformedCalls: Map<string, string>;
+  /** Tool-call ids whose arguments parsed only after repair: in a reply cut at the output limit, the cut hit them. */
+  repairedCalls?: ReadonlySet<string>;
   error?: TurnError;
+  timing: RequestTiming;
+  /** Results of the leading read-only calls, which began while the rest of the reply streamed. */
+  started: Map<string, Promise<ToolResultLike>>;
+  /** Cancels the started calls whose results the turn will not use. */
+  discard: () => void;
 }
+
+/** Starts a call while the reply streams; undefined when it must wait for the whole reply. */
+type StartCall = (
+  call: Extract<ContentBlock, { type: "tool_call" }>,
+  signal: AbortSignal,
+) => Promise<ToolResultLike> | undefined;
 
 async function collectTurn(
   adapter: ProviderAdapter,
@@ -1134,13 +1664,31 @@ async function collectTurn(
   request: Parameters<ProviderAdapter["stream"]>[0],
   onEvent: ((event: LoopEvent) => void) | undefined,
   idleMs = STREAM_IDLE_MS,
+  startCall?: StartCall,
+  canonical: (
+    call: Extract<ContentBlock, { type: "tool_call" }>,
+  ) => Extract<ContentBlock, { type: "tool_call" }> = (call) => call,
 ): Promise<CollectedTurn> {
+  const started = new Map<string, Promise<ToolResultLike>>();
+  const early = new AbortController();
+  const earlySignal = request.signal ? AbortSignal.any([request.signal, early.signal]) : early.signal;
+  // Only calls before the first write start early: a later read must see what that write does.
+  let leading = startCall !== undefined;
   const content: ContentBlock[] = [];
   const jsonByToolId = new Map<string, string>();
   const nameByToolId = new Map<string, string>();
   const malformedCalls = new Map<string, string>();
+  const repairedCalls = new Set<string>();
   let usage: Usage = { inputTokens: 0, outputTokens: 0 };
   let stopReason: StopReason = "end_turn";
+  const startedAt = performance.now();
+  let firstTokenAt: number | undefined;
+  let thinkingAt: number | undefined;
+  const endThinking = (): void => {
+    if (thinkingAt === undefined) return;
+    onEvent?.({ type: "thinking_end", ms: Math.round(performance.now() - thinkingAt) });
+    thinkingAt = undefined;
+  };
 
   const idle = new AbortController();
   const stalled = () =>
@@ -1167,10 +1715,14 @@ async function collectTurn(
       idleTimer = watch();
       switch (event.type) {
         case "text_delta":
+          endThinking();
+          firstTokenAt ??= performance.now();
           appendText(content, "text", event.text);
           onEvent?.({ type: "text_delta", text: event.text });
           break;
         case "thinking_delta":
+          firstTokenAt ??= performance.now();
+          thinkingAt ??= performance.now();
           appendText(content, "thinking", event.text);
           onEvent?.({ type: "thinking_delta", text: event.text });
           break;
@@ -1193,6 +1745,8 @@ async function collectTurn(
           content.push({ type: "redacted_thinking", data: event.data });
           break;
         case "tool_call_start":
+          endThinking();
+          firstTokenAt ??= performance.now();
           nameByToolId.set(event.id, event.name);
           jsonByToolId.set(event.id, "");
           break;
@@ -1213,6 +1767,7 @@ async function collectTurn(
               const repaired = repairToolJson(raw);
               if (repaired) {
                 input = repaired;
+                repairedCalls.add(event.id);
               } else {
                 malformedCalls.set(
                   event.id,
@@ -1224,24 +1779,53 @@ async function collectTurn(
           // The tool_start event fires once the streamed arguments are parsed
           // (not at tool_call_start): the TUI's renderCall needs the input, and
           // nothing else can run between here and the provider round-trip.
-          content.push({ type: "tool_call", id: event.id, name: nameByToolId.get(event.id) ?? "", input });
-          onEvent?.({ type: "tool_start", id: event.id, name: nameByToolId.get(event.id) ?? "", input });
+          const call = canonical({
+            type: "tool_call" as const,
+            id: event.id,
+            name: nameByToolId.get(event.id) ?? "",
+            input,
+          });
+          content.push(call);
+          onEvent?.({ type: "tool_start", id: event.id, name: call.name, input: call.input });
+          if (leading && !malformedCalls.has(event.id)) {
+            const running = startCall?.(call, earlySignal);
+            if (running === undefined) leading = false;
+            else started.set(event.id, running);
+          }
           break;
         }
         case "message_stop":
+          endThinking();
           usage = event.usage;
           stopReason = event.stopReason;
           break;
       }
     }
   } catch (error) {
+    early.abort();
     if (idle.signal.aborted && !request.signal?.aborted) throw stalled();
     throw error;
   } finally {
     clearTimeout(idleTimer);
   }
 
-  return { content, stopReason, usage, malformedCalls, ...salvaged };
+  // A request that gave no output at all has no first token: all of it counts as waiting.
+  const endedAt = performance.now();
+  const timing = {
+    ttftMs: (firstTokenAt ?? endedAt) - startedAt,
+    streamMs: firstTokenAt === undefined ? 0 : endedAt - firstTokenAt,
+  };
+  return {
+    content,
+    stopReason,
+    usage,
+    malformedCalls,
+    repairedCalls,
+    timing,
+    started,
+    discard: () => early.abort(),
+    ...salvaged,
+  };
 }
 
 /**
@@ -1297,6 +1881,15 @@ function appendText(content: ContentBlock[], type: "text" | "thinking", delta: s
   content.push(type === "text" ? { type: "text", text: delta } : { type: "thinking", text: delta });
 }
 
+/** A new list with `context` as the last block of the first user message, which differs by session anyway. */
+function withContext(messages: Message[], context: string | undefined): Message[] {
+  if (context === undefined || messages.length === 0) return [...messages];
+  const block: ContentBlock = { type: "text", text: context };
+  const [first, ...rest] = messages;
+  if (first?.role !== "user") return [{ role: "user", content: [block] }, ...messages];
+  return [{ ...first, content: [...first.content, block] }, ...rest];
+}
+
 export function addUsage(a: Usage, b: Usage): Usage {
   const written = (a.cacheWriteInputTokens ?? 0) + (b.cacheWriteInputTokens ?? 0);
   return {
@@ -1320,19 +1913,28 @@ function totalTokens(usage: Usage): number {
 function costOf(usage: Usage, price?: PricePerMTok): number {
   if (usage.costUsd !== undefined) return usage.costUsd;
   if (!price) return 0;
+  const long = price.longPrompt !== undefined && usage.inputTokens > price.longPrompt.overTokens;
+  const factor = long && price.input > 0 ? (price.longPrompt?.input ?? price.input) / price.input : 1;
   const cached = usage.cachedInputTokens ?? 0;
   const written = usage.cacheWriteInputTokens ?? 0;
   const uncached = Math.max(usage.inputTokens - cached - written, 0);
   return (
-    (uncached / 1_000_000) * price.input +
-    (cached / 1_000_000) * (price.cachedInput ?? price.input) +
-    (written / 1_000_000) * (price.cacheWrite ?? price.input) +
-    (usage.outputTokens / 1_000_000) * price.output
+    ((uncached / 1_000_000) * price.input +
+      (cached / 1_000_000) * (price.cachedInput ?? price.input) +
+      (written / 1_000_000) * (price.cacheWrite ?? price.input)) *
+      factor +
+    (usage.outputTokens / 1_000_000) * (long ? (price.longPrompt?.output ?? price.output) : price.output)
   );
 }
 
-function exceedsBudget(usage: Usage, spentCostUsd: number, budget?: Budget): boolean {
+function exceedsBudget(
+  usage: Usage,
+  spentCostUsd: number,
+  budget: Budget | undefined,
+  elapsedMs: number,
+): boolean {
   if (!budget) return false;
+  if (budget.maxSeconds !== undefined && elapsedMs >= budget.maxSeconds * 1000) return true;
   if (budget.maxTokens !== undefined && totalTokens(usage) >= budget.maxTokens) return true;
   if (budget.maxCostUsd !== undefined && spentCostUsd >= budget.maxCostUsd) return true;
   return false;

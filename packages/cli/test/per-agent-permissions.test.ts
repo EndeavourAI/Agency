@@ -262,6 +262,43 @@ describe("per-agent permissions", () => {
     }
   });
 
+  it("tools no session called wait for tool_search, but a researcher keeps the web tools", async () => {
+    const spy = { calls: [] as SpyCall[] };
+    const adapter = spyAdapter(spy, (text, toolResult) => {
+      if (toolResult.length > 0) return { kind: "text", text: "parent done" };
+      if (text.includes("research brief")) return { kind: "text", text: "research done" };
+      return {
+        kind: "tool",
+        name: "dispatch",
+        input: { agents: [{ handle: "scout", brief: "research brief" }] },
+      };
+    });
+    const client = await startDaemon(
+      {
+        permissions: { ...GLOBAL_PERMS, fetch: "allow", memory: "allow", spawn: "allow" },
+        agents: { leader: agentEntry("Leader"), scout: agentEntry("Researcher") },
+      },
+      gitRoot(),
+      adapter,
+    );
+    await client.call("run_turn", {
+      turnId: "t-role-tools",
+      provider: "anthropic",
+      model: "test-model",
+      apiKey: "key",
+      systemPrompt: "sys",
+      session: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+      sessionId: "test-role-tools",
+    });
+    const lead = spy.calls.find((c) => c.text === "go");
+    expect(lead?.tools).toContain("read");
+    expect(lead?.tools).toContain("tool_search");
+    for (const rare of ["fetch", "memory", "spawn"]) expect(lead?.tools).not.toContain(rare);
+    const scout = spy.calls.find((c) => c.text.includes("research brief"));
+    expect(scout?.tools).toContain("fetch");
+    expect(scout?.tools).not.toContain("memory");
+  });
+
   it("the shell and the file tools of a dispatched agent work in the same worktree", async () => {
     const root = gitRoot();
     const results: string[] = [];

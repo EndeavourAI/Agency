@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname } from "node:path";
 import { getUpdatePublicKey } from "./update-public-key.ts";
 
-const REPO = "AgencyHarness/Agency";
+const REPO = "EndeavourAI/Agency";
 
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -66,6 +66,10 @@ export async function runUpdate(options: {
   const binPath = options.binPath ?? process.execPath;
   const httpFetch = options.httpFetch ?? fetch;
 
+  // npm owns this file: replacing it desyncs the package, and the next npm run restores it.
+  if (/[\\/]node_modules[\\/]/.test(binPath))
+    throw new Error("agency was installed with npm; update it with: npm i -g @endeavourai/agency@latest");
+
   if (options.rollback) {
     const backup = `${binPath}.previous`;
     if (!existsSync(backup)) throw new Error("No previous version to rollback to");
@@ -88,7 +92,9 @@ export async function runUpdate(options: {
 
   const os = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
   const arch = process.arch === "arm64" ? "arm64" : "x64";
-  const assetName = `agency-${os}-${arch}${os === "windows" ? ".exe" : ""}`;
+  // Inlined by scripts/build.ts: a glibc binary does not start on Alpine.
+  const musl = process.env.AGENCY_LIBC === "musl" ? "-musl" : "";
+  const assetName = `agency-${os}-${arch}${musl}${os === "windows" ? ".exe" : ""}`;
   const checksumName = "checksums-signed.txt";
 
   const baseUrl = `https://github.com/${REPO}/releases/download/v${latestVersion}`;

@@ -449,6 +449,10 @@ export function isContextOverflowError(error: unknown): boolean {
 export interface CompactionResult {
   compacted: boolean;
   tipId: string;
+  /** Turns folded into the summary, and the history size before and after (only when compacted). */
+  replaced?: number;
+  tokensBefore?: number;
+  tokensAfter?: number;
 }
 
 /**
@@ -458,6 +462,8 @@ export interface CompactionResult {
  */
 export type Summarizer = ((transcript: string, instructions: string) => Promise<string>) & {
   detailed?: boolean;
+  /** A summary of the whole chain from the request that the provider caches; undefined falls back to the chunks. */
+  whole?: () => Promise<string | undefined>;
 };
 
 /** The store-free half of compact: which entries fold into the summary, its text, and what stays. */
@@ -508,6 +514,8 @@ async function foldChain(
   threshold: CompactionThreshold,
   summarize: Summarizer,
   keepLastN: number,
+  /** The summary of the whole chain, when `summarize.whole` gave one: it covers the kept tail too. */
+  whole?: string,
 ): Promise<{ summaryText: string; summarized: Set<string>; carryForward: SessionEntry[] } | undefined> {
   const target = targetTokens(threshold);
   // A short summary alone makes the model find its place again: the newest messages stay word for word up to a budget.
@@ -545,16 +553,18 @@ async function foldChain(
     while ((await countChainTokensAsync(carryForward, tokenizer)) > target && moveOldest()) {}
   }
 
+  // With a summary of the whole chain the tail can shrink to the target with no new request.
   for (;;) {
     passes += 1;
     const summarizeSet = chain.filter((e) => summarized.has(e.id)).filter(isMessageEntry);
-    const transcript = summarize.detailed
-      ? renderTranscript(summarizeSet.map((entry) => entry.message))
-      : collapseTranscript(summarizeSet).text;
-    const chunks = await splitTranscriptToCapAsync(transcript, countText, cap);
-    const parts: string[] = [];
-    for (const chunk of chunks) {
-      parts.push(await summarize(chunk, prompt));
+    const parts: string[] = whole === undefined ? [] : [whole];
+    if (whole === undefined) {
+      const transcript = summarize.detailed
+        ? renderTranscript(summarizeSet.map((entry) => entry.message))
+        : collapseTranscript(summarizeSet).text;
+      for (const chunk of await splitTranscriptToCapAsync(transcript, countText, cap)) {
+        parts.push(await summarize(chunk, prompt));
+      }
     }
     const rawDigest = parts.join("\n");
     const digest = CONTRACT_RE.test(rawDigest) ? rawDigest.replace(CONTRACT_RE, "").trimEnd() : rawDigest;
@@ -582,7 +592,7 @@ async function foldChain(
     };
     const probeCount = await countChainTokensAsync([probe, ...carryForward], tokenizer);
     if (probeCount <= target) break;
-    if (passes > MAX_TARGET_PASSES || !moveOldest()) break;
+    if ((whole === undefined && passes > MAX_TARGET_PASSES) || !moveOldest()) break;
   }
   return { summaryText, summarized, carryForward };
 }
@@ -676,9 +686,10 @@ export async function compactMessages(
   keepLastN = 4,
 ): Promise<Message[] | undefined> {
   const chain = asChain(messages);
-  const elided = await elideToTarget(chain, tokenizer, threshold);
+  const whole = await summarize.whole?.();
+  const elided = whole === undefined ? await elideToTarget(chain, tokenizer, threshold) : undefined;
   if (elided !== undefined) return elided.chain.filter(isMessageEntry).map((entry) => entry.message);
-  const folded = await foldChain(chain, tokenizer, threshold, summarize, keepLastN);
+  const folded = await foldChain(chain, tokenizer, threshold, summarize, keepLastN, whole);
   if (folded === undefined) return undefined;
   return [
     compactionSummaryMessage({ summary: folded.summaryText }),
@@ -716,26 +727,28 @@ export async function compact(
   const rebase = async (from: string | null, moved: SessionEntry[]): Promise<string | null> => {
     let parent = from;
     for (const entry of moved) {
-      const {
-        id: _id,
-        parentId: _parentId,
-        createdAt: _createdAt,
-        schemaVersion: _schemaVersion,
-        ...rest
-      } = entry;
+      // The originals stay in the file: a second copy of a usage entry would count its cost twice.
+      if (entry.type === "usage" || entry.type === "turn_end") continue;
+      const { id: _id, parentId: _parentId, schemaVersion: _schemaVersion, ...rest } = entry;
       parent = (await store.append(sessionId, { ...rest, parentId: parent })).id;
     }
     return parent;
   };
   // A person who asks for a compaction wants the summary.
-  const elided = trigger === "manual" ? undefined : await elideToTarget(chain, tokenizer, threshold);
+  // A summary from the cached request first: it costs little, and it keeps what the removed results said.
+  const whole = await summarize.whole?.();
+  const elided =
+    trigger === "manual" || whole !== undefined
+      ? undefined
+      : await elideToTarget(chain, tokenizer, threshold);
   let parentId: string;
+  let replaced = 0;
   if (elided !== undefined) {
     // The entries before the first changed one stay as they are: the new branch starts there.
     const from = elided.chain[elided.first]?.parentId ?? null;
     parentId = (await rebase(from, elided.chain.slice(elided.first))) ?? tipId;
   } else {
-    const folded = await foldChain(chain, tokenizer, threshold, summarize, keepLastN);
+    const folded = await foldChain(chain, tokenizer, threshold, summarize, keepLastN, whole);
     if (folded === undefined) return { compacted: false, tipId };
     const summaryEntry = await store.append(sessionId, {
       type: "compaction_summary",
@@ -744,7 +757,11 @@ export async function compact(
       replacedEntryIds: [...folded.summarized],
     });
     parentId = (await rebase(summaryEntry.id, folded.carryForward)) ?? summaryEntry.id;
+    const turns = new Set<unknown>();
+    for (const e of chain) if (folded.summarized.has(e.id) && e.turnId !== undefined) turns.add(e.turnId);
+    replaced = turns.size;
   }
+  const tokensAfter = await countChainTokensAsync(store.chainFor(store.load(sessionId), parentId), tokenizer);
 
   try {
     const bus = store.getBus?.();
@@ -752,5 +769,5 @@ export async function compact(
     bus?.emit("event", { event: "session.compacted", payload: { sessionId, tipId: parentId, trigger } });
   } catch {}
 
-  return { compacted: true, tipId: parentId };
+  return { compacted: true, tipId: parentId, replaced, tokensBefore: tokenCount, tokensAfter };
 }

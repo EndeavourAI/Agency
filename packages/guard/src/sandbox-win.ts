@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PROTECTED_PATHS } from "./sandbox.ts";
+import { PROTECTED_PATHS, worktreeProtectedPaths } from "./sandbox.ts";
 
 /** The hidden command of the binary that runs one command under the restricted token. */
 export const SANDBOX_COMMAND = "__sandbox";
@@ -62,7 +62,12 @@ export async function prepareWindowsSandbox(root: string, sid: string): Promise<
   const agency = readdirSync(join(root, ".agency"))
     .map((name) => `.agency/${name}`)
     .filter((path) => !(PROTECTED_PATHS.writable as readonly string[]).includes(path));
-  const readOnly = [...PROTECTED_PATHS.readOnly.filter((path) => path !== ".agency"), ...agency];
+  // ponytail: a worktree made later gets its rules at the next daemon start; the sweep after each command holds until then.
+  const readOnly = [
+    ...PROTECTED_PATHS.readOnly.filter((path) => path !== ".agency"),
+    ...agency,
+    ...worktreeProtectedPaths(root),
+  ];
   return addAccessRules(sid, [
     `Add-Rule ${psQuote(root)} 'Modify' 'Allow'`,
     `Add-Rule ${psQuote(temp)} 'Modify' 'Allow'`,
@@ -107,6 +112,7 @@ async function addAccessRules(sid: string, lines: string[]): Promise<boolean> {
   );
   try {
     const child = Bun.spawn([powershell, "-NoProfile", "-NonInteractive", "-Command", script], {
+      windowsHide: true,
       stdout: "ignore",
       stderr: "ignore",
       stdin: "ignore",

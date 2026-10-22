@@ -1,18 +1,31 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { collectAgentsFiles, collectRuleFiles, configDir, dataDir, loadConfig } from "@agency/core";
-import type { PermissionMode } from "@agency/guard";
+import {
+  collectAgentsFiles,
+  collectRuleFiles,
+  configDir,
+  dataDir,
+  foreignHookPaths,
+  loadConfig,
+  logDir,
+} from "@agency/core";
+import type { PermissionMode, ToolPermissionValue } from "@agency/guard";
 import { t } from "@agency/i18n";
 import type { ThinkingLevel } from "@agency/providers";
 import {
+  connectToDaemon,
   type DaemonClient,
   DEFAULT_SPAWN_TIMEOUT_MS,
   type EnsureDaemonOptions,
   ensureDaemon,
 } from "@agency/rpc";
 import type { ImageBlock, Message } from "@agency/schema";
-import type { RunTurnParams, RunTurnRpcResult, SystemPromptParts } from "./daemon.ts";
+import { clientProjectPaths } from "@agency/tools";
+import { DEFAULT_DAEMON_ENTRY, daemonBuild, STANDALONE } from "./build-id.ts";
+import type { AgentDaemonOptions, RunTurnParams, RunTurnRpcResult, SystemPromptParts } from "./daemon.ts";
+import { runSessionTurn } from "./session-runner.ts";
 
 export interface RunHeadlessOptions {
   workspaceRoot: string;
@@ -27,19 +40,23 @@ export interface RunHeadlessOptions {
   images?: ImageBlock[];
   thinkingLevel?: ThinkingLevel;
   permissionMode?: PermissionMode;
+  /** Permission rules of this turn: they win over those of the config. */
+  permissions?: Record<string, ToolPermissionValue>;
+  mcp?: RunTurnParams["mcp"];
+  fallbackModel?: string;
+  tools?: string[];
   maxToolIterations?: number;
   budget?: RunTurnParams["budget"];
   outputSchema?: Record<string, unknown>;
+  /** The turn is the first of this new session, which keeps it: a later `-r <id>` goes on from it. */
+  sessionId?: string;
   onEvent?: (event: unknown) => void;
   /** Injectable for tests; production callers never pass this. */
   daemonEntryPath?: string;
 }
 
-const DEFAULT_DAEMON_ENTRY = join(import.meta.dir, "daemon-entry.ts");
-
 /** Hidden entrypoint command: a compiled binary re-runs itself as the daemon. */
 export const DAEMON_COMMAND = "__daemon";
-const STANDALONE = /^(B:[\\/]~BUN|\/\$bunfs)[\\/]/.test(Bun.main);
 
 /** A user machine has no `bun` on PATH and no source files, so never spawn either by name. */
 function daemonArgv(entry?: string): string[] {
@@ -70,21 +87,21 @@ export function hasTrustGatedContent(workspaceRoot: string): boolean {
     ["plugins", "skills", "agents", "commands", "hooks", "mcp"].some((dir) =>
       existsSync(join(workspaceRoot, ".agency", dir)),
     ) ||
-    existsSync(join(workspaceRoot, ".mcp.json"))
+    existsSync(join(workspaceRoot, ".mcp.json")) ||
+    [...clientProjectPaths(workspaceRoot), ...foreignHookPaths(workspaceRoot)].some((file) =>
+      existsSync(file),
+    ) ||
+    // The skills, commands and agents of other agents load from a trusted workspace too.
+    [".claude", ".agents", ".cursor", ".codex", ".pi", ".opencode", ".gemini", ".github"].some((agent) =>
+      ["skills", "commands", "agents", "prompts", "plugins", "plugin", "extensions", "chatmodes"].some(
+        (dir) => existsSync(join(workspaceRoot, agent, dir)),
+      ),
+    )
   );
 }
 
-/**
- * Finds or starts this workspace's daemon (one per workspace root) and returns
- * a handshake-complete client. Checks trust before spawning, and logs
- * spawn/connect progress to the log sink.
- */
-export async function connectHeadlessClient(
-  options: HeadlessConnectOptions,
-): Promise<{ port: number; client: DaemonClient }> {
-  const log = options.log ?? ((msg: string) => process.stderr.write(`${msg}\n`));
-
-  // Trust check: verify the workspace is trusted before any daemon work.
+/** Verifies the workspace is trusted before any daemon work: asks on stderr when the config requires trust. */
+async function checkTrust(options: HeadlessConnectOptions, log: (msg: string) => void): Promise<void> {
   const { createFileTrustStore } = await import("@agency/guard");
   const env = process.env;
   const cfg = loadConfig({ globalDir: configDir(env), env });
@@ -108,11 +125,61 @@ export async function connectHeadlessClient(
     // Silence here would hide that the model runs without the project's own rules.
     log(t("cli.trust.instructions_skipped"));
   }
+}
+
+/**
+ * A daemon in this process for one `-p` run, as `claude -p` and `codex exec` run: no spawn (0.25-0.65 s of a cold
+ * run in WSL), nothing left running after it, and never a daemon of an older build. Closing the client stops it.
+ */
+export async function inProcessClient(
+  options: HeadlessConnectOptions & { daemon?: Partial<AgentDaemonOptions> },
+): Promise<{ port: number; client: DaemonClient }> {
+  await checkTrust(options, options.log ?? ((msg: string) => process.stderr.write(`${msg}\n`)));
+  const { createAgentDaemon } = await import("./daemon.ts");
+  // A private instance file: no other client may find a daemon that ends with this run.
+  const dir = mkdtempSync(join(tmpdir(), "agency-p-"));
+  let daemon: Awaited<ReturnType<typeof createAgentDaemon>>;
+  try {
+    daemon = await createAgentDaemon({
+      workspaceRoot: options.workspaceRoot,
+      instanceFile: join(dir, "instance.json"),
+      logsDir: logDir(),
+      ...options.daemon,
+    });
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
+  }
+  const client = await connectToDaemon(daemon.server.port, "127.0.0.1", { token: daemon.server.token });
+  const close = client.close.bind(client);
+  client.close = async () => {
+    try {
+      await close();
+    } finally {
+      await daemon.stop();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  return { port: daemon.server.port, client };
+}
+
+/**
+ * Finds or starts this workspace's daemon (one per workspace root) and returns
+ * a handshake-complete client. Checks trust before spawning, and logs
+ * spawn/connect progress to the log sink.
+ */
+export async function connectHeadlessClient(
+  options: HeadlessConnectOptions,
+): Promise<{ port: number; client: DaemonClient }> {
+  const log = options.log ?? ((msg: string) => process.stderr.write(`${msg}\n`));
+  await checkTrust(options, log);
 
   return ensureDaemon({
     workspaceRoot: options.workspaceRoot,
     instanceDir: options.instanceDir ?? defaultInstanceDir(),
     connect: options.connect,
+    // A test's own daemon entry has no build of this CLI to match.
+    ...(options.daemonEntryPath === undefined ? { build: daemonBuild() } : {}),
     spawnDaemon: (instanceFile) => {
       log(t("cli.daemon.spawning", { workspace: options.workspaceRoot }));
       Bun.spawn(
@@ -124,7 +191,7 @@ export async function connectHeadlessClient(
           instanceFile,
         ],
         // Detached: without it Windows kills the daemon when this CLI exits, so no later run could reuse it.
-        { stdio: ["ignore", "ignore", "ignore"], detached: true },
+        { stdio: ["ignore", "ignore", "ignore"], detached: true, windowsHide: true },
       ).unref();
     },
   })
@@ -149,7 +216,33 @@ export async function connectHeadlessClient(
  * prerequisite for this one to work.
  */
 export async function runHeadless(options: RunHeadlessOptions): Promise<RunTurnRpcResult> {
-  const { client } = await connectHeadlessClient(options);
+  const { client } = await inProcessClient(options);
+  if (options.sessionId !== undefined) {
+    try {
+      const { result } = await runSessionTurn(client, {
+        sessionId: options.sessionId,
+        provider: options.provider,
+        model: options.model,
+        systemPrompt: options.systemPrompt,
+        ...(options.systemPromptParts === undefined ? {} : { systemPromptParts: options.systemPromptParts }),
+        userText: options.prompt,
+        ...(options.images === undefined ? {} : { images: options.images }),
+        ...(options.thinkingLevel === undefined ? {} : { thinkingLevel: options.thinkingLevel }),
+        ...(options.budget === undefined ? {} : { budget: options.budget }),
+        ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
+        ...(options.permissions === undefined ? {} : { permissions: options.permissions }),
+        ...(options.mcp === undefined ? {} : { mcp: options.mcp }),
+        ...(options.fallbackModel === undefined ? {} : { fallbackModel: options.fallbackModel }),
+        ...(options.tools === undefined ? {} : { tools: options.tools }),
+        ...(options.maxToolIterations === undefined ? {} : { maxToolIterations: options.maxToolIterations }),
+        nonInteractive: true,
+        ...(options.onEvent === undefined ? {} : { onEvent: options.onEvent }),
+      });
+      return result;
+    } finally {
+      await client.close();
+    }
+  }
 
   const turnId = randomUUID();
   // Subscribe unconditionally: per-client fanout (A3) delivers this turn's
@@ -170,6 +263,10 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<RunTurnR
       thinkingLevel: options.thinkingLevel,
       session,
       permissionMode: options.permissionMode,
+      ...(options.permissions === undefined ? {} : { permissions: options.permissions }),
+      ...(options.mcp === undefined ? {} : { mcp: options.mcp }),
+      ...(options.fallbackModel === undefined ? {} : { fallbackModel: options.fallbackModel }),
+      ...(options.tools === undefined ? {} : { tools: options.tools }),
       maxToolIterations: options.maxToolIterations,
       ...(options.budget === undefined ? {} : { budget: options.budget }),
       ...(options.outputSchema === undefined ? {} : { outputSchema: options.outputSchema }),

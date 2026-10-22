@@ -1,0 +1,7 @@
+{
+  "prompt": "Run ./setup.sh and make it write app.conf (answer yes to its question).",
+  "check": "test \"$(cat app.conf)\" = mode=fast",
+  "solution": "printf 'y\\n' | ./setup.sh",
+  "hideCheck": true,
+  "platforms": ["linux", "darwin"]
+}

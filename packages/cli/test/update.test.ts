@@ -421,6 +421,37 @@ describe("runUpdate - signature verification", () => {
       "No release is published yet",
     );
   });
+
+  test("a musl build asks for the musl asset", async () => {
+    const requested: string[] = [];
+    const httpFetch = (async (url: string) => {
+      requested.push(String(url));
+      if (String(url).includes("/releases/latest"))
+        return new Response(JSON.stringify({ tag_name: "v2.0.0" }), { status: 200 });
+      return new Response("", { status: 404 });
+    }) as unknown as typeof fetch;
+    const prev = process.env.AGENCY_LIBC;
+    process.env.AGENCY_LIBC = "musl";
+    try {
+      await expect(runUpdate({ currentVersion: "1.0.0", httpFetch, binPath: "unused" })).rejects.toThrow(
+        /-musl/,
+      );
+      expect(requested.at(-1)).toMatch(/agency-\w+-\w+-musl(\.exe)?$/);
+    } finally {
+      if (prev === undefined) delete process.env.AGENCY_LIBC;
+      else process.env.AGENCY_LIBC = prev;
+    }
+  });
+
+  test("an npm-installed binary is not replaced; the npm command is named", async () => {
+    const httpFetch = (async () => {
+      throw new Error("must not fetch");
+    }) as unknown as typeof fetch;
+    const binPath = join("x", "node_modules", "@endeavourai", "agency-linux-x64", "bin", "agency");
+    await expect(runUpdate({ currentVersion: "1.0.0", httpFetch, binPath })).rejects.toThrow(
+      "npm i -g @endeavourai/agency@latest",
+    );
+  });
 });
 
 describe("sign-release script validation", () => {

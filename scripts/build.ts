@@ -3,22 +3,26 @@
  * size budget. Cross-compilation targets use Bun's `bun-<os>-<arch>` names;
  * each target produces `agency-<os>-<arch>[.exe]` in the output directory.
  *
- * The budget default sits just above Bun 1.4's own ~90 MB Windows runtime
- * floor (the app bundle itself is ~1 MB); it exists to catch regressions, not
+ * The budget default sits above Bun 1.4's own ~90 MB Windows runtime floor
+ * plus the TUI and its native library; it exists to catch regressions, not
  * to fight the runtime. Override with --max-size-mb.
+ * Cross targets need every OpenTUI native installed: bun install --os='*' --cpu='*'.
  *
- * Usage: bun scripts/build.ts [--targets bun-linux-x64,bun-darwin-arm64] [--version 0.1.0] [--outdir dist] [--max-size-mb 100]
+ * Usage: bun scripts/build.ts [--targets bun-linux-x64,bun-darwin-arm64] [--version 0.1.0] [--outdir dist] [--max-size-mb 105] [--bytecode]
  */
 import { mkdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
-const DEFAULT_SIZE_BUDGET_MB = 100;
+const DEFAULT_SIZE_BUDGET_MB = 105;
 const ENTRYPOINT = "packages/cli/src/entrypoint.ts";
 
 /** Bun compile target -> release artifact name. */
 const TARGETS: Record<string, string> = {
   "bun-linux-x64": "agency-linux-x64",
   "bun-linux-arm64": "agency-linux-arm64",
+  // Alpine and other musl images: a glibc build does not start there.
+  "bun-linux-x64-musl": "agency-linux-x64-musl",
+  "bun-linux-arm64-musl": "agency-linux-arm64-musl",
   "bun-darwin-x64": "agency-darwin-x64",
   "bun-darwin-arm64": "agency-darwin-arm64",
   "bun-windows-x64": "agency-windows-x64.exe",
@@ -43,6 +47,7 @@ interface Options {
   version: string;
   outdir: string;
   maxSizeMb: number;
+  bytecode: boolean;
 }
 
 function parseArgs(argv: string[]): Options {
@@ -50,6 +55,7 @@ function parseArgs(argv: string[]): Options {
   let version = "";
   let outdir = "dist";
   let maxSizeMb = DEFAULT_SIZE_BUDGET_MB;
+  let bytecode = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -65,6 +71,8 @@ function parseArgs(argv: string[]): Options {
     } else if (arg === "--outdir") {
       outdir = argv[i + 1] ?? "dist";
       i++;
+    } else if (arg === "--bytecode") {
+      bytecode = true;
     } else if (arg === "--max-size-mb") {
       maxSizeMb = Number(argv[i + 1] ?? DEFAULT_SIZE_BUDGET_MB);
       i++;
@@ -79,42 +87,59 @@ function parseArgs(argv: string[]): Options {
       throw new Error(`unknown target "${target}" (known: ${Object.keys(TARGETS).join(", ")})`);
     }
   }
-  return { targets, version: version || packageVersion(), outdir, maxSizeMb };
+  return { targets, version: version || packageVersion(), outdir, maxSizeMb, bytecode };
 }
 
-async function compile(target: string, outfile: string, version: string): Promise<void> {
+async function compile(target: string, outfile: string, version: string, bytecode: boolean): Promise<void> {
   // The version is inlined at compile time; running from source falls back to
   // the entrypoint's own default (see entrypoint.ts).
   // AGENCY_UPDATE_PUBLIC_KEY (SPKI DER base64) is inlined the same way so the
   // production public key is embedded in the binary; without it the dev key
   // in update-public-key.ts applies (dev builds only).
-  const defineVersion = `process.env.AGENCY_VERSION=${JSON.stringify(version)}`;
   const updateKey = process.env.AGENCY_UPDATE_PUBLIC_KEY?.trim();
-  const defineKey =
-    updateKey !== undefined && updateKey.length > 0
-      ? `process.env.AGENCY_UPDATE_PUBLIC_KEY=${JSON.stringify(updateKey)}`
-      : undefined;
-  const proc = Bun.spawn(
-    [
-      process.execPath,
-      "build",
-      "--compile",
-      "--minify",
-      // Each start, also each command of the Windows sandbox helper, skips the parse: about 45 ms less, 9 MB more.
-      "--bytecode",
-      "--format=esm",
-      "--sourcemap=none",
-      "--define",
-      defineVersion,
-      ...(defineKey !== undefined ? (["--define", defineKey] as const) : []),
-      `--target=${target}`,
-      `--outfile=${outfile}`,
-      ENTRYPOINT,
-    ],
-    { stdout: "inherit", stderr: "inherit" },
-  );
-  const code = await proc.exited;
-  if (code !== 0) throw new Error(`bun build failed for ${target} (exit ${code})`);
+  const [, os, arch, libc] = target.split("-") as [string, string, string, string | undefined];
+  // OpenTUI imports every platform's native package; pinning the platform here drops the other seven from the binary.
+  const define: Record<string, string> = {
+    "process.env.AGENCY_VERSION": JSON.stringify(version),
+    "process.env.AGENCY_BUNDLED": '"1"',
+    "process.platform": JSON.stringify(os === "windows" ? "win32" : os),
+    "process.arch": JSON.stringify(arch),
+    ...(os === "linux"
+      ? {
+          "process.env.OPENTUI_LIBC": libc === "musl" ? '"musl"' : '"glibc"',
+          "process.env.AGENCY_LIBC": libc === "musl" ? '"musl"' : '"glibc"',
+        }
+      : {}),
+    ...(updateKey ? { "process.env.AGENCY_UPDATE_PUBLIC_KEY": JSON.stringify(updateKey) } : {}),
+  };
+  const native = `@opentui/core-${define["process.platform"]?.replaceAll('"', "")}-${arch}${libc === "musl" ? "-musl" : ""}`;
+  // The renderer is a dependency of packages/tui only, so resolve it from there.
+  const tui = join(import.meta.dir, "..", "packages", "tui");
+  try {
+    Bun.resolveSync(native, dirname(Bun.resolveSync("@opentui/core/package.json", tui)));
+  } catch {
+    throw new Error(`${native} is not installed; run: bun install --os='*' --cpu='*'`);
+  }
+  const { createSolidTransformPlugin } = await import(Bun.resolveSync("@opentui/solid/bun-plugin", tui));
+  const result = await Bun.build({
+    entrypoints: [ENTRYPOINT],
+    // The CLI form of `bun build` cannot load a plugin, and the TUI views are Solid JSX.
+    plugins: [createSolidTransformPlugin()],
+    compile: { target: target as Bun.Build.CompileTarget, outfile },
+    minify: true,
+    // Opt-in: it skips the parse at each start (about 45 ms before the TUI) but now adds ~19 MB, over the budget.
+    // Bytecode made on another OS aborts at start (a JSC assertion: Windows-built Linux binaries); another CPU is fine.
+    bytecode: bytecode && os === currentTarget().split("-")[1],
+    format: "esm",
+    sourcemap: "none",
+    define,
+  });
+  if (!result.success) {
+    for (const log of result.logs)
+      process.stderr.write(`${log}
+`);
+    throw new Error(`bun build failed for ${target}`);
+  }
 }
 
 function formatMb(bytes: number): string {
@@ -122,7 +147,7 @@ function formatMb(bytes: number): string {
 }
 
 async function main(): Promise<number> {
-  const { targets, version, outdir, maxSizeMb } = parseArgs(process.argv.slice(2));
+  const { targets, version, outdir, maxSizeMb, bytecode } = parseArgs(process.argv.slice(2));
   const budgetBytes = maxSizeMb * 1024 * 1024;
   mkdirSync(outdir, { recursive: true });
 
@@ -133,7 +158,7 @@ async function main(): Promise<number> {
     const outfile = join(outdir, artifact);
     process.stdout.write(`Building ${target} -> ${outfile}\n`);
     try {
-      await compile(target, outfile, version);
+      await compile(target, outfile, version, bytecode);
     } catch (error) {
       failures.push(`${target}: ${error instanceof Error ? error.message : String(error)}`);
       continue;

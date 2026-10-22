@@ -222,6 +222,29 @@ function diffLines(oldLines: string[], newLines: string[]): DiffOp[] {
   return ops;
 }
 
+/** Lines added and removed from old to new: the common head and tail are cut, and a large middle counts whole. */
+export function lineDelta(oldText: string, newText: string): { added: number; removed: number } {
+  const a = toDiffLines(oldText);
+  const b = toDiffLines(newText);
+  let head = 0;
+  while (head < a.length && head < b.length && a[head] === b[head]) head++;
+  let tail = 0;
+  while (
+    tail < a.length - head &&
+    tail < b.length - head &&
+    a[a.length - 1 - tail] === b[b.length - 1 - tail]
+  )
+    tail++;
+  const x = a.slice(head, a.length - tail);
+  const y = b.slice(head, b.length - tail);
+  if (x.length * y.length > 4_000_000) return { added: y.length, removed: x.length };
+  const ops = diffLines(x, y);
+  return {
+    added: ops.filter((o) => o.kind === "ins").length,
+    removed: ops.filter((o) => o.kind === "del").length,
+  };
+}
+
 function toDiffLines(text: string): string[] {
   if (text === "") return [];
   const lines = splitCanonicalLines(text);

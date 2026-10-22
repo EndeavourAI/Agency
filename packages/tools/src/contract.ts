@@ -56,6 +56,15 @@ export interface ToolResult {
   images?: ImageBlock[];
   /** What a script of the code tool gets in place of the text, as the paths of glob. Absent: the text. */
   value?: unknown;
+  /** Facts for a client's step line; the model never sees them. */
+  meta?: ToolMeta;
+}
+
+export interface ToolMeta {
+  exitCode?: number;
+  added?: number;
+  removed?: number;
+  lines?: number;
 }
 
 /**

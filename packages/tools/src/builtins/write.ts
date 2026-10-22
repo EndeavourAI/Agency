@@ -5,6 +5,7 @@ import { t } from "@agency/i18n";
 import type { ToolDeps, ToolSpec } from "../contract.ts";
 import type { FormatterConfig } from "../formatter.ts";
 import { runFormatter } from "../formatter.ts";
+import { lineDelta } from "../hashline.ts";
 import { newPlaceholder } from "../placeholder.ts";
 import type { ReadState } from "../read-state.ts";
 import { projectPath, str, summarize } from "../render.ts";
@@ -68,7 +69,7 @@ export function createWriteTool(
       }
       const broken = syntaxNote(input.path, before, input.content);
       if (broken !== undefined) content += `\n${broken}`;
-      return { content };
+      return { content, meta: lineDelta(before ?? "", input.content) };
     },
   };
   return spec;

@@ -60,6 +60,15 @@ import { relativePaths } from "./transcript.ts";
 import { truncateToolResults } from "./truncate.ts";
 import { missingNote, missingOutputs, reviewNote, untestedEdits, untestedNote } from "./verify.ts";
 
+/** Facts a client shows on a step line; they never reach the model. */
+export interface ToolMeta {
+  exitCode?: number;
+  added?: number;
+  removed?: number;
+  lines?: number;
+  durationMs?: number;
+}
+
 export interface ToolSpec<Input = Record<string, unknown>> extends ToolDefinition {
   handler(
     input: Input & Record<string, unknown>,
@@ -87,7 +96,7 @@ export interface ToolSpec<Input = Record<string, unknown>> extends ToolDefinitio
         input: Record<string, unknown>,
       ) => Promise<{ content: string; isError: boolean; images?: ImageBlock[]; value?: unknown }>;
     },
-  ): Promise<{ content: string; isError?: boolean; images?: ImageBlock[]; value?: unknown }>;
+  ): Promise<{ content: string; isError?: boolean; images?: ImageBlock[]; value?: unknown; meta?: ToolMeta }>;
   renderCall?(input: Input & Record<string, unknown>): string;
   renderResult?(result: {
     content: string;
@@ -149,7 +158,14 @@ export type LoopEvent =
   /** The reasoning of one request ended: how long it ran. */
   | { type: "thinking_end"; ms: number }
   | { type: "tool_start"; id: string; name: string; input?: Record<string, unknown> }
-  | { type: "tool_result"; id: string; content: string; isError: boolean; images?: ImageBlock[] }
+  | {
+      type: "tool_result";
+      id: string;
+      content: string;
+      isError: boolean;
+      images?: ImageBlock[];
+      meta?: ToolMeta;
+    }
   | { type: "tool_progress"; id: string; name: string; message: string }
   | { type: "turn_complete"; stopReason: StopReason; usage: Usage; timing?: RequestTiming }
   | { type: "budget_exceeded"; spentTokens: number; spentCostUsd: number }
@@ -1053,7 +1069,13 @@ function emitErrorEvent(error: unknown, onEvent?: (event: LoopEvent) => void): v
   onEvent?.({ type: "error", ...describeError(error) });
 }
 
-type ToolResultLike = { content: string; isError: boolean; images?: ImageBlock[]; value?: unknown };
+type ToolResultLike = {
+  content: string;
+  isError: boolean;
+  images?: ImageBlock[];
+  value?: unknown;
+  meta?: ToolMeta;
+};
 
 interface ToolCallItem {
   call: Extract<ContentBlock, { type: "tool_call" }>;
@@ -1131,6 +1153,7 @@ async function runTools(
       content: result.content,
       isError: result.isError,
       images: result.images,
+      ...(result.meta ? { meta: result.meta } : {}),
     });
   };
 
@@ -1191,6 +1214,7 @@ async function runCall(
     spanId = t ? t.startToolSpan(t.getTurnSpanId(), { toolName: item.call.name }) : null;
   } catch {}
   let result: ToolResultLike;
+  const startedAt = Date.now();
   try {
     result = item.malformed
       ? { content: item.malformed, isError: true }
@@ -1198,6 +1222,7 @@ async function runCall(
   } catch (error) {
     result = { content: error instanceof Error ? error.message : String(error), isError: true };
   }
+  result = { ...result, meta: { ...result.meta, durationMs: Date.now() - startedAt } };
   try {
     if (t && spanId) {
       t.endSpan(spanId, {
@@ -1470,7 +1495,7 @@ async function executeOne(
         }
       : undefined,
   };
-  let result: { content: string; isError?: boolean; images?: ImageBlock[]; value?: unknown };
+  let result: { content: string; isError?: boolean; images?: ImageBlock[]; value?: unknown; meta?: ToolMeta };
   try {
     result = await resolved.handler(call.input, toolCtx);
   } catch (error) {
@@ -1538,6 +1563,7 @@ async function executeOne(
     content: result.content,
     isError: result.isError ?? false,
     images: result.images,
+    ...(result.meta ? { meta: result.meta } : {}),
     // A redaction or a hook that changed the text would not reach a script through the built value.
     ...(result.value !== undefined && result.content === built ? { value: result.value } : {}),
   };

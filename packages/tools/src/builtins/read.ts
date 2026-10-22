@@ -217,8 +217,9 @@ export function createReadTool(deps: ToolDeps, options?: ReadToolOptions): ToolS
       // seven reads of 100 lines, each a round trip that sent the whole history again.
       const { text, cut } = numbered(content, offset, limit);
       // Raw when it fits: in three paired live runs numbered whole reads raised research input 14% to 35%.
-      if (!slicing && !cut) return { content };
-      return { content: (!slicing && cut && outlineOf(content)) || text };
+      const lines = content === "" ? 0 : content.split("\n").length - (content.endsWith("\n") ? 1 : 0);
+      if (!slicing && !cut) return { content, meta: { lines } };
+      return { content: (!slicing && cut && outlineOf(content)) || text, meta: { lines } };
     },
   };
   return spec;

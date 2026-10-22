@@ -59,7 +59,7 @@ async function start(adapter: ProviderAdapter, window?: number) {
         description: "run a command",
         inputSchema: { type: "object", properties: { command: { type: "string" } } },
         riskTier: "dangerous",
-        handler: async () => ({ content: "ok" }),
+        handler: async () => ({ content: "ok", meta: { exitCode: 101 } }),
       },
     ],
   });
@@ -168,6 +168,16 @@ describe("events a TUI client needs", () => {
       cancelled: false,
       error: { message: expect.any(String) },
     });
+  });
+
+  test("tool_result carries what the tool measured and how long the call took", async () => {
+    const { client } = await start(thinker);
+    const turn = watch(client, "turn.t6");
+    await send(client, { sessionId: "s6", turnId: "t6", permissionMode: "allow-all" });
+    await sleep(20);
+    const result = turn.find((e) => e.type === "tool_result") as { meta: Record<string, number> };
+    expect(result.meta.exitCode).toBe(101);
+    expect(result.meta.durationMs).toBeGreaterThanOrEqual(0);
   });
 
   test("status_get tells where the session compacts", async () => {

@@ -362,8 +362,8 @@ export function createBashTool(
         // partial output is retained alongside the label.
         const failed = outcome.aborted || exitCode !== 0;
         return failed
-          ? { content: truncateResult(combined), isError: true as const }
-          : { content: truncateResult(combined) };
+          ? { content: truncateResult(combined), isError: true as const, meta: { exitCode } }
+          : { content: truncateResult(combined), meta: { exitCode } };
       };
 
       const container = wrapHeld === undefined ? asContainerExecBackend(deps.sandbox) : undefined;

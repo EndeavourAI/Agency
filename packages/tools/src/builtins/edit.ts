@@ -7,6 +7,7 @@ import type { ToolDeps, ToolSpec } from "../contract.ts";
 import { applyEditsVerified, type EditHunk } from "../edit-engine.ts";
 import type { FormatterConfig } from "../formatter.ts";
 import { runFormatter } from "../formatter.ts";
+import { lineDelta } from "../hashline.ts";
 import { applyChunks, parsePatch } from "../patch.ts";
 import { newPlaceholder } from "../placeholder.ts";
 import type { ReadState } from "../read-state.ts";
@@ -184,7 +185,7 @@ export function createEditTool(
         });
         const broken = syntaxNote(input.path, before, after);
         if (broken !== undefined) content += `\n${broken}`;
-        return { content };
+        return { content, meta: lineDelta(before ?? "", after) };
       }
 
       if (hasHunks(input) === hasPair(input)) {
@@ -240,7 +241,7 @@ export function createEditTool(
             summary: outcome.warnings.join("; "),
           })}`;
         }
-        return { content };
+        return { content, meta: lineDelta(current, outcome.content) };
       } catch (error) {
         if (error instanceof AgencyError && error.code === ErrorCode.TOOL_ERROR) {
           return { content: error.message, isError: true };

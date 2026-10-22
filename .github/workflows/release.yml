@@ -2,6 +2,7 @@ name: Release
 
 on:
   push:
+    branches: [master]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -18,8 +19,30 @@ permissions:
   contents: write
 
 jobs:
+  # The root package.json version is the only release switch: a merge to master without a bump stops here.
+  gate:
+    name: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.gate.outputs.version }}
+      build: ${{ steps.gate.outputs.build }}
+      publish: ${{ steps.gate.outputs.publish }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Decide
+        id: gate
+        run: bun scripts/npm-release.ts gate
+
   build:
     name: build (${{ matrix.os }})
+    needs: gate
+    if: needs.gate.outputs.build == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -60,12 +83,7 @@ jobs:
         run: bun run test:ci
       - name: Derive version
         shell: bash
-        run: |
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-          else
-            echo "VERSION=$(bun --print "require('./package.json').version")" >> "$GITHUB_ENV"
-          fi
+        run: echo "VERSION=${{ needs.gate.outputs.version }}" >> "$GITHUB_ENV"
       - name: Derive update public key
         # Production binaries must embed the production public key at compile
         # time (scripts/build.ts inlines AGENCY_UPDATE_PUBLIC_KEY via --define).
@@ -129,6 +147,8 @@ jobs:
 
   sbom:
     name: sbom
+    needs: gate
+    if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -151,16 +171,54 @@ jobs:
 
   release:
     name: release
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [build, sbom]
+    if: needs.gate.outputs.publish == 'true'
+    needs: [gate, build, sbom]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
+    # Reviewers added to this environment in the repo settings gate the publish.
+    environment: npm
+    concurrency:
+      group: npm-publish
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      id-token: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing (OIDC) needs npm 11.5.1 or newer; Node 22 ships older.
+      - name: Update npm
+        run: npm install -g npm@^11.5.1
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
+      - name: Pack npm tarballs
+        run: |
+          mkdir dist
+          cp artifacts/agency-* dist/
+          bun scripts/npm-pack.ts --version "${{ needs.gate.outputs.version }}" --skip-build --tarballs
+          # A binary without the execute bit cannot run from a root-owned global install.
+          for t in dist/npm/tarballs/*.tgz; do
+            tar -tzvf "$t" | awk '$NF ~ /bin\/agency(\.js)?$/ && $1 != "-rwxr-xr-x" { bad = 1; print "not 755: " $0 } END { exit bad }'
+          done
+      - name: Publish to npm
+        # OIDC when the secret is empty; a first publish of a new package needs the token.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: bun scripts/npm-release.ts publish --dir dist/npm/tarballs
       - name: Generate checksums
         run: |
           cd artifacts
@@ -180,6 +238,7 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.gate.outputs.version }}
         run: |
           # Release carries the binaries, their detached .sig files
           # (raw 64-byte ed25519), the signed checksum manifest, the plain
@@ -187,7 +246,8 @@ jobs:
           # sort -u dedupes: platform globs already match their .sig sidecars.
           FILES=$(ls artifacts/agency-* artifacts/agency-*.sig artifacts/checksums.txt artifacts/checksums-signed.txt artifacts/agency.cdx.json 2>/dev/null | sort -u)
           # shellcheck disable=SC2086
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$TAG" \
             $FILES \
-            --title "Agency $GITHUB_REF_NAME" \
+            --target "$GITHUB_SHA" \
+            --title "Agency $TAG" \
             --generate-notes

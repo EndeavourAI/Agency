@@ -22,8 +22,7 @@ interface Options {
 }
 
 function parseArgs(argv: string[]): Options {
-  const cliVersion = (JSON.parse(readFileSync("packages/cli/package.json", "utf8")) as { version: string })
-    .version;
+  const cliVersion = (JSON.parse(readFileSync("package.json", "utf8")) as { version: string }).version;
   const o: Options = { version: cliVersion, outdir: "dist/npm", only: [], skipBuild: false, tarballs: false };
   let explicitVersion = false;
   for (let i = 0; i < argv.length; i++) {

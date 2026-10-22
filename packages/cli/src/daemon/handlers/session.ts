@@ -482,12 +482,14 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
     const served = result.servedBy ?? p;
     if (compactionUsage.inputTokens > 0)
       result = { ...result, usage: addUsage(result.usage, compactionUsage) };
+    const branch = ctx.git(ctx.options.workspaceRoot, ["branch", "--show-current"])?.trim();
     const parentId = await appendUsageEntry(store, p.sessionId, tip, {
       usage: result.usage,
       model: served.model,
       pricing: ctx.catalogModel(served.provider, served.model)?.pricing,
       ...(result.timing === undefined ? {} : { timing: result.timing }),
       ...(result.contextTokens === undefined ? {} : { contextTokens: result.contextTokens }),
+      ...(branch ? { gitBranch: branch } : {}),
     });
     const response: SessionSendResult = {
       ...result,

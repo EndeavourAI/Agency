@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -216,6 +217,34 @@ test("client_config gives the client keys, and the project value wins over the u
     voice: { enabled: true },
   });
 });
+
+test("session_list rows carry the last prompt, the branch and the cost, and a query narrows them", async () => {
+  const { call, keychain, workspaceRoot } = await start();
+  execSync("git init -q -b picker-branch", { cwd: workspaceRoot });
+  await keychain.set("anthropic", "test-key");
+  for (const [id, text] of [
+    ["p1", "refactor the parser"],
+    ["p2", "write the docs"],
+  ] as const) {
+    const turn = call("session_send", { sessionId: id, provider: "anthropic", model: "m", userText: text });
+    await Bun.sleep(300);
+    release();
+    await turn;
+  }
+  type Row = { id: string; lastPrompt: string; branch: string; costUsd: number };
+  const rows = async (params: Record<string, unknown> = {}) =>
+    (((await call("session_list", params)).result?.sessions ?? []) as Row[]).sort((a, b) =>
+      a.id.localeCompare(b.id),
+    );
+  const all = await rows();
+  expect(all.map((r) => [r.id, r.lastPrompt, r.branch])).toEqual([
+    ["p1", "refactor the parser", "picker-branch"],
+    ["p2", "write the docs", "picker-branch"],
+  ]);
+  expect(typeof all[0]?.costUsd).toBe("number");
+  expect((await rows({ query: "PARSER" })).map((r) => r.id)).toEqual(["p1"]);
+  expect(await rows({ query: "nothing like this" })).toEqual([]);
+}, 15_000);
 
 test("config_user gives the user file alone: no project hooks, no provider keys", async () => {
   const { call, workspaceRoot } = await start({

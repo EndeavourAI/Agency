@@ -8,6 +8,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`session_list` for the resume picker**: each row has `lastPrompt`, `branch` (kept on the usage entry of a turn) and
+  `costUsd`, and the method takes a text `query`.
 - **`client_config`**: one method returns the keys a TUI reads (`theme`, `outputStyle`, and the new `keybindings`,
   `editorMode`, `voice`, `clientPlugins`), merged across the layers.
 - **`status_get` and the `statusLine` key**: model, effort, mode, cost, context used and limit, cache hit, branch and

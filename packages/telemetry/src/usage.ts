@@ -25,6 +25,8 @@ export interface UsageTurn {
   timing?: TurnTiming;
   /** Tokens of the turn's last request: the context size, which `usage` (a sum of all requests) is not. */
   contextTokens?: number;
+  /** The git branch of the workspace when the turn ended, for the session picker. */
+  gitBranch?: string;
 }
 
 export interface SessionUsageTotals {
@@ -72,6 +74,7 @@ export interface UsageSessionEntry {
   cacheHitRate: number | undefined;
   timing?: TurnTiming;
   contextTokens?: number;
+  gitBranch?: string;
 }
 
 export function usageEntry(turn: UsageTurn): UsageSessionEntry {
@@ -83,6 +86,7 @@ export function usageEntry(turn: UsageTurn): UsageSessionEntry {
     cacheHitRate: cacheHitRate(turn.usage),
     ...(turn.timing === undefined ? {} : { timing: turn.timing }),
     ...(turn.contextTokens === undefined ? {} : { contextTokens: turn.contextTokens }),
+    ...(turn.gitBranch === undefined ? {} : { gitBranch: turn.gitBranch }),
   };
 }
 

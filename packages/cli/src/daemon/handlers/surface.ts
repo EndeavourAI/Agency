@@ -199,6 +199,19 @@ function firstPrompt(entries: readonly Record<string, unknown>[]): string | unde
   return undefined;
 }
 
+/** The newest prompt that the user typed: a message that entered mid-turn or from a shell command is no prompt. */
+function lastPrompt(entries: readonly Record<string, unknown>[]): string | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i] as Record<string, unknown>;
+    const message = entry.message as Message | undefined;
+    if (entry.type !== "message" || message?.role !== "user" || entry.origin !== undefined) continue;
+    const block = message.content.find((b) => b.type === "text") as { text?: string } | undefined;
+    const line = block?.text?.trim().split("\n")[0]?.trim().slice(0, 80);
+    if (line) return line;
+  }
+  return undefined;
+}
+
 export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>, ctx: DaemonContext): void {
   const {
     config,
@@ -212,18 +225,34 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
     turnCheckpoints,
   } = ctx;
 
-  handlers.session_list = async () => {
-    const sessions = todoStore.list().map((id) => {
-      const entries = todoStore.load(id);
-      const last = entries[entries.length - 1];
-      return {
-        id,
-        title: getSessionTitle(entries) ?? firstPrompt(entries),
-        tipId: todoStore.latestTip(entries) ?? last?.id ?? null,
-        entries: entries.length,
-        updatedAt: last?.createdAt ?? null,
-      };
-    });
+  handlers.session_list = async (rawParams) => {
+    const { query } = (rawParams ?? {}) as { query?: string };
+    const needle = query?.trim().toLowerCase();
+    const sessions = todoStore
+      .list()
+      .map((id) => {
+        const entries = todoStore.load(id);
+        const last = entries[entries.length - 1];
+        const usage = entries.filter(isUsageEntry) as unknown as Array<{
+          costUsd: number;
+          gitBranch?: string;
+        }>;
+        return {
+          id,
+          title: getSessionTitle(entries) ?? firstPrompt(entries),
+          tipId: todoStore.latestTip(entries) ?? last?.id ?? null,
+          entries: entries.length,
+          updatedAt: last?.createdAt ?? null,
+          lastPrompt: lastPrompt(entries) ?? null,
+          branch: usage.findLast((u) => u.gitBranch !== undefined)?.gitBranch ?? null,
+          costUsd: usage.reduce((sum, u) => sum + u.costUsd, 0),
+        };
+      })
+      .filter(
+        (row) =>
+          !needle ||
+          [row.id, row.title, row.lastPrompt, row.branch].some((v) => v?.toLowerCase().includes(needle)),
+      );
     return { sessions };
   };
 
@@ -260,7 +289,7 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
       contextTokens: last?.contextTokens ?? 0,
       contextLimit: known?.contextWindow ?? null,
       cacheHitRate: input > 0 ? Math.min(cached / input, 1) : null,
-      branch: ctx.git(ctx.options.workspaceRoot, ["rev-parse", "--abbrev-ref", "HEAD"])?.trim() || null,
+      branch: ctx.git(ctx.options.workspaceRoot, ["branch", "--show-current"])?.trim() || null,
     };
     if (!config.statusLine) return { status };
     const ran = await runHookCommand(

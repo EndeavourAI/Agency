@@ -2348,6 +2348,33 @@ async function noteAvailableUpdate(argv: string[]): Promise<void> {
 `);
 }
 
+/** `agency` alone on a terminal opens the TUI; any argument, a pipe or a redirect keeps the line-oriented CLI. */
+export function shouldOpenTui(argv: string[], tty: { stdin?: boolean; stdout?: boolean }): boolean {
+  return argv.length === 0 && tty.stdin === true && tty.stdout === true;
+}
+
+async function openTui(): Promise<number> {
+  const { runTui } = await import("@agency/tui/run");
+  const workspace = process.cwd();
+  await runTui({
+    version: VERSION,
+    workspace,
+    connect: async (onConnection) =>
+      (
+        await connectHeadlessClient({
+          workspaceRoot: workspace,
+          // A test hook: a daemon entry with a scripted provider, started the way the real one is.
+          ...(process.env.AGENCY_TUI_DAEMON_ENTRY
+            ? { daemonEntryPath: process.env.AGENCY_TUI_DAEMON_ENTRY }
+            : {}),
+          connect: (port, host, options) => connectToDaemon(port, host, { ...options, onConnection }),
+        })
+      ).client,
+  });
+  // The renderer closes the process itself on quit; hold this one open until then.
+  return await new Promise<number>(() => undefined);
+}
+
 if (import.meta.main) {
   if (process.argv[2] === DAEMON_COMMAND) {
     await (await import("./daemon-entry.ts")).runDaemonEntry(process.argv.slice(3));
@@ -2356,6 +2383,9 @@ if (import.meta.main) {
   if (process.argv[2] === SANDBOX_COMMAND) runSandboxChild();
   ownerOnlyDirs();
   await noteAvailableUpdate(process.argv.slice(2));
+  if (shouldOpenTui(process.argv.slice(2), { stdin: process.stdin.isTTY, stdout: process.stdout.isTTY })) {
+    process.exit(await openTui());
+  }
   // Awaited: a bare promise does not hold the process open, and an empty stdin read then exits 0 with no output.
   process.exit(await runEntrypoint());
 }

@@ -17,7 +17,7 @@ import { createFileFallbackBackend } from "@agency/providers";
 import type { DaemonClient } from "@agency/rpc";
 import { DEFAULT_SYSTEM_PROMPT, type RunTurnRpcResult } from "../src/daemon.ts";
 import type { EntrypointDeps } from "../src/entrypoint.ts";
-import { parseArgv, runEntrypoint } from "../src/entrypoint.ts";
+import { parseArgv, runEntrypoint, shouldOpenTui } from "../src/entrypoint.ts";
 import type { RunHeadlessOptions } from "../src/headless.ts";
 
 const dirs: string[] = [];
@@ -1980,5 +1980,20 @@ describe("mcp serve", () => {
     expect(replies.find((r) => r.id === 1).result.content[0].text).toContain("No API key for openai");
     expect(replies.find((r) => r.id === null).error.code).toBe(-32700);
     expect(replies.find((r) => r.id === 2).result).toEqual({});
+  });
+});
+
+describe("shouldOpenTui", () => {
+  const tty = { stdin: true, stdout: true };
+  test("opens only for no arguments on a terminal", () => {
+    expect(shouldOpenTui([], tty)).toBe(true);
+    expect(shouldOpenTui([], { stdin: true })).toBe(false);
+    expect(shouldOpenTui([], { stdout: true })).toBe(false);
+    expect(shouldOpenTui([], { stdin: false, stdout: true })).toBe(false);
+  });
+  test("any argument keeps the CLI", () => {
+    for (const argv of [["-p", "hi"], ["--version"], ["daemon"], ["sessions", "list"]]) {
+      expect(shouldOpenTui(argv, tty)).toBe(false);
+    }
   });
 });

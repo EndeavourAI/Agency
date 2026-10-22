@@ -4,7 +4,9 @@
     "composite": false,
     "noEmit": true,
     "rewriteRelativeImportExtensions": false,
-    "types": ["bun"]
+    "types": ["bun"],
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid"
   },
   "include": ["src", "test"],
   "references": [
@@ -16,6 +18,7 @@
     { "path": "../providers" },
     { "path": "../rpc" },
     { "path": "../telemetry" },
-    { "path": "../tools" }
+    { "path": "../tools" },
+    { "path": "../tui" }
   ]
 }

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { defaultInstanceDir } from "@agency/cli";
 import { Terminal } from "@xterm/headless";
 
-const MAIN = join(import.meta.dir, "..", "src", "main.ts");
+const MAIN = join(import.meta.dir, "..", "..", "cli", "src", "entrypoint.ts");
 const DAEMON = join(import.meta.dir, "scripted-daemon.ts");
 export const ESC = "\x1b";
 

@@ -27,6 +27,11 @@ const renderer = await createCliRenderer({
   ],
 });
 
+// Bracketed paste never reaches the raw handler above: the renderer parses it and raises a paste event.
+renderer.keyInput.on("paste", (e) => {
+  if (keylog) appendFileSync(keylog, `${JSON.stringify(`paste:${new TextDecoder().decode(e.bytes)}`)}\n`);
+});
+
 const bar = new TextRenderable(renderer, { content: " agency  spike  ctrl+p", height: 1, fg: "#e0b46c" });
 const list = new TextRenderable(renderer, { content: "", flexGrow: 1, fg: "#ebe9e4" });
 const input = new BoxRenderable(renderer, { height: 3, border: true, borderColor: "#6a6760" });

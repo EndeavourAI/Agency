@@ -74,7 +74,10 @@ describe("renderer spike under a pty", () => {
 
   test("keys arrive as the bytes a terminal sends", async () => {
     const sent = ["\x1b[Z", "\n", "\x1b\r", "\x1b[5~", "\x1b[1;5F", "\x1b[44;5u", "\x1b[13;5u"];
-    const { keylog } = await run(sent);
+    const { keylog } = await run([...sent, "\x1b[200~pasted\x1b[201~"]);
     for (const bytes of sent) expect(keylog).toContain(bytes);
+    // A bracketed paste is parsed by the renderer: only the paste event carries it.
+    expect(keylog).toContain("paste:pasted");
+    expect(keylog.some((k) => k.includes("[200~"))).toBe(false);
   }, 30_000);
 });

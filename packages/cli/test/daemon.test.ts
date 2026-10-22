@@ -34,7 +34,7 @@ const dirs: string[] = [];
 afterEach(async () => {
   for (const client of clients.splice(0)) await client.close();
   for (const daemon of daemons.splice(0)) await daemon.stop();
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
 });
 
 function tempInstanceFile(): string {

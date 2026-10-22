@@ -6,6 +6,18 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ## [Unreleased]
 
+### Release
+
+- **Releasing**: bump `version` in the root `package.json` and merge to `master`. The release workflow builds, publishes the
+  eight `@endeavourai` npm packages (a version with `-` goes to the `next` tag) and creates the GitHub release `v<version>`.
+  A merge without a bump does nothing. Publishing uses npm Trusted Publishing (OIDC): for each of the 8 packages
+  (`@endeavourai/agency` and `@endeavourai/agency-<os>-<cpu>[-musl]`) set a trusted publisher with provider GitHub Actions,
+  repository `EndeavourAI/Agency`, workflow `release.yml`, environment `npm`, and "Allow npm publish" checked. A trusted
+  publisher needs an existing package, so the first publish of a new package needs a token: an npm granular access token
+  with read and write on `@endeavourai`, stored as the secret `NPM_TOKEN` of the GitHub environment `npm`. The workflow
+  uses it when set; delete it once every package has a trusted publisher. Add required reviewers to the environment to
+  gate each publish.
+
 ### Changed
 
 - **`tool_result` facts**: the event carries `meta` with `exitCode` (bash), `durationMs`, `added` and `removed` (edit and

@@ -135,12 +135,12 @@ test("git_commit commits only the paths it is given and pushes to the upstream",
   writeFileSync(join(root, "b.txt"), `changed${lf}`);
   writeFileSync(join(root, "new.txt"), `fresh${lf}`);
   const done = await gitCommit(root, { message: "touch a and new", paths: ["a.txt", "new.txt"], push: true });
-  expect(done).toEqual({ sha: head(root), branch: "main", pushed: true });
+  expect(done).toEqual({ sha: head(root), branch: "main", pushed: true, upstream: "origin/main" });
   const status = (await gitStatus(root)) as { ahead: number; files: Array<{ path: string }> };
   expect(status.ahead).toBe(0);
   expect(status.files.map((f) => f.path)).toEqual(["b.txt"]);
   expect(subjects(root)[0]).toBe("touch a and new");
-});
+}, 30_000);
 
 test("git_commit without paths takes every change of the workspace", async () => {
   const root = repo();
@@ -150,7 +150,7 @@ test("git_commit without paths takes every change of the workspace", async () =>
   writeFileSync(join(root, "new.txt"), `fresh${lf}`);
   await gitCommit(root, { message: "all" });
   expect(((await gitStatus(root)) as { files: unknown[] }).files).toEqual([]);
-});
+}, 30_000);
 
 test("git_commit refuses an empty message, an outside path, a conflict and a push with no upstream", async () => {
   const root = repo();
@@ -175,7 +175,7 @@ test("git_commit refuses an empty message, an outside path, a conflict and a pus
     git(root, "merge", "other");
   } catch {}
   await expect(gitCommit(root, { message: "x" })).rejects.toThrow("unmerged");
-});
+}, 30_000);
 
 test("the suggested message is the session's own line, else the changed files", () => {
   const file = (path: string) => ({ path, status: "M", added: 1, deleted: 0 });

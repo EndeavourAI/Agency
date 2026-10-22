@@ -135,6 +135,8 @@ export interface CommitResult {
   sha: string;
   branch: string;
   pushed: boolean;
+  /** The remote branch that a push went to, as `origin/dev`. */
+  upstream?: string;
 }
 
 /** Runs git and throws its own message on failure, which tells the person what refused. */
@@ -172,10 +174,11 @@ export async function gitCommit(
     if (isAbsolute(path) || path.split(/[\\/]/).includes("..") || path === "")
       throw new Error(`path is outside the workspace: ${path}`);
   const branch = ((await git(root, ["branch", "--show-current"])) ?? "").trim();
+  let upstream: string | undefined;
   if (opts.push) {
     if (branch === "") throw new Error("cannot push a detached HEAD");
-    if ((await git(root, ["rev-parse", "--abbrev-ref", "@{upstream}"])) === undefined)
-      throw new Error(`branch ${branch} has no upstream: nothing was committed`);
+    upstream = (await git(root, ["rev-parse", "--abbrev-ref", "@{upstream}"]))?.trim();
+    if (!upstream) throw new Error(`branch ${branch} has no upstream: nothing was committed`);
   }
   if (paths.length > 0) {
     await gitOrThrow(root, ["add", "--", ...paths]);
@@ -186,5 +189,5 @@ export async function gitCommit(
   }
   const sha = ((await git(root, ["rev-parse", "--short", "HEAD"])) ?? "").trim();
   if (opts.push) await gitOrThrow(root, ["push"]);
-  return { sha, branch, pushed: opts.push === true };
+  return { sha, branch, pushed: opts.push === true, ...(upstream ? { upstream } : {}) };
 }

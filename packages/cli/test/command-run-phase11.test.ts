@@ -62,11 +62,16 @@ export const hooks = {
 `;
 
 async function boot(
-  opts: { seed?: (ws: string) => void; trusted?: boolean; config?: Record<string, unknown> } = {},
+  opts: {
+    seed?: (ws: string) => void;
+    trusted?: boolean;
+    config?: Record<string, unknown>;
+    configDir?: string;
+  } = {},
 ) {
   const ws = tempDir("agency-cmd-ws-");
   opts.seed?.(ws);
-  const configDir = tempDir("agency-cmd-cfg-");
+  const configDir = opts.configDir ?? tempDir("agency-cmd-cfg-");
   if (opts.config)
     writeFileSync(join(configDir, "config.jsonc"), JSON.stringify({ schemaVersion: 2, ...opts.config }));
   // A workspace plugin file runs only in a trusted workspace.
@@ -78,13 +83,13 @@ async function boot(
     sessionsDir: tempDir("agency-cmd-sess-"),
     approvalsDir: tempDir("agency-cmd-appr-"),
     trustStorePath,
-    ...(opts.config ? { configDir } : {}),
+    ...(opts.config || opts.configDir ? { configDir } : {}),
     adapterFor: () => echoAdapter(),
     http: noopHttp,
     tools: [],
   });
   daemons.push(daemon);
-  return { ws, base: `http://127.0.0.1:${daemon.httpPort}`, token: daemon.server.token as string };
+  return { ws, configDir, base: `http://127.0.0.1:${daemon.httpPort}`, token: daemon.server.token as string };
 }
 
 async function rpcCall(base: string, token: string, method: string, params: Record<string, unknown> = {}) {
@@ -169,7 +174,7 @@ describe("command_run Tier 1 goldens", () => {
   });
 
   test("/model shows current, rejects unknown, sets known", async () => {
-    const { base, token } = await boot();
+    const { base, token } = await boot({ config: {} });
     const shown = await run(base, token, "model");
     expect(typeof shown.data.current).toBe("string");
     const models = shown.data.models as { id: string }[];
@@ -179,6 +184,28 @@ describe("command_run Tier 1 goldens", () => {
     const first = models[0]?.id ?? "";
     const set = await run(base, token, "model", first);
     expect(set.data).toMatchObject({ key: "model", value: first });
+  });
+
+  test("/model persists to the user file: a new daemon starts on it, and a project model key wins", async () => {
+    const first = await boot({ config: {}, trusted: true });
+    const models = (await run(first.base, first.token, "model")).data.models as { id: string }[];
+    const [chosen, other] = [models[0]?.id ?? "", models[1]?.id ?? ""];
+    await run(first.base, first.token, "model", chosen);
+    const modelOf = async (d: { base: string; token: string }) =>
+      ((await rpcOk(d.base, d.token, "config_get", { key: "model" })) as { value: string }).value;
+
+    const second = await boot({ configDir: first.configDir, trusted: true });
+    expect(await modelOf(second)).toBe(chosen);
+
+    const third = await boot({
+      configDir: first.configDir,
+      trusted: true,
+      seed: (ws) => {
+        mkdirSync(join(ws, ".agency"), { recursive: true });
+        writeFileSync(join(ws, ".agency", "config.jsonc"), JSON.stringify({ model: other }));
+      },
+    });
+    expect(await modelOf(third)).toBe(other);
   });
 
   test("/undo and /redo report a boolean", async () => {

@@ -8,6 +8,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`/model` persists**: it sets the model for the running daemon and writes it to the user config file, so the
+  next session starts on it. A `model` key in a trusted project file still wins, as the layer order says.
 - **Project config loads**: `.agency/config.jsonc` and the new `.agency/config.local.jsonc` (above it, kept out of
   git; `config_write` with `scope: "local"` writes it) apply in a trusted workspace. `trust.required` comes from
   the user layer only.

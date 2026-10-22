@@ -141,7 +141,8 @@ const BUILTINS: Record<string, BuiltinFn> = {
       key: "model",
       value: wanted,
     });
-    return { text: `model set to ${wanted} (memory-only until restart)`, data };
+    await call(handlers, "config_write", { key: "model", value: wanted });
+    return { text: `model set to ${wanted}`, data };
   },
   sessions: async (_ctx, handlers) => {
     const data = await call<{ sessions: { id: string }[] }>(handlers, "session_list", {});

@@ -219,9 +219,9 @@ function reduceWire(t: Turn, s: SessionState, e: WireEvent): { t: Turn; s: Sessi
           ...t,
           stopReason: e.stopReason,
           usage: {
-            inputTokens: t.usage.inputTokens + e.usage.inputTokens,
-            outputTokens: t.usage.outputTokens + e.usage.outputTokens,
-            cachedInputTokens: (t.usage.cachedInputTokens ?? 0) + (e.usage.cachedInputTokens ?? 0),
+            inputTokens: t.usage.inputTokens + (e.usage?.inputTokens ?? 0),
+            outputTokens: t.usage.outputTokens + (e.usage?.outputTokens ?? 0),
+            cachedInputTokens: (t.usage.cachedInputTokens ?? 0) + (e.usage?.cachedInputTokens ?? 0),
           },
           ttftMs: t.ttftMs === 0 ? (e.timing?.ttftMs ?? 0) : t.ttftMs,
           streamMs: t.streamMs + (e.timing?.streamMs ?? 0),
@@ -244,7 +244,7 @@ function reduceWire(t: Turn, s: SessionState, e: WireEvent): { t: Turn; s: Sessi
     case "cost_meter":
       return { t: { ...t, costUsd: e.turnCostUsd }, s: { ...s, runCostUsd: e.runTotalUsd } };
     case "approval_requested": {
-      const r = e.request;
+      const r = e.request ?? { tool: "tool", title: "" };
       return {
         t: {
           ...t,

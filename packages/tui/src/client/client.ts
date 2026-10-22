@@ -95,6 +95,16 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
   const call = <T>(method: string, params: Record<string, unknown> = {}): Promise<T> =>
     daemon.call(method, params) as Promise<T>;
   const flash = (text: string): void => dispatch([{ type: "flash", text, tone: "error" }]);
+  /** A listener runs outside any caller that could catch: one malformed event must flash, not take the TUI down. */
+  const guarded =
+    (handler: (payload: unknown) => void) =>
+    (payload: unknown): void => {
+      try {
+        handler(payload);
+      } catch (err) {
+        flash(`bad event from the daemon: ${message(err)}`);
+      }
+    };
 
   async function loadSessions(): Promise<void> {
     const r = await call<{ sessions: WireSessionRow[] }>("session_list");
@@ -252,18 +262,21 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
     const endedP = new Promise<void>((r) => {
       ended = r;
     });
-    const off = daemon.on(`turn.${e.turnId}`, (payload) => {
-      if ((payload as WireEvent).type === "turn_end") ended();
-      dispatch([
-        {
-          type: "turn_event",
-          sessionId: e.sessionId,
-          turnId: e.turnId,
-          event: payload as WireEvent,
-          at: now(),
-        },
-      ]);
-    });
+    const off = daemon.on(
+      `turn.${e.turnId}`,
+      guarded((payload) => {
+        if ((payload as WireEvent).type === "turn_end") ended();
+        dispatch([
+          {
+            type: "turn_event",
+            sessionId: e.sessionId,
+            turnId: e.turnId,
+            event: payload as WireEvent,
+            at: now(),
+          },
+        ]);
+      }),
+    );
     let keepListening = false;
     try {
       if (e.create) await call("session_create", { sessionId: e.sessionId });
@@ -550,11 +563,14 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
   return {
     async bootstrap() {
       dispatch([{ type: "conn", status: "online" }]);
-      daemon.on("sessions", (payload) => {
-        const p = payload as { type: string; sessionId: string };
-        if (p.type === "turn_start" || p.type === "turn_end")
-          dispatch([{ type: "session_live", sessionId: p.sessionId, live: p.type === "turn_start" }]);
-      });
+      daemon.on(
+        "sessions",
+        guarded((payload) => {
+          const p = payload as { type: string; sessionId: string };
+          if (p.type === "turn_start" || p.type === "turn_end")
+            dispatch([{ type: "session_live", sessionId: p.sessionId, live: p.type === "turn_start" }]);
+        }),
+      );
       daemon.subscribe("sessions");
       const history = call<{ prompts: Array<string | { text: string }> }>("history_list", { limit: 200 })
         .then((r) =>

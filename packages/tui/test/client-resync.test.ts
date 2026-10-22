@@ -63,7 +63,7 @@ function rig(script: Record<string, (params: unknown) => unknown>) {
         create: false,
       },
     ]);
-  return { client, turn, emit, until, lose };
+  return { client, turn, emit, until, lose, flash: () => state.flash };
 }
 
 const entries = (text: string) => [
@@ -84,6 +84,17 @@ const entries = (text: string) => [
 const gone = (): never => {
   throw new Error("connection to daemon closed");
 };
+
+describe("a bad event from the daemon", () => {
+  test("flashes instead of throwing out of the listener, and the next event still lands", async () => {
+    const r = rig({ session_send: gone });
+    await r.lose();
+    expect(() => r.emit(`turn.${TID}`, null)).not.toThrow();
+    expect(r.flash()?.text).toContain("bad event from the daemon");
+    r.emit(`turn.${TID}`, { type: "text_delta", text: "still here\n" });
+    expect(r.turn().text).toBe("still here\n");
+  });
+});
 
 describe("reconnect with a turn that ran meanwhile", () => {
   test("a failed turns_list keeps the turn lost instead of cancelling it", async () => {

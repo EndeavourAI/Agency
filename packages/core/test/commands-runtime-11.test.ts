@@ -126,9 +126,9 @@ describe("@file inlining", () => {
 });
 
 describe("command resolution", () => {
-  test("34 built-ins across three tiers", () => {
-    expect(BUILTIN_COMMANDS).toHaveLength(34);
-    expect(BUILTIN_COMMANDS.filter((c) => c.tier === 1)).toHaveLength(9);
+  test("36 built-ins across three tiers", () => {
+    expect(BUILTIN_COMMANDS).toHaveLength(36);
+    expect(BUILTIN_COMMANDS.filter((c) => c.tier === 1)).toHaveLength(11);
     expect(BUILTIN_COMMANDS.filter((c) => c.tier === 2)).toHaveLength(13);
     expect(BUILTIN_COMMANDS.filter((c) => c.tier === 3)).toHaveLength(12);
     expect(isBuiltinCommand("sessions")).toBe(true);

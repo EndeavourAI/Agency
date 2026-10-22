@@ -20,6 +20,8 @@ export const McpServerConfigSchema = z.object({
   readOnly: z.boolean().optional(),
   /** Stateless servers hold no session state, so sharing never leaks. */
   stateless: z.boolean().optional(),
+  /** `false` keeps the server from starting, and the one of the user's config beats a project server of that name. */
+  enabled: z.boolean().optional(),
 });
 
 export type McpServerConfig = z.infer<typeof McpServerConfigSchema>;
@@ -27,6 +29,13 @@ export type McpServerConfig = z.infer<typeof McpServerConfigSchema>;
 export const McpServersConfigSchema = z.record(z.string(), McpServerConfigSchema);
 
 export type McpServersConfig = z.infer<typeof McpServersConfigSchema>;
+
+/** The servers that are not switched off with `enabled: false`. */
+export function enabledServers<T>(servers: Record<string, T>): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(servers).filter(([, s]) => (s as { enabled?: unknown } | null)?.enabled !== false),
+  );
+}
 
 export function parseMcpServers(raw: unknown): McpServersConfig {
   return McpServersConfigSchema.parse(raw);

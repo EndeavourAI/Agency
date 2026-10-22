@@ -84,6 +84,7 @@ import {
 import { createFileTelemetrySink, SpendLedger, Telemetry } from "@agency/telemetry";
 import {
   clientProjectPaths,
+  enabledServers,
   keychainTokenStore,
   loadProjectLspServers,
   loadProjectMcpServers,
@@ -679,7 +680,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
     return team;
   };
   // The servers of the user's config win on a name: a workspace cannot take the place of one.
-  const mcpServers = {
+  const mcpServers = enabledServers({
     ...(projectTrusted
       ? loadProjectMcpServers(options.workspaceRoot, (message) => logger.warn(message))
       : {}),
@@ -691,7 +692,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
       options.workspaceRoot,
     ),
     ...config.mcpServers,
-  };
+  });
   // The LSP servers that `plugin install` put into a trusted workspace; those of the user's config win on a name.
   const lspServers = {
     ...(projectTrusted

@@ -8,6 +8,20 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`tool_result` facts**: the event carries `meta` with `exitCode` (bash), `durationMs`, `added` and `removed` (edit and
+  write, counted against the old file) and `lines` (read), so a client shows "34 lines", "exit 101" and a real +N −M.
+  `shell_run` returns the `exitCode` too.
+- **`git_commit`**: commits the given paths (or every change of the workspace) behind the permission rules, refuses an
+  unmerged index, and pushes only to the upstream of the current branch, never forced. `git_status` takes a
+  `sessionId` and returns a `suggestedMessage` from the session's title or last prompt, else the changed files.
+- **How a turn ended**: every turn writes a `turn_end` entry (done, stopped, denied or failed, the commit it made as
+  HEAD before and after, and whether its last test, typecheck, lint or build passed after the last edit). `session_list`
+  rows carry the `outcome` of the last turn, `cost_report` takes `since`, and `session_send` and the `turn_end`
+  event carry the entry as `end`.
+- **`providers_list` `keySource`**: where the key of each connected provider comes from (a variable name, `login`,
+  `keychain` or `config`), never the key.
+- **MCP `enabled: false`**: a server with it in the config does not start, and the user's entry beats a project server
+  of that name.
 - **Fixed: an image sent with `session_send` reached the model twice**: the daemon stored it in the prompt and added it
   again at the start of the turn. A contract test now drives a whole TUI session over the HTTP gateway.
 - **`git_status` and `git_diff`**: branch, ahead and behind, the last commit and changed files with line counts; the diff

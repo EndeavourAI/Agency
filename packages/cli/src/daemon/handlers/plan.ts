@@ -101,6 +101,8 @@ export function createTurnApproval(
       ctx.hookRun,
     ).catch(() => {});
     const decision = await promise;
+    if (decision === "reject")
+      ctx.turnDenials.set(params.turnId, `${request.tool} ${command ?? path ?? title}`);
     // Every way an ask settles lands here: a client that did not answer it learns that it is gone.
     const resolved = { type: "approval_resolved" as const, requestId: id, decision };
     broadcast(eventStream, resolved);

@@ -336,7 +336,7 @@ export interface SurfaceClient {
   config_user(params?: Record<string, unknown>): Promise<unknown>;
   /** Persist one dotted config key to the user config file, or, with scope=local, to the workspace file .agency/config.local.jsonc; comments kept, null removes it. */
   config_write(params?: Record<string, unknown>): Promise<unknown>;
-  /** Sum usage entries plus trace spans per session and agent (Phase 9 adds budgets and caps). */
+  /** Sum usage entries plus trace spans per session and agent (Phase 9 adds budgets and caps); since (ISO time or epoch ms) adds the turns and cost after it. */
   cost_report(params?: Record<string, unknown>): Promise<unknown>;
   /** Leave once no turn runs, so the next client starts a daemon with the new config. */
   daemon_restart(params?: Record<string, unknown>): Promise<unknown>;
@@ -398,7 +398,7 @@ export interface SurfaceClient {
   session_export(params?: Record<string, unknown>): Promise<unknown>;
   /** Branch a session at a tip inside the same file. */
   session_fork(params?: Record<string, unknown>): Promise<unknown>;
-  /** List daemon-known sessions with title and tip. */
+  /** List daemon-known sessions with title, tip and the outcome of the last turn (running, done, stopped, failed, or null when unknown). */
   session_list(params?: Record<string, unknown>): Promise<unknown>;
   /** Queue mid-turn steering text drained per tool iteration; queued is false when no running turn reads it. */
   session_message(params?: Record<string, unknown>): Promise<unknown>;

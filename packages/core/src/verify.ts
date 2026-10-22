@@ -156,3 +156,30 @@ export function reviewNote(task: string, missing: string[]): string {
     missing.length === 0 ? "" : ` These files that it names do not exist yet: ${missing.join(", ")}.`;
   return `[harness: before you finish, check the result against the task once more. The task was:\n\n${quoted}\n\nFor each concrete requirement (file names and paths, formats, where files must be, what must be running) that you have not checked since your last change, confirm that it holds now, with all such commands in one reply, and fix what does not.${files} Then give your final answer.]`;
 }
+
+const CHECK_COMMAND =
+  /\b(?:tsc|eslint|biome|ruff|mypy|pyright|clippy|typecheck|lint)\b|\bcargo\s+(?:check|build)\b|\bgo\s+(?:vet|build)\b/;
+
+/**
+ * What the turn's checks say: the last test, typecheck, lint or build command ran after the last successful edit,
+ * and passed or failed; "stale" when an edit came after it, "none" when no such command ran.
+ */
+export function checkOutcome(turn: Message[]): "passed" | "failed" | "stale" | "none" {
+  const calls = new Map<string, { name: string; input: Record<string, unknown> }>();
+  let last: "passed" | "failed" | "none" = "none";
+  let stale = false;
+  for (const message of turn) {
+    for (const block of message.content) {
+      if (block.type === "tool_call") calls.set(block.id, block);
+      if (block.type !== "tool_result") continue;
+      const call = calls.get(block.toolCallId);
+      if (call === undefined) continue;
+      const command = call.name === "bash" ? String(call.input.command ?? "") : "";
+      if (TEST_COMMAND.test(command) || CHECK_COMMAND.test(command)) {
+        last = block.isError ? "failed" : "passed";
+        stale = false;
+      } else if (EDIT_TOOLS.has(call.name) && !block.isError) stale = true;
+    }
+  }
+  return last !== "none" && stale ? "stale" : last;
+}

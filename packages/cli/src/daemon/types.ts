@@ -309,6 +309,8 @@ export interface SessionSendResult extends RunTurnRpcResult {
   turnId: string;
   tipId: string;
   compacted: boolean;
+  /** How the turn ended, as its end entry says: the outcome, the commit it made and its checks. */
+  end?: import("@agency/core").TurnEnd;
 }
 
 /** Mid-turn steering for the root turn: queued, then drained per tool
@@ -755,6 +757,8 @@ export interface DaemonContext {
   statusLine: Config["statusLine"];
   activeControllers: Map<string, AbortController>;
   turnOwners: Map<string, string>;
+  /** What the person refused in a turn, for its end entry: turn id to the tool and its target. */
+  turnDenials: Map<string, string>;
   activeTurnMeta: Map<string, ActiveTurnMeta>;
   /** For each session, the environment block of its first turn. */
   sessionEnvironments: EnvironmentStore;

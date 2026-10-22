@@ -217,6 +217,17 @@ function lastPrompt(entries: readonly Record<string, unknown>[]): string | undef
   return undefined;
 }
 
+/** How the last turn ended; null when it left no end entry (the daemon died, or the session predates them) and no usage entry. */
+function lastOutcome(entries: readonly Record<string, unknown>[]): "done" | "stopped" | "failed" | null {
+  const end = entries.findLastIndex((e) => e.type === "turn_end");
+  const prompt = entries.findLastIndex((e) => e.type === "message" && typeof e.turnId === "string");
+  if (end > prompt) {
+    const outcome = (entries[end] as { outcome?: string }).outcome;
+    return outcome === "done" ? "done" : outcome === "failed" ? "failed" : "stopped";
+  }
+  return end < 0 && entries.at(-1)?.type === "usage" ? "done" : null;
+}
+
 export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>, ctx: DaemonContext): void {
   const {
     config,
@@ -233,6 +244,7 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
   handlers.session_list = async (rawParams) => {
     const { query } = (rawParams ?? {}) as { query?: string };
     const needle = query?.trim().toLowerCase();
+    const running = new Set([...ctx.activeTurnMeta.values()].map((t) => t.sessionId));
     const sessions = todoStore
       .list()
       .map((id) => {
@@ -251,6 +263,7 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
           lastPrompt: lastPrompt(entries) ?? null,
           branch: usage.findLast((u) => u.gitBranch !== undefined)?.gitBranch ?? null,
           costUsd: usage.reduce((sum, u) => sum + u.costUsd, 0),
+          outcome: running.has(id) ? "running" : lastOutcome(entries),
         };
       })
       .filter(
@@ -494,9 +507,24 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
   };
 
   handlers.cost_report = async (rawParams) => {
-    const { sessionId } = (rawParams ?? {}) as { sessionId?: string };
+    const { sessionId, since } = (rawParams ?? {}) as { sessionId?: string; since?: string | number };
     const ids = sessionId !== undefined ? [sessionId] : todoStore.list();
     const sessions = ids.map((id) => costForSession(todoStore.load(id), todoSessionsDir, id));
+    const sinceMs = since === undefined ? Number.NaN : new Date(since).getTime();
+    if (since !== undefined && Number.isNaN(sinceMs))
+      throw new AgencyError(ErrorCode.INVALID_REQUEST, "since must be an ISO time or epoch milliseconds", {
+        source: "surface",
+      });
+    const recent =
+      since === undefined
+        ? undefined
+        : ids
+            .flatMap((id) => todoStore.load(id))
+            .filter((e) => isUsageEntry(e) && Date.parse(e.createdAt) >= sinceMs)
+            .reduce((acc, e) => ({ turns: acc.turns + 1, costUsd: acc.costUsd + Number(e.costUsd ?? 0) }), {
+              turns: 0,
+              costUsd: 0,
+            });
     const run = teamRunUsage(ctx, sessionId);
     const total = sessions.reduce(
       (acc, s) => ({
@@ -530,6 +558,7 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
       sessions,
       agents: agentsListPayload(ctx, sessionId),
       total: { ...total, cacheHitRate: totalCacheHitRate },
+      ...(recent === undefined ? {} : { since: recent }),
       perAgent: run.perAgent,
       perTask: run.perTask,
       runTotalUsd: run.totalUsd,

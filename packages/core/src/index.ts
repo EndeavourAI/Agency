@@ -61,4 +61,5 @@ export * from "./testmap.ts";
 export * from "./tool-search.ts";
 export * from "./trace/index.ts";
 export * from "./truncate.ts";
+export { checkOutcome } from "./verify.ts";
 export * from "./verify-gate.ts";

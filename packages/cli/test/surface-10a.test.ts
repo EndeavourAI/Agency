@@ -204,7 +204,7 @@ describe("Phase 10a surface contract", () => {
     const exported = (await rpcOk(base, token, "session_export", { sessionId: "c1" })) as {
       entries: unknown[];
     };
-    expect(exported.entries).toHaveLength(3);
+    expect(exported.entries).toHaveLength(4);
 
     const renamed = (await rpcOk(base, token, "session_rename", {
       sessionId: "c1",
@@ -214,7 +214,7 @@ describe("Phase 10a surface contract", () => {
     const afterRename = (await rpcOk(base, token, "session_show", { sessionId: "c2" })) as {
       entries: unknown[];
     };
-    expect(afterRename.entries).toHaveLength(3);
+    expect(afterRename.entries).toHaveLength(4);
     const oldGone = await rpcCall(base, token, "session_show", { sessionId: "c1" });
     expect(oldGone.status).toBe(400);
   });
@@ -229,7 +229,7 @@ describe("Phase 10a surface contract", () => {
     await rpcOk(base, token, "session_send", { ...send, sessionId: "u1", userText: "first" });
     await rpcOk(base, token, "session_send", { ...send, sessionId: "u1", userText: "second" });
     const before = (await rpcOk(base, token, "session_show", { sessionId: "u1" })) as { entries: unknown[] };
-    expect(before.entries).toHaveLength(6);
+    expect(before.entries).toHaveLength(8);
 
     const undone = (await rpcOk(base, token, "undo_run", { sessionId: "u1" })) as { undone: boolean };
     expect(undone.undone).toBe(true);
@@ -237,7 +237,7 @@ describe("Phase 10a surface contract", () => {
       entries: unknown[];
       messages: unknown[];
     };
-    expect(after.entries).toHaveLength(3);
+    expect(after.entries).toHaveLength(4);
     expect(after.messages).toHaveLength(2);
 
     const cost = (await rpcOk(base, token, "cost_report", { sessionId: "u1" })) as {

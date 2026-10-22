@@ -768,6 +768,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
   };
   const activeControllers = new Map<string, AbortController>();
   const turnOwners = new Map<string, string>();
+  const turnDenials = new Map<string, string>();
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let staleConfigTimer: ReturnType<typeof setInterval> | undefined;
   let stopped = false;
@@ -834,6 +835,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
     listModels: models.listModels,
     activeControllers,
     turnOwners,
+    turnDenials,
     activeTurnMeta,
     sessionEnvironments: sessionEnvironmentStore(todoSessionsDir),
     git,

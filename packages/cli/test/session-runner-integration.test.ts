@@ -77,8 +77,8 @@ describe("runSessionTurn", () => {
     });
 
     const entries = new SessionStore(sessionsDir).load("s1");
-    // user message + assistant reply + usage, all appended by the daemon
-    expect(entries.map((e) => e.type)).toEqual(["message", "message", "usage"]);
+    // user message + assistant reply + turn end + usage, all appended by the daemon
+    expect(entries.map((e) => e.type)).toEqual(["message", "message", "turn_end", "usage"]);
 
     await runSessionTurn(client, {
       sessionId: "s1",
@@ -88,7 +88,7 @@ describe("runSessionTurn", () => {
       userText: "again",
     });
 
-    expect(new SessionStore(sessionsDir).load("s1")).toHaveLength(6);
+    expect(new SessionStore(sessionsDir).load("s1")).toHaveLength(8);
   });
 
   test("a session_send for an unknown id creates the session daemon-side", async () => {

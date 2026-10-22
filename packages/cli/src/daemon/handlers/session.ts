@@ -6,6 +6,7 @@ import {
   CALL_TOOL,
   CODE_TOOL,
   type CompactionResult,
+  checkOutcome,
   compact,
   composeSystemPrompt,
   formatSystemReminders,
@@ -29,6 +30,7 @@ import {
   summarizeTranscript,
   TOOL_SEARCH,
   type ToolSpec,
+  type TurnEnd,
   withOverhead,
 } from "@agency/core";
 import { type Capabilities, type PermissionsGate, sandboxNetwork } from "@agency/guard";
@@ -330,6 +332,7 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
         stopReason: result.stopReason,
         cancelled: result.cancelled === true,
         ...(result.error ? { error: result.error } : {}),
+        ...(result.end ? { end: result.end } : {}),
       });
       return result;
     } catch (error) {
@@ -507,7 +510,9 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
       nonInteractive: p.nonInteractive,
     };
     // Each message is stored as the turn produces it: a failed turn or a dead daemon keeps the finished steps.
+    const produced: Message[] = [];
     const onMessage = async (message: Message, origin?: MessageOrigin): Promise<void> => {
+      produced.push(message);
       tip = (
         await store.append(p.sessionId, {
           type: "message",
@@ -524,12 +529,34 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
     };
     const hooks = { onContextOverflow, onMessage, onSent };
     let result: Awaited<ReturnType<typeof executeTurn>>;
+    const headBefore = ctx.git(ctx.options.workspaceRoot, ["rev-parse", "--short", "HEAD"])?.trim();
+    // One end entry for every turn, also a failed one: a reload tells a stop from a finish, and a dead daemon leaves none.
+    const endTurn = async (outcome: TurnEnd["outcome"], extra: Partial<TurnEnd>): Promise<TurnEnd> => {
+      const headAfter = ctx.git(ctx.options.workspaceRoot, ["rev-parse", "--short", "HEAD"])?.trim();
+      const deniedBy = ctx.turnDenials.get(turnId);
+      ctx.turnDenials.delete(turnId);
+      const entry: TurnEnd = {
+        type: "turn_end",
+        forTurn: turnId,
+        outcome: deniedBy !== undefined ? "denied" : outcome,
+        ...(deniedBy !== undefined ? { deniedBy } : {}),
+        ...(headBefore && headAfter ? { head: { before: headBefore, after: headAfter } } : {}),
+        checks: checkOutcome(produced),
+        ...extra,
+      };
+      tip = (await store.append(p.sessionId, { parentId: tip, ...entry })).id;
+      return entry;
+    };
     try {
       result = await executeTurn(ctx, runParams, { clientId: context.clientId }, hooks);
     } catch (error) {
       // A prompt that a hook refused is not part of the session: the model must not see it in the next turn.
       if (error instanceof AgencyError && error.source === PROMPT_HOOK_SOURCE) {
         await store.rollback(p.sessionId, checkpoints.pop() ?? null);
+      } else {
+        const message = error instanceof Error ? error.message : String(error);
+        const code = error instanceof AgencyError ? error.code : "error";
+        await endTurn("failed", { stopReason: "error", error: { code, message } });
       }
       throw error;
     }
@@ -542,6 +569,10 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
     if (compactionUsage.inputTokens > 0)
       result = { ...result, usage: addUsage(result.usage, compactionUsage) };
     const branch = ctx.git(ctx.options.workspaceRoot, ["branch", "--show-current"])?.trim();
+    const end = await endTurn(result.cancelled ? "stopped" : result.error ? "failed" : "done", {
+      stopReason: result.stopReason,
+      ...(result.error ? { error: result.error } : {}),
+    });
     const parentId = await appendUsageEntry(store, p.sessionId, tip, {
       usage: result.usage,
       model: served.model,
@@ -552,6 +583,7 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
     });
     const response: SessionSendResult = {
       ...result,
+      end,
       sessionId: p.sessionId,
       turnId,
       tipId: parentId,
@@ -672,7 +704,12 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
       message: { role: "user", content: [{ type: "text", text }] },
       origin: "shell",
     });
-    return { output: content, isError: result.isError === true, entryId: entry.id };
+    return {
+      output: content,
+      isError: result.isError === true,
+      entryId: entry.id,
+      ...(result.meta?.exitCode === undefined ? {} : { exitCode: result.meta.exitCode }),
+    };
   };
 
   handlers.session_message = async (rawParams) => {

@@ -11,7 +11,8 @@ export const METHOD_DOCS: Record<string, string> = {
     "Rewind a session to before a prompt (default: the last): files its turns wrote go back; an edit since stops it unless force.",
   session_send: "Daemon-owned turn: send text, history and usage stay server-side.",
   session_show: "Read a session through the single SessionProjector view.",
-  session_list: "List daemon-known sessions with title and tip.",
+  session_list:
+    "List daemon-known sessions with title, tip and the outcome of the last turn (running, done, stopped, failed, or null when unknown).",
   session_create: "Create an empty session, id generated when omitted.",
   session_export: "Return a session's raw entries verbatim, unknown types included.",
   session_title_set: "Set the title of a session (1 to 200 characters); session_list shows it.",
@@ -58,7 +59,8 @@ export const METHOD_DOCS: Record<string, string> = {
   permissions_list: "Show the permission maps plus effective offered tools.",
   todo_read: "Read the latest persisted todo_state for a session.",
   todo_write: "Persist a todo_state entry for a session.",
-  cost_report: "Sum usage entries plus trace spans per session and agent (Phase 9 adds budgets and caps).",
+  cost_report:
+    "Sum usage entries plus trace spans per session and agent (Phase 9 adds budgets and caps); since (ISO time or epoch ms) adds the turns and cost after it.",
   undo_run:
     "Roll a session back to its pre-turn checkpoint; with mode files-only|task-only|both restores a shadow commit's files and/or the session tip.",
   undo: "Undo the last snapshot-backed file change.",

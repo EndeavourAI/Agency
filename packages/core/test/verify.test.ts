@@ -11,7 +11,7 @@ import type { Message } from "@agency/schema";
 import { EventBus, HookBlock } from "../src/events.ts";
 import { runTurn } from "../src/loop.ts";
 import { buildTestMap, parseLcov } from "../src/testmap.ts";
-import { missingOutputs, untestedEdits, untestedNote } from "../src/verify.ts";
+import { checkOutcome, missingOutputs, untestedEdits, untestedNote } from "../src/verify.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -347,4 +347,25 @@ test("the notes of one end go back together: a second end costs no extra round t
   const text = note?.type === "text" ? note.text : "";
   for (const part of ["test/render.test.ts", "The task was", "src/out.txt", "a stop hook says no"])
     expect(text).toContain(part);
+});
+
+test("checkOutcome reads the last check against the last edit", () => {
+  const call = (id: string, name: string, input: Record<string, unknown>): Message => ({
+    role: "assistant",
+    content: [{ type: "tool_call", id, name, input }],
+  });
+  const result = (id: string, isError = false): Message => ({
+    role: "user",
+    content: [{ type: "tool_result", toolCallId: id, content: "x", isError }],
+  });
+  const edit = [call("e", "edit", { path: "a.ts" }), result("e")];
+  const test = (id: string, isError = false) => [
+    call(id, "bash", { command: "bun test" }),
+    result(id, isError),
+  ];
+  expect(checkOutcome(edit)).toBe("none");
+  expect(checkOutcome([...edit, ...test("t")])).toBe("passed");
+  expect(checkOutcome([...edit, ...test("t", true)])).toBe("failed");
+  expect(checkOutcome([...test("t"), ...edit])).toBe("stale");
+  expect(checkOutcome([...test("t", true), ...test("u")])).toBe("passed");
 });

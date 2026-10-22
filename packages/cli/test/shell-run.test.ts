@@ -66,7 +66,10 @@ async function setup(
     handler: async (input, ctx) => {
       ran.push(String(input.command));
       await extra.onRun?.(ctx.signal);
-      return { content: bashOutput?.(String(input.command)) ?? `output of ${String(input.command)}` };
+      return {
+        content: bashOutput?.(String(input.command)) ?? `output of ${String(input.command)}`,
+        meta: { exitCode: 3 },
+      };
     },
   };
   const daemon = await createAgentDaemon({
@@ -90,8 +93,10 @@ test("shell_run runs the command and its output reaches the next request", async
   await client.call("session_create", { sessionId: "s1" });
   const result = (await client.call("shell_run", { sessionId: "s1", command: "echo hi" })) as {
     output: string;
+    exitCode: number;
   };
   expect(result.output).toBe("output of echo hi");
+  expect(result.exitCode).toBe(3);
   expect(ran).toEqual(["echo hi"]);
   await client.call("session_send", {
     sessionId: "s1",

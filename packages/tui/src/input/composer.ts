@@ -15,17 +15,23 @@ export const emptyComposer: Composer = { text: "", cursor: 0, shell: false };
 
 const seg = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
-/** Offsets of every grapheme start, plus the end. */
-function bounds(text: string): number[] {
+/** Reach of the grapheme search around the caret: a 1 MB paste must not be segmented to move or delete one character. */
+const NEAR = 64;
+
+/** Grapheme starts within NEAR of `at`. A window cut mid-text may split its first cluster, so its start is not trusted. */
+function boundsNear(text: string, at: number): number[] {
+  const from = Math.max(0, at - NEAR);
+  const to = Math.min(text.length, at + NEAR);
   const out: number[] = [];
-  for (const s of seg.segment(text)) out.push(s.index);
-  out.push(text.length);
+  for (const s of seg.segment(text.slice(from, to))) out.push(from + s.index);
+  if (from > 0) out.shift();
+  if (to === text.length) out.push(to);
   return out;
 }
 
 function prevBound(text: string, at: number): number {
-  let prev = 0;
-  for (const b of bounds(text)) {
+  let prev = Math.max(0, at - NEAR);
+  for (const b of boundsNear(text, at)) {
     if (b >= at) return prev;
     prev = b;
   }
@@ -33,8 +39,8 @@ function prevBound(text: string, at: number): number {
 }
 
 function nextBound(text: string, at: number): number {
-  for (const b of bounds(text)) if (b > at) return b;
-  return text.length;
+  for (const b of boundsNear(text, at)) if (b > at) return b;
+  return Math.min(text.length, at + NEAR);
 }
 
 export function setText(c: Composer, text: string, cursor = text.length): Composer {

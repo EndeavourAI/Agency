@@ -494,6 +494,8 @@ export function dispatchKey(state: AppState, key: KeyEvent, ctx: KeyContext): Ou
   return none;
 }
 
+const MAX_PASTE = 1_000_000;
+
 /** A bracketed paste: text lands in the composer, or in the query of the open dialog. */
 export function dispatchPaste(state: AppState, text: string): Out {
   const clean = text.replace(/\r\n?/g, "\n");
@@ -504,5 +506,12 @@ export function dispatchPaste(state: AppState, text: string): Out {
   if (contexts[0] !== "composer" && contexts[0] !== "completion") return none;
   // A terminal with an image on the clipboard pastes nothing: that is the person asking for the image.
   if (text === "") return out([], [{ type: "paste_image" }]);
-  return out([{ type: "edit", edit: { op: "insert", text: clean, pasted: true } }]);
+  if (clean.length <= MAX_PASTE)
+    return out([{ type: "edit", edit: { op: "insert", text: clean, pasted: true } }]);
+  // Never cut between the halves of a surrogate pair.
+  const cut = /[\ud800-\udbff]/.test(clean[MAX_PASTE - 1] as string) ? MAX_PASTE - 1 : MAX_PASTE;
+  return out([
+    { type: "edit", edit: { op: "insert", text: clean.slice(0, cut), pasted: true } },
+    { type: "flash", text: "paste cut at 1 MB", tone: "info" },
+  ]);
 }

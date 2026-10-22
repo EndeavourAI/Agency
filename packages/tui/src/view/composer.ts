@@ -8,10 +8,16 @@ import { boxRows } from "./ledger.ts";
 import { clip, type Row, type Seg, spread } from "./rows.ts";
 
 export const MAX_COMPOSER_LINES = 6;
+const REACH = 4;
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
-/** The text of one line cut to a window `avail` cells wide that keeps the caret in view. */
-function window(line: string, col: number, avail: number): { text: string; col: number } {
+/** The text of one line cut to a window `avail` cells wide that keeps the caret in view. `off` is the caret's offset in `line`. */
+function window(line: string, off: number, col: number, avail: number): { text: string; col: number } {
+  // A pasted line can be megabytes: only the text near the caret can be on screen, so only that is measured.
+  if (line.length > REACH * avail) {
+    const lo = Math.max(0, off - 2 * avail);
+    return window(line.slice(lo, off + 2 * avail), off - lo, stringWidth(line.slice(lo, off)), avail);
+  }
   if (stringWidth(line) < avail) return { text: line, col };
   let drop = 0;
   const parts = [...graphemes.segment(line)].map((g) => g.segment);
@@ -76,8 +82,9 @@ export function composerBox(
           : p;
       return [head, { t: " " }, ...caretCell];
     }
-    if (row !== at.row || !opts.focused) return [head, { t: " " }, ...clip([{ t: line, fg: c.text }], avail)];
-    const win = window(line, at.col, avail);
+    if (row !== at.row || !opts.focused)
+      return [head, { t: " " }, ...clip([{ t: line.slice(0, REACH * avail), fg: c.text }], avail)];
+    const win = window(line, comp.cursor - (comp.text.lastIndexOf("\n", comp.cursor - 1) + 1), at.col, avail);
     return [head, { t: " " }, ...withCaret(win.text, win.col, c)];
   });
   return boxRows(w, rows, opts.focused ? on : c.dim, { joined: opts.joined });

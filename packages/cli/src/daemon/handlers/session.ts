@@ -66,7 +66,7 @@ import {
   type SessionSendResult,
   STRUCTURED_OUTPUT_TOOL,
 } from "../types.ts";
-import { gitCommit } from "./git.ts";
+import { type CommitPlan, commandLines, planCommit, runCommit } from "./git.ts";
 import { setSessionGoal } from "./goal.ts";
 import { createTurnApproval } from "./plan.ts";
 import { executeTurn, PROMPT_HOOK_SOURCE } from "./turn.ts";
@@ -639,18 +639,24 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
     // The key that sent this is the answer to an ask: a deny rule or an untrusted workspace still refuses.
     const ask = async (): Promise<"once"> => "once";
     const gate = gateForSession(ctx, sessionId);
-    for (const command of push ? ["git commit", "git push"] : ["git commit"]) {
+    let plan: CommitPlan;
+    try {
+      plan = await planCommit(ctx.options.workspaceRoot, {
+        message,
+        ...(Array.isArray(paths) ? { paths } : {}),
+        ...(push === true ? { push } : {}),
+      });
+    } catch (error) {
+      throw new AgencyError(ErrorCode.TOOL_ERROR, (error as Error).message, { source: "git" });
+    }
+    for (const command of commandLines(plan)) {
       if ((await gate.check({ tool: "bash", command, riskTier: "dangerous" }, ask)) === "deny")
         throw new AgencyError(ErrorCode.PERMISSION_DENIED, `the permission rules refuse: ${command}`, {
           source: "session",
         });
     }
     try {
-      return await gitCommit(ctx.options.workspaceRoot, {
-        message,
-        ...(Array.isArray(paths) ? { paths } : {}),
-        ...(push === true ? { push } : {}),
-      });
+      return await runCommit(ctx.options.workspaceRoot, plan);
     } catch (error) {
       throw new AgencyError(ErrorCode.TOOL_ERROR, (error as Error).message, { source: "git" });
     }

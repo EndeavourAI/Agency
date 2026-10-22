@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -8,6 +8,10 @@ const execFileAsync = promisify(execFile);
 /** Untracked files above this size, or with a NUL byte, come back with no text. */
 const MAX_UNTRACKED_BYTES = 512 * 1024;
 const GIT_TIMEOUT_MS = 10_000;
+/** A commit or push may run slow hooks or a big network transfer. */
+const GIT_WRITE_TIMEOUT_MS = 10 * 60_000;
+/** Pathspec magic (`:(top)`, `:/`) would reach outside the workspace; prompts would hang a daemon with no tty. */
+const GIT_ENV = { ...process.env, GIT_LITERAL_PATHSPECS: "1", GIT_TERMINAL_PROMPT: "0" };
 
 /** Raw output of one git call, or undefined when git fails: the core runner trims, which breaks `status -z`. */
 async function git(root: string, args: string[]): Promise<string | undefined> {
@@ -15,6 +19,7 @@ async function git(root: string, args: string[]): Promise<string | undefined> {
     const { stdout } = await execFileAsync("git", args, {
       cwd: root,
       timeout: GIT_TIMEOUT_MS,
+      env: GIT_ENV,
       windowsHide: true,
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
@@ -29,6 +34,8 @@ const lines = (text: string | undefined): string[] => (text ?? "").split(/\n/).f
 
 export interface GitFile {
   path: string;
+  /** The path a staged rename or copy came from. */
+  oldPath?: string;
   status: string;
   added: number | null;
   deleted: number | null;
@@ -73,14 +80,15 @@ export async function gitStatus(root: string): Promise<Record<string, unknown>> 
     const status = entry.slice(0, 2).trim();
     const path = entry.slice(3).slice(prefix.length);
     // A rename or a copy is followed by the path it came from.
-    if (status.startsWith("R") || status.startsWith("C")) i++;
+    let oldPath: string | undefined;
+    if (status.startsWith("R") || status.startsWith("C")) oldPath = (entries[++i] ?? "").slice(prefix.length);
     let [added, deleted] = counts.get(path) ?? [null, null];
     if (status === "??") {
       const text = readText(root, path);
       added = text === undefined ? null : text.split(/\n/).length - (text.endsWith("\n") ? 1 : 0);
       deleted = 0;
     }
-    files.push({ path, status, added, deleted });
+    files.push({ path, ...(oldPath ? { oldPath } : {}), status, added, deleted });
   }
   const gitDirs = lines(dirsOut);
   return {
@@ -144,15 +152,117 @@ async function gitOrThrow(root: string, args: string[]): Promise<string> {
   try {
     const { stdout } = await execFileAsync("git", args, {
       cwd: root,
-      timeout: 60_000,
+      timeout: GIT_WRITE_TIMEOUT_MS,
+      env: GIT_ENV,
       windowsHide: true,
       encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
     });
     return stdout;
   } catch (error) {
     const e = error as { stderr?: string; stdout?: string; message: string };
     throw new Error((e.stderr || e.stdout || e.message).trim());
   }
+}
+
+/** The exact git calls of one commit, so the permission rules judge what runs and not a stand-in. */
+export interface CommitPlan {
+  branch: string;
+  upstream?: string;
+  add: string[];
+  commit: string[];
+  push?: string[];
+}
+
+const quote = (arg: string): string => (/^[\w@%+=:,./-]+$/.test(arg) ? arg : JSON.stringify(arg));
+/** Also lists the short `git push origin main` form, which is what a deny rule is usually written against. */
+export const commandLines = (plan: CommitPlan): string[] => {
+  const [, remote = "", target = ""] = plan.push ?? [];
+  const short = plan.push ? [["push", remote, target.replace(/^HEAD:(refs\/heads\/)?/, "")]] : [];
+  const all = [plan.add, plan.commit, ...(plan.push ? [plan.push] : []), ...short];
+  return all.map((args) => ["git", ...args].map(quote).join(" "));
+};
+
+/** A staged rename commits as two paths: leaving the old one out keeps the deletion staged. */
+async function withRenameSources(root: string, paths: string[]): Promise<string[]> {
+  const tokens = (
+    (await git(root, ["diff", "--cached", "--relative", "--name-status", "-z", "-M"])) ?? ""
+  ).split("\0");
+  const out = [...paths];
+  for (let i = 0; i < tokens.length; i++) {
+    if (!tokens[i]?.startsWith("R")) continue;
+    const [from, to] = [tokens[i + 1], tokens[i + 2]];
+    if (from && to && paths.includes(to) && !out.includes(from)) out.push(from);
+    i += 2;
+  }
+  return out;
+}
+
+/** A hook runs as the user, so an unreviewed edit of one (a pulled `.husky/pre-commit`) must not run from here. */
+async function dirtyHooksDir(root: string): Promise<string | undefined> {
+  const top = ((await git(root, ["rev-parse", "--show-toplevel"])) ?? "").trim();
+  const hooks = ((await git(root, ["rev-parse", "--git-path", "hooks"])) ?? "").trim();
+  if (!top || !hooks) return undefined;
+  const rel = relative(top, resolve(root, hooks)).replaceAll("\\", "/");
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return undefined;
+  const changed = await git(top, ["status", "--porcelain", "--untracked-files=all", "--", rel]);
+  return (changed ?? "").trim() === "" ? undefined : rel;
+}
+
+/** Validates a commit and returns the git calls it will run; throws before anything changed. */
+export async function planCommit(
+  root: string,
+  opts: { message: string; paths?: string[]; push?: boolean },
+): Promise<CommitPlan> {
+  const message = opts.message.trim();
+  if (message === "") throw new Error("commit message is empty");
+  if ((await git(root, ["rev-parse", "--is-inside-work-tree"])) === undefined)
+    throw new Error("not a git repository");
+  if (lines(await git(root, ["diff", "--name-only", "--diff-filter=U"])).length > 0)
+    throw new Error("the index has unmerged paths: resolve the conflict first");
+  const given = opts.paths ?? [];
+  for (const path of given)
+    if (isAbsolute(path) || path.startsWith(":") || path.split(/[\\/]/).includes("..") || path === "")
+      throw new Error(`path is outside the workspace: ${path}`);
+  const hooks = await dirtyHooksDir(root);
+  if (hooks)
+    throw new Error(
+      `${hooks} has uncommitted changes and git would run those hooks: review the hook, then commit from your terminal`,
+    );
+  const branch = ((await git(root, ["branch", "--show-current"])) ?? "").trim();
+  const paths = given.length > 0 ? await withRenameSources(root, given) : undefined;
+  const plan: CommitPlan = {
+    branch,
+    // The rename source is already staged and gone from the tree, so `add` would not match it.
+    add: paths ? ["add", "--", ...given] : ["add", "-A", "--", "."],
+    // `-- .` commits the workspace only: a bare commit would take files that were staged outside it.
+    commit: ["commit", "-m", message, "--", ...(paths ?? ["."])],
+  };
+  if (opts.push) {
+    if (branch === "") throw new Error("cannot push a detached HEAD");
+    const upstream = ((await git(root, ["rev-parse", "--abbrev-ref", "@{upstream}"])) ?? "").trim();
+    const remote = ((await git(root, ["config", "--get", `branch.${branch}.remote`])) ?? "").trim();
+    const merge = ((await git(root, ["config", "--get", `branch.${branch}.merge`])) ?? "").trim();
+    if (!upstream || !remote || !merge)
+      throw new Error(`branch ${branch} has no upstream: nothing was committed`);
+    // Bare `git push` obeys pushDefault, pushRemote and push.default, so it can go elsewhere than the upstream.
+    plan.upstream = upstream;
+    plan.push = ["push", remote, `HEAD:${merge}`];
+  }
+  return plan;
+}
+
+export async function runCommit(root: string, plan: CommitPlan): Promise<CommitResult> {
+  await gitOrThrow(root, plan.add);
+  await gitOrThrow(root, plan.commit);
+  const sha = ((await git(root, ["rev-parse", "--short", "HEAD"])) ?? "").trim();
+  if (plan.push) await gitOrThrow(root, plan.push);
+  return {
+    sha,
+    branch: plan.branch,
+    pushed: plan.push !== undefined,
+    ...(plan.upstream ? { upstream: plan.upstream } : {}),
+  };
 }
 
 /**
@@ -163,31 +273,5 @@ export async function gitCommit(
   root: string,
   opts: { message: string; paths?: string[]; push?: boolean },
 ): Promise<CommitResult> {
-  const message = opts.message.trim();
-  if (message === "") throw new Error("commit message is empty");
-  if ((await git(root, ["rev-parse", "--is-inside-work-tree"])) === undefined)
-    throw new Error("not a git repository");
-  if (lines(await git(root, ["diff", "--name-only", "--diff-filter=U"])).length > 0)
-    throw new Error("the index has unmerged paths: resolve the conflict first");
-  const paths = opts.paths ?? [];
-  for (const path of paths)
-    if (isAbsolute(path) || path.split(/[\\/]/).includes("..") || path === "")
-      throw new Error(`path is outside the workspace: ${path}`);
-  const branch = ((await git(root, ["branch", "--show-current"])) ?? "").trim();
-  let upstream: string | undefined;
-  if (opts.push) {
-    if (branch === "") throw new Error("cannot push a detached HEAD");
-    upstream = (await git(root, ["rev-parse", "--abbrev-ref", "@{upstream}"]))?.trim();
-    if (!upstream) throw new Error(`branch ${branch} has no upstream: nothing was committed`);
-  }
-  if (paths.length > 0) {
-    await gitOrThrow(root, ["add", "--", ...paths]);
-    await gitOrThrow(root, ["commit", "-m", message, "--", ...paths]);
-  } else {
-    await gitOrThrow(root, ["add", "-A", "--", "."]);
-    await gitOrThrow(root, ["commit", "-m", message]);
-  }
-  const sha = ((await git(root, ["rev-parse", "--short", "HEAD"])) ?? "").trim();
-  if (opts.push) await gitOrThrow(root, ["push"]);
-  return { sha, branch, pushed: opts.push === true, ...(upstream ? { upstream } : {}) };
+  return runCommit(root, await planCommit(root, opts));
 }

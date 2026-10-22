@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gitCommit, gitDiff, gitStatus, suggestMessage } from "../src/daemon/handlers/git.ts";
@@ -175,6 +175,84 @@ test("git_commit refuses an empty message, an outside path, a conflict and a pus
     git(root, "merge", "other");
   } catch {}
   await expect(gitCommit(root, { message: "x" })).rejects.toThrow("unmerged");
+}, 30_000);
+
+const out = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd }).toString().trim();
+
+test("git_commit rejects pathspec magic and leaves files staged outside the workspace out", async () => {
+  const root = repo();
+  mkdirSync(join(root, "ws"));
+  mkdirSync(join(root, "other"));
+  writeFileSync(join(root, "ws", "a.txt"), "1");
+  writeFileSync(join(root, "other", "secret.txt"), "1");
+  git(root, "add", ".");
+  git(root, "commit", "-q", "-m", "dirs");
+  const ws = join(root, "ws");
+  writeFileSync(join(root, "other", "secret.txt"), "2");
+  await expect(gitCommit(ws, { message: "m", paths: [":(top)other/secret.txt"] })).rejects.toThrow("outside");
+  await expect(gitCommit(ws, { message: "m", paths: [":/"] })).rejects.toThrow("outside");
+  git(root, "add", "other/secret.txt");
+  writeFileSync(join(ws, "a.txt"), "2");
+  await gitCommit(ws, { message: "ws only" });
+  expect(out(root, "show", "--name-only", "--format=", "HEAD")).toBe("ws/a.txt");
+  expect(out(root, "status", "--porcelain")).toBe("M  other/secret.txt");
+}, 30_000);
+
+test("git_commit pushes to the reported upstream whatever pushDefault or push.default say", async () => {
+  const root = repo();
+  const fork = tmp("fork");
+  git(fork, "init", "-q", "--bare", "-b", "main");
+  git(root, "remote", "add", "fork", fork);
+  git(root, "config", "remote.pushDefault", "fork");
+  writeFileSync(join(root, "a.txt"), "x");
+  const done = await gitCommit(root, { message: "x", push: true });
+  expect(done.upstream).toBe("origin/main");
+  expect(out(root, "rev-parse", "origin/main")).toBe(out(root, "rev-parse", "HEAD"));
+  expect(() => out(fork, "rev-parse", "main")).toThrow();
+
+  git(root, "config", "--unset", "remote.pushDefault");
+  git(root, "checkout", "-q", "-b", "wip");
+  git(root, "push", "-q", "-u", "origin", "wip");
+  git(root, "commit", "-q", "--allow-empty", "-m", "wip-unpushed");
+  git(root, "checkout", "-q", "main");
+  git(root, "config", "push.default", "matching");
+  writeFileSync(join(root, "a.txt"), "y");
+  await gitCommit(root, { message: "y", push: true });
+  expect(out(root, "log", "-1", "--format=%s", "origin/wip")).not.toBe("wip-unpushed");
+}, 30_000);
+
+test("a staged rename reports its old path and a commit takes both sides", async () => {
+  const root = repo();
+  git(root, "mv", "a.txt", "c.txt");
+  const { files } = (await gitStatus(root)) as { files: Array<{ path: string; oldPath?: string }> };
+  expect(files.find((f) => f.path === "c.txt")?.oldPath).toBe("a.txt");
+  await gitCommit(root, { message: "rename", paths: ["c.txt"] });
+  expect(out(root, "status", "--porcelain")).toBe("");
+  expect(out(root, "ls-tree", "--name-only", "HEAD")).not.toContain("a.txt");
+}, 30_000);
+
+test("git_commit refuses while a file under the hooks directory has uncommitted changes", async () => {
+  const root = repo();
+  git(root, "config", "core.hooksPath", ".husky");
+  mkdirSync(join(root, ".husky"));
+  writeFileSync(join(root, ".husky", "pre-commit"), "#!/bin/sh\nexit 0\n");
+  git(root, "add", ".husky");
+  git(root, "commit", "-q", "-m", "hooks");
+  writeFileSync(join(root, ".husky", "pre-commit"), "#!/bin/sh\ntouch pwned\n");
+  writeFileSync(join(root, "a.txt"), "x");
+  const before = head(root);
+  await expect(gitCommit(root, { message: "m" })).rejects.toThrow("hook");
+  expect(head(root)).toBe(before);
+}, 30_000);
+
+test("git_commit survives a hook that prints megabytes", async () => {
+  const root = repo();
+  const hook = join(root, ".git", "hooks", "pre-commit");
+  writeFileSync(hook, "#!/bin/sh\nyes xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | head -n 60000\nexit 0\n");
+  chmodSync(hook, 0o755);
+  writeFileSync(join(root, "a.txt"), "x");
+  await gitCommit(root, { message: "loud hook" });
+  expect(subjects(root)[0]).toBe("loud hook");
 }, 30_000);
 
 test("the suggested message is the session's own line, else the changed files", () => {

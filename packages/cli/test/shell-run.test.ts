@@ -34,7 +34,7 @@ function tmp(name: string): string {
 }
 
 async function setup(
-  bashRule: "allow" | "deny" | "ask",
+  bashRule: "allow" | "deny" | "ask" | Record<string, "allow" | "deny" | "ask">,
   bashOutput?: (command: string) => string,
   extra: { holdFirstTurn?: boolean; onRun?: (signal: AbortSignal) => Promise<void> } = {},
 ) {
@@ -265,3 +265,33 @@ test("git_commit under an ask rule commits at once: the key press that sent it i
   const done = (await client.call("git_commit", { sessionId: "s1", message: "first" })) as { sha: string };
   expect(done.sha).toMatch(/^[0-9a-f]+$/);
 }, 30_000);
+
+test("git_commit checks the exact commands it runs: a deny on git push * stops a push", async () => {
+  const { client, workspaceRoot: ws } = await setup({ "*": "allow", "git push *": "deny" });
+  const origin = tmp("origin");
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, stdio: "ignore" });
+  git(origin, "init", "-q", "--bare", "-b", "main");
+  git(ws, "init", "-q", "-b", "main");
+  writeFileSync(join(ws, "a.txt"), "one");
+  git(ws, "add", "a.txt");
+  git(ws, "commit", "-q", "-m", "first");
+  git(ws, "remote", "add", "origin", origin);
+  git(ws, "push", "-q", "-u", "origin", "main");
+  writeFileSync(join(ws, "a.txt"), "two");
+  await client.call("session_create", { sessionId: "s1" });
+  await expect(client.call("git_commit", { sessionId: "s1", message: "m", push: true })).rejects.toThrow(
+    "refuse",
+  );
+  expect(execFileSync("git", ["log", "-1", "--format=%s"], { cwd: ws }).toString().trim()).toBe("first");
+}, 30_000);
+
+test("git_commit is refused by a deny rule on git commit with a message pattern", async () => {
+  const { client, workspaceRoot: ws } = await setup({ "*": "allow", "git commit -m *wip*": "deny" });
+  execFileSync("git", ["init", "-q"], { cwd: ws });
+  writeFileSync(join(ws, "a.txt"), "x");
+  await client.call("session_create", { sessionId: "s1" });
+  await expect(client.call("git_commit", { sessionId: "s1", message: "wip stuff" })).rejects.toThrow(
+    "refuse",
+  );
+});

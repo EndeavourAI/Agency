@@ -158,7 +158,13 @@ export interface WireGitStatus {
   ahead?: number;
   behind?: number;
   lastCommit?: { hash: string; subject: string; when: string };
-  files?: Array<{ path: string; status: string; added: number | null; deleted: number | null }>;
+  files?: Array<{
+    path: string;
+    oldPath?: string;
+    status: string;
+    added: number | null;
+    deleted: number | null;
+  }>;
   /** A commit message to start from: the session's title or last prompt, else the changed files. */
   suggestedMessage?: string;
 }

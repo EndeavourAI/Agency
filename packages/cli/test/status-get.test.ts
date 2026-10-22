@@ -88,6 +88,7 @@ test("status_get has every field of the status", async () => {
     [
       "branch",
       "cacheHitRate",
+      "compactAt",
       "contextLimit",
       "contextTokens",
       "costUsd",

@@ -19,6 +19,7 @@ import type { HttpClient } from "@agency/net";
 import { GATEWAY_BASE_URLS, resolveApiKey } from "@agency/providers";
 import {
   createSessionScope,
+  enabledServers,
   type McpTokenStore,
   type SessionScope,
   type TeamMcpPool,
@@ -120,7 +121,8 @@ export function createSessionScopes(deps: SessionScopeFactoryDeps): {
       mcp === undefined
         ? sessionId
         : `${sessionId}.mcp-${createHash("sha256").update(JSON.stringify(mcp)).digest("hex").slice(0, 16)}`;
-    const servers = mcp === undefined ? mcpServers : { ...(mcp.strict ? {} : mcpServers), ...mcp.servers };
+    const servers =
+      mcp === undefined ? mcpServers : enabledServers({ ...(mcp.strict ? {} : mcpServers), ...mcp.servers });
     const existing = sessionScopes.get(key);
     if (existing) return existing;
     const pending = scopePromises.get(key);

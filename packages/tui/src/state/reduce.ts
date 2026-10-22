@@ -125,6 +125,19 @@ function withTurn(s: SessionState, turnId: string, fn: (t: Turn) => Turn): Sessi
   return hit ? { ...s, blocks } : s;
 }
 
+/** A running turn takes the text and steps the file holds beyond it, keeping its own status, asks and the steps it already has. */
+function catchUp(t: Turn, f: Turn): Turn {
+  if (f.text.length <= t.text.length && f.steps.length <= t.steps.length) return t;
+  return {
+    ...t,
+    answer: f.text.length > t.text.length ? f.answer : t.answer,
+    text: f.text.length > t.text.length ? f.text : t.text,
+    thinking: f.thinking.length > t.thinking.length ? f.thinking : t.thinking,
+    steps:
+      f.steps.length > t.steps.length ? f.steps.map((s) => t.steps.find((x) => x.id === s.id) ?? s) : t.steps,
+  };
+}
+
 export function emptyTurn(id: string, prompt: string, at: number): Turn {
   return {
     kind: "turn",
@@ -280,7 +293,13 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
       const h = hydrate(e.entries, state.liveSessions.includes(e.sessionId));
       return withSession(state, e.sessionId, (s) => {
         // A turn that streams here now is newer than the file: keep it, and drop the file's copy of it.
-        const live = s.blocks.filter((b): b is Turn => b.kind === "turn" && b.status === "running");
+        const fromFile = (t: Turn): Turn => {
+          const f = h.blocks.find((x): x is Turn => x.kind === "turn" && x.id === t.id);
+          return f && e.resumed?.includes(t.id) ? catchUp(t, f) : t;
+        };
+        const live = s.blocks
+          .filter((b): b is Turn => b.kind === "turn" && b.status === "running")
+          .map(fromFile);
         const ids = new Set(live.map((t) => t.id));
         return {
           ...s,

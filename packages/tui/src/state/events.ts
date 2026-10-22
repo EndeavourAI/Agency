@@ -38,7 +38,14 @@ export type DaemonEvent =
   | { type: "live_turns"; sessionIds: string[] }
   | { type: "session_live"; sessionId: string; live: boolean }
   | { type: "session_loading"; sessionId: string }
-  | { type: "session_loaded"; sessionId: string; entries: WireEntry[]; tipId: string | null }
+  | {
+      type: "session_loaded";
+      sessionId: string;
+      entries: WireEntry[];
+      tipId: string | null;
+      /** Running turns that kept going while the connection was away: the file may hold more than the screen. */
+      resumed?: string[];
+    }
   | { type: "status_loaded"; sessionId: string; status: WireStatus; line: string | null }
   | { type: "todos_loaded"; sessionId: string; todos: WireTodo[] }
   | { type: "files_loaded"; files: string[] }

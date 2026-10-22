@@ -193,11 +193,19 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
     dispatch(events);
   }
 
-  async function openSession(sessionId: string): Promise<void> {
+  async function openSession(sessionId: string, resumed?: string[]): Promise<void> {
     dispatch([{ type: "session_loading", sessionId }]);
     try {
       const view = await call<{ entries: never[]; tipId: string }>("session_show", { sessionId });
-      dispatch([{ type: "session_loaded", sessionId, entries: view.entries, tipId: view.tipId }]);
+      dispatch([
+        {
+          type: "session_loaded",
+          sessionId,
+          entries: view.entries,
+          tipId: view.tipId,
+          ...(resumed ? { resumed } : {}),
+        },
+      ]);
     } catch (e) {
       // A session with no file yet (just created here) is empty, not broken.
       dispatch([{ type: "session_loaded", sessionId, entries: [], tipId: null }]);
@@ -482,11 +490,13 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
   }
 
   async function resync(): Promise<void> {
-    const live = await loadLive().catch(() => [] as LiveTurn[]);
-    const liveIds = new Set(live.map((t) => t.turnId));
-    for (const [turnId, rec] of [...lost]) {
+    // A failed turns_list says nothing about the turns: they stay lost and the next reconnect decides.
+    const live = await loadLive().catch(() => undefined);
+    const rejoined = new Map<string, string[]>();
+    for (const [turnId, rec] of live ? [...lost] : []) {
       lost.delete(turnId);
-      if (liveIds.has(turnId)) {
+      if (live?.some((t) => t.turnId === turnId)) {
+        rejoined.set(rec.sessionId, [...(rejoined.get(rec.sessionId) ?? []), turnId]);
         void watch(turnId, rec.sessionId, rec.off, rec.ended);
         continue;
       }
@@ -497,7 +507,7 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
       ]);
     }
     // An ask that the daemon still waits on and the screen lost (answered nowhere, shown nowhere) comes back.
-    for (const t of live)
+    for (const t of live ?? [])
       for (const a of t.approvals) {
         const turn = getState().bySession[t.sessionId]?.blocks.find(
           (b) => b.kind === "turn" && b.id === t.turnId,
@@ -528,8 +538,13 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
         ]);
       }
     const sid = getState().sessionId;
-    // A turn that still runs keeps its block: the reload keeps running turns and adds what the file holds.
-    await Promise.all([loadSessions().catch(() => undefined), sid ? openSession(sid) : Promise.resolve()]);
+    // A turn that still runs keeps its block, and takes what the file holds beyond it: that fills what the outage dropped.
+    await Promise.all([
+      loadSessions().catch(() => undefined),
+      ...[...new Set([...(sid ? [sid] : []), ...rejoined.keys()])].map((id) =>
+        openSession(id, rejoined.get(id)),
+      ),
+    ]);
   }
 
   return {

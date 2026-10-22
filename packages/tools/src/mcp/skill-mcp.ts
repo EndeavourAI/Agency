@@ -64,6 +64,7 @@ export async function startSkillMcpServers(
     identityFor: manager.identityFor,
     prompts: manager.prompts,
     promptText: manager.promptText,
+    listResources: manager.listResources,
     async dispose() {
       if (disposed) return;
       disposed = true;

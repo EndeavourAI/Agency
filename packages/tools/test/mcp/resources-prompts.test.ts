@@ -92,6 +92,18 @@ describe("MCP resources and prompts", () => {
     await manager.dispose();
   });
 
+  test("listResources gives each resource with its server, and nothing for a server without them", async () => {
+    const manager = await start({ tools: {}, resources: {} });
+    expect(await manager.listResources()).toEqual([
+      { server: "srv", uri: "docs://guide", name: "Guide" },
+      { server: "srv", uri: "img://logo" },
+    ]);
+    await manager.dispose();
+    const none = await start({ tools: {} });
+    expect(await none.listResources()).toEqual([]);
+    await none.dispose();
+  });
+
   test("a prompt of a server is a slash command, and the words of the command are its arguments", async () => {
     const manager = await start({ prompts: {} });
     expect(manager.prompts.map((p) => `mcp__${p.server}__${p.name}`)).toEqual(["mcp__srv__review"]);

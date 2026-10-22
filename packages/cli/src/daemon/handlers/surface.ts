@@ -12,7 +12,7 @@ import type { MethodHandler } from "@agency/rpc";
 import type { Message } from "@agency/schema";
 import { AgencyError, ErrorCode } from "@agency/schema";
 import { isUsageEntry } from "@agency/telemetry";
-import { SnapshotStore, TEAM_MCP_PROCESS_CAP } from "@agency/tools";
+import { listUnignoredFiles, SnapshotStore, TEAM_MCP_PROCESS_CAP } from "@agency/tools";
 import { teamRunUsage } from "../costing.ts";
 import { agentsListPayload } from "../team-context.ts";
 import {
@@ -24,6 +24,9 @@ import {
 } from "../types.ts";
 
 /** Keys config_set may change at runtime (in-memory until restart). */
+/** Paths that files_list returns at most: a TUI completes @ mentions from them. */
+const FILES_LIST_LIMIT = 50_000;
+
 const RUNTIME_CONFIG_KEYS = [
   "logLevel",
   "locale",
@@ -207,6 +210,15 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
       };
     });
     return { sessions };
+  };
+
+  handlers.files_list = async (rawParams) => {
+    const { sessionId } = (rawParams ?? {}) as { sessionId?: string };
+    const { files, truncated } = listUnignoredFiles(ctx.options.workspaceRoot, FILES_LIST_LIMIT);
+    const rows = (await (sessionId ? sessionScopes.get(sessionId)?.mcp?.listResources() : undefined)) ?? [];
+    // The mention of a resource carries its server, as the MCP tools do.
+    const resources = rows.map((r) => ({ ...r, mention: `${r.server}:${r.uri}` }));
+    return { files, truncated, resources };
   };
 
   handlers.session_create = async (rawParams) => {

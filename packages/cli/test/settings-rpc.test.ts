@@ -169,6 +169,17 @@ test("config_write with scope local writes config.local.jsonc and ignores it in 
   expect((await call("config_write", { key: "logLevel", value: "x", scope: "nope" })).error).toBeDefined();
 });
 
+test("files_list gives the workspace files that git does not ignore", async () => {
+  const { call, workspaceRoot } = await start();
+  writeFileSync(join(workspaceRoot, ".gitignore"), "skip.txt\n");
+  writeFileSync(join(workspaceRoot, "skip.txt"), "x");
+  writeFileSync(join(workspaceRoot, "keep.txt"), "x");
+  const result = (await call("files_list")).result as { files: string[]; resources: unknown[] };
+  expect(result.files).toContain("keep.txt");
+  expect(result.files).not.toContain("skip.txt");
+  expect(result.resources).toEqual([]);
+});
+
 test("config_user gives the user file alone: no project hooks, no provider keys", async () => {
   const { call, workspaceRoot } = await start({
     configText: '{\n  // mine\n  "hooks": { "Stop": [] },\n  "provider": { "x": { "apiKey": "k" } }\n}\n',

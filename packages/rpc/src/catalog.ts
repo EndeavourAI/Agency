@@ -24,6 +24,8 @@ export const METHOD_DOCS: Record<string, string> = {
   models_list: "List catalog models merged with config overrides.",
   providers_list:
     'List providers with defaults, connectivity, and liveness; models: "connected" lists models only for connected or configured providers.',
+  files_list:
+    "Up to 50,000 workspace paths that git does not ignore, plus the resources of the session's MCP servers (mention: server:uri).",
   config_get: "Read daemon config, secrets redacted, or one top-level key.",
   config_set: "Set one runtime-safe config key in memory until restart.",
   config_user: "The user config file alone, without provider keys: the layer that config_write edits.",

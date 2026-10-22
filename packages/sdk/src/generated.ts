@@ -34,6 +34,7 @@ export type RpcMethod =
   | "daemon_retire"
   | "decisions_read"
   | "dispatch_compare"
+  | "files_list"
   | "inbox_send"
   | "lsp_status"
   | "mcp_status"
@@ -329,6 +330,8 @@ export interface SurfaceClient {
   decisions_read(params?: Record<string, unknown>): Promise<unknown>;
   /** Fan out one prompt to two agents and compare. */
   dispatch_compare(params?: Record<string, unknown>): Promise<unknown>;
+  /** Up to 50,000 workspace paths that git does not ignore, plus the resources of the session's MCP servers (mention: server:uri). */
+  files_list(params?: Record<string, unknown>): Promise<unknown>;
   /** Post a typed message to a teammate inbox. */
   inbox_send(params?: Record<string, unknown>): Promise<unknown>;
   /** Language server statuses for a session scope. */
@@ -450,6 +453,7 @@ export function createSurfaceClient(
     daemon_retire: (params) => call("daemon_retire", params ?? {}),
     decisions_read: (params) => call("decisions_read", params ?? {}),
     dispatch_compare: (params) => call("dispatch_compare", params ?? {}),
+    files_list: (params) => call("files_list", params ?? {}),
     inbox_send: (params) => call("inbox_send", params ?? {}),
     lsp_status: (params) => call("lsp_status", params ?? {}),
     mcp_status: (params) => call("mcp_status", params ?? {}),

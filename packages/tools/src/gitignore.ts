@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { globToRegExpSource } from "@agency/guard";
 
@@ -77,4 +77,31 @@ export function loadGitignore(dir: string): ((relPath: string) => boolean) | und
     }
     return ignored;
   };
+}
+
+/**
+ * The files under `root` that git does not ignore, as sorted forward-slash paths, with the `.gitignore` of each folder
+ * applied to its own subtree. ponytail: a negation in a nested file cannot un-ignore what an outer file ignores.
+ */
+export function listUnignoredFiles(root: string, limit: number): { files: string[]; truncated: boolean } {
+  const files: string[] = [];
+  type Level = { prefix: string; test: (relPath: string) => boolean };
+  const walk = (dir: string, rel: string, outer: Level[]): boolean => {
+    const own = loadGitignore(dir);
+    const levels = own ? [...outer, { prefix: rel === "" ? "" : `${rel}/`, test: own }] : outer;
+    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
+    for (const entry of entries) {
+      if (entry.name === ".git") continue;
+      const path = rel === "" ? entry.name : `${rel}/${entry.name}`;
+      if (levels.some((level) => level.test(path.slice(level.prefix.length)))) continue;
+      if (entry.isDirectory()) {
+        if (!walk(join(dir, entry.name), path, levels)) return false;
+      } else if (entry.isFile()) {
+        if (files.length >= limit) return false;
+        files.push(path);
+      }
+    }
+    return true;
+  };
+  return { files, truncated: !walk(root, "", []) };
 }

@@ -343,6 +343,9 @@ function runOne(
   });
 }
 
+/** Runs one command in the hook shell with `stdin`; the status line of a client uses it. */
+export { runOne as runHookCommand };
+
 const SETUP_TIMEOUT_S = 600;
 const SETUP_ERROR_LINES = 20;
 const SETUP_ERROR_CHARS = 2000;

@@ -8,6 +8,7 @@ import {
   type MessageEntry,
   promptHistoryFile,
   restoreIntegrationCheckpoint,
+  runHookCommand,
   storagePaths,
 } from "@agency/core";
 import type { MethodHandler } from "@agency/rpc";
@@ -28,6 +29,8 @@ import {
 /** Keys config_set may change at runtime (in-memory until restart). */
 /** Paths that files_list returns at most: a TUI completes @ mentions from them. */
 const FILES_LIST_LIMIT = 50_000;
+
+const STATUS_LINE_TIMEOUT_S = 5;
 
 const RUNTIME_CONFIG_KEYS = [
   "logLevel",
@@ -212,6 +215,45 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
       };
     });
     return { sessions };
+  };
+
+  handlers.status_get = async (rawParams) => {
+    const { sessionId } = (rawParams ?? {}) as { sessionId?: string };
+    if (!sessionId)
+      throw new AgencyError(ErrorCode.INVALID_REQUEST, "status_get requires sessionId", {
+        source: "surface",
+      });
+    const usage = todoStore.load(sessionId).filter(isUsageEntry) as unknown as Array<{
+      model: string;
+      costUsd: number;
+      contextTokens?: number;
+      usage: { inputTokens: number; cachedInputTokens?: number };
+    }>;
+    const last = usage.at(-1);
+    const model = last?.model ?? (typeof config.model === "string" ? config.model : null);
+    const input = usage.reduce((sum, u) => sum + u.usage.inputTokens, 0);
+    const cached = usage.reduce((sum, u) => sum + (u.usage.cachedInputTokens ?? 0), 0);
+    const known = listModels().find((m) => m.id === model || `${m.family}/${m.id}` === model);
+    const settings = ctx.sessionSettings.get(sessionId);
+    const status = {
+      sessionId,
+      model,
+      effort: settings?.effort ?? null,
+      mode: settings?.mode ?? "ask",
+      costUsd: usage.reduce((sum, u) => sum + u.costUsd, 0),
+      contextTokens: last?.contextTokens ?? 0,
+      contextLimit: known?.contextWindow ?? null,
+      cacheHitRate: input > 0 ? Math.min(cached / input, 1) : null,
+      branch: ctx.git(ctx.options.workspaceRoot, ["rev-parse", "--abbrev-ref", "HEAD"])?.trim() || null,
+    };
+    if (!config.statusLine) return { status };
+    const ran = await runHookCommand(
+      config.statusLine.command,
+      JSON.stringify(status),
+      { ...ctx.hookRun, cwd: ctx.options.workspaceRoot },
+      STATUS_LINE_TIMEOUT_S,
+    );
+    return { status, line: ran.code === 0 ? ran.stdout : null };
   };
 
   handlers.history_list = async (rawParams) => {

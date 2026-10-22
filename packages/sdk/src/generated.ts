@@ -67,6 +67,7 @@ export type RpcMethod =
   | "shell_run"
   | "skill_write"
   | "skills_list"
+  | "status_get"
   | "task_file"
   | "team_open"
   | "team_status"
@@ -405,6 +406,8 @@ export interface SurfaceClient {
   skill_write(params?: Record<string, unknown>): Promise<unknown>;
   /** List discovered skills with origin, tier, tools, body, and enabled flag, and whether the workspace is trusted. */
   skills_list(params?: Record<string, unknown>): Promise<unknown>;
+  /** Model, effort, mode, cost, context used and limit, cache hit, branch and session of a session; line is the output of the statusLine command. */
+  status_get(params?: Record<string, unknown>): Promise<unknown>;
   /** File a board item with goal, criteria, scope, and budget. */
   task_file(params?: Record<string, unknown>): Promise<unknown>;
   /** Open a team behind approval when the goal needs parallel specialists. */
@@ -499,6 +502,7 @@ export function createSurfaceClient(
     shell_run: (params) => call("shell_run", params ?? {}),
     skill_write: (params) => call("skill_write", params ?? {}),
     skills_list: (params) => call("skills_list", params ?? {}),
+    status_get: (params) => call("status_get", params ?? {}),
     task_file: (params) => call("task_file", params ?? {}),
     team_open: (params) => call("team_open", params ?? {}),
     team_status: (params) => call("team_status", params ?? {}),

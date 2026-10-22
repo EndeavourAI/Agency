@@ -722,6 +722,8 @@ export interface DaemonContext {
   sessionInboxes: Map<string, Message[]>;
   /** Sessions whose running turn still reads its inbox; session_message queues only for these. */
   steerableSessions: Set<string>;
+  /** The mode and thinking level of the latest turn of each session, for `status_get`. */
+  sessionSettings: Map<string, { mode: string; effort?: string }>;
   /** Sessions whose `setupScript` ran: it runs once for each session. */
   setupDone: Set<string>;
   /** What each session's requests cached: the prune rule it picks lasts across that session's turns. */

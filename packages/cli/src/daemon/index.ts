@@ -728,6 +728,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
   }
   const sessionInboxes = new Map<string, import("@agency/schema").Message[]>();
   const steerableSessions = new Set<string>();
+  const sessionSettings: DaemonContext["sessionSettings"] = new Map();
   const setupDone = new Set<string>();
   const cacheSeen: DaemonContext["cacheSeen"] = new Map();
 
@@ -806,6 +807,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
     teamFor,
     sessionInboxes,
     steerableSessions,
+    sessionSettings,
     setupDone,
     cacheSeen,
     gate,

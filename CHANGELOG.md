@@ -8,6 +8,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`status_get` and the `statusLine` key**: model, effort, mode, cost, context used and limit, cache hit, branch and
+  session in one call. A `statusLine.command` gets that JSON on stdin and its output comes back as `line`.
 - **`/btw` and `/recap`**: `/btw <session> <question>` answers from the session with no tools and stores nothing;
   `/recap <session>` returns a one-line summary. Both ask the configured model (`/recap` the small model first).
 - **`promptSuggestions`** (off by default): the small model proposes the next prompt after each finished turn, sent as

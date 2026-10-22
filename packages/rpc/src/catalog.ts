@@ -26,6 +26,8 @@ export const METHOD_DOCS: Record<string, string> = {
     'List providers with defaults, connectivity, and liveness; models: "connected" lists models only for connected or configured providers.',
   shell_run:
     "Run a user shell command under the sandbox and the permission rules; its output joins the session as user context.",
+  status_get:
+    "Model, effort, mode, cost, context used and limit, cache hit, branch and session of a session; line is the output of the statusLine command.",
   history_list:
     "The prompts submitted in this workspace, newest first; query keeps those that contain it, limit caps the rows.",
   files_list:

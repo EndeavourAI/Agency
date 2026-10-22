@@ -544,6 +544,10 @@ export async function executeTurn(
               ];
         // An approved plan moves the rest of the turn, and the agents it starts, to allow-edits.
         let turnMode: PermissionMode = params.permissionMode ?? "ask";
+        ctx.sessionSettings.set(sessionId, {
+          mode: turnMode,
+          ...(params.thinkingLevel === undefined ? {} : { effort: params.thinkingLevel }),
+        });
         const planExitTools = (gate: PermissionsGate): CoreToolSpec[] =>
           turnMode !== "plan" || params.nonInteractive === true
             ? []
@@ -583,6 +587,10 @@ export async function executeTurn(
                     }
                     turnMode = "allow-edits";
                     gate.setMode(turnMode);
+                    ctx.sessionSettings.set(sessionId, {
+                      ...ctx.sessionSettings.get(sessionId),
+                      mode: turnMode,
+                    });
                     const meta = activeTurnMeta.get(params.turnId);
                     if (meta) meta.permissionMode = turnMode;
                     const changed = { type: "mode_changed" as const, mode: turnMode };

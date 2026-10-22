@@ -104,7 +104,12 @@ async function compile(target: string, outfile: string, version: string, bytecod
     "process.env.AGENCY_BUNDLED": '"1"',
     "process.platform": JSON.stringify(os === "windows" ? "win32" : os),
     "process.arch": JSON.stringify(arch),
-    ...(os === "linux" ? { "process.env.OPENTUI_LIBC": libc === "musl" ? '"musl"' : '"glibc"' } : {}),
+    ...(os === "linux"
+      ? {
+          "process.env.OPENTUI_LIBC": libc === "musl" ? '"musl"' : '"glibc"',
+          "process.env.AGENCY_LIBC": libc === "musl" ? '"musl"' : '"glibc"',
+        }
+      : {}),
     ...(updateKey ? { "process.env.AGENCY_UPDATE_PUBLIC_KEY": JSON.stringify(updateKey) } : {}),
   };
   const native = `@opentui/core-${define["process.platform"]?.replaceAll('"', "")}-${arch}${libc === "musl" ? "-musl" : ""}`;

@@ -88,6 +88,9 @@ const CODE_KEYS: Record<number, string> = {
   127: "backspace",
 };
 
+/** `fromCodePoint` throws on anything else, and the bytes come from outside. */
+const isCodePoint = (n: number): boolean => Number.isInteger(n) && n >= 0 && n <= 0x10ffff;
+
 /** Kitty `CSI u` and modifyOtherKeys name a key by its code point. */
 function codeKey(code: number): string {
   return CODE_KEYS[code] ?? String.fromCodePoint(code).toLowerCase();
@@ -135,16 +138,16 @@ function parseCsi(data: string, at: number, keepRelease: boolean): Step {
     ev.kind === "release" && !keepRelease ? drop : { events: [ev], used };
 
   if (final === "u") {
-    if (first === undefined || Number.isNaN(first)) return drop;
+    if (first === undefined || !isCodePoint(first)) return drop;
     const textCodes = nums[2];
-    const text =
-      textCodes?.length && !textCodes.some(Number.isNaN) ? String.fromCodePoint(...textCodes) : undefined;
+    if (textCodes?.length && !textCodes.every(isCodePoint)) return drop;
+    const text = textCodes?.length ? String.fromCodePoint(...textCodes) : undefined;
     return emit(key(raw, codeKey(first), mods, kind, text));
   }
   if (final === "~") {
     const other = nums[2]?.[0];
-    if (first === 27 && other !== undefined && !Number.isNaN(other))
-      return emit(key(raw, codeKey(other), mods, kind));
+    if (first === 27 && other !== undefined)
+      return isCodePoint(other) ? emit(key(raw, codeKey(other), mods, kind)) : drop;
     const name = first === undefined ? undefined : TILDE_KEYS[first];
     return name ? emit(key(raw, name, mods, kind)) : drop;
   }
@@ -243,19 +246,24 @@ export class InputDecoder {
         at += 1;
         continue;
       }
-      const next = data[at + 1] as string;
+      // Legacy alt+arrow is ESC then the whole sequence (`ESC ESC [ A`): decode the rest and mark it alt.
+      const alt = data[at + 1] === ESC && at + 2 < data.length;
+      if (data[at + 1] === ESC && at + 2 >= data.length && !flush) break;
+      const from = alt ? at + 1 : at;
+      const next = data[from + 1] as string;
       let step: Step | undefined;
-      if (next === "[") step = parseCsi(data, at, this.options.keepRelease ?? false);
-      else if (next === "O") step = parseSs3(data, at);
-      else if ("]P_^X".includes(next)) step = skipString(data, at);
+      if (next === "[") step = parseCsi(data, from, this.options.keepRelease ?? false);
+      else if (next === "O") step = parseSs3(data, from);
+      else if ("]P_^X".includes(next)) step = skipString(data, from);
       if (step === "more") {
         if (!flush) break;
         at = data.length; // a sequence that never finished
         break;
       }
       if (step) {
-        out.push(...step.events);
-        at += step.used;
+        const raw = data.slice(at, from + step.used);
+        out.push(...step.events.map((ev) => (alt && ev.type === "key" ? { ...ev, alt: true, raw } : ev)));
+        at = from + step.used;
         continue;
       }
       // ESC then one char: alt+char, alt+enter, alt+backspace.

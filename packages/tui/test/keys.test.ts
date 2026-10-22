@@ -53,6 +53,16 @@ describe("legacy decoding", () => {
     expect(d.flush().map((e) => (e as KeyEvent).key)).toEqual(["escape"]);
   });
 
+  test("legacy alt+arrow (ESC then the sequence) is one alt key, not text", () => {
+    expect(ids("\x1b\x1b[A")).toEqual(["alt+up"]);
+    expect(ids("\x1b\x1b[1;5C")).toEqual(["ctrl+alt+right"]);
+    expect(ids("\x1b\x1bOD")).toEqual(["alt+left"]);
+    expect(ids("\x1b\x1b[A\x1b[B")).toEqual(["alt+up", "down"]);
+    const d = new InputDecoder();
+    expect(d.push("\x1b\x1b")).toEqual([]);
+    expect(d.push("[B").map((e) => keyId(e as KeyEvent))).toEqual(["alt+down"]);
+  });
+
   test("a sequence split across chunks decodes once", () => {
     const d = new InputDecoder();
     expect(d.push("\x1b[1;")).toEqual([]);
@@ -75,6 +85,13 @@ describe("kitty and modifyOtherKeys", () => {
     expect((decode("\x1b[97;1:2u")[0] as KeyEvent).kind).toBe("repeat");
     const d = new InputDecoder({ keepRelease: true });
     expect((d.push("\x1b[97;1:3u")[0] as KeyEvent).kind).toBe("release");
+  });
+
+  test("a code point outside Unicode is dropped instead of throwing", () => {
+    expect(ids("\x1b[1114112;1u")).toEqual([]);
+    expect(ids("\x1b[97;1;1114112u")).toEqual([]);
+    expect(ids("\x1b[27;5;99999999~")).toEqual([]);
+    expect(ids("\x1b[97u")).toEqual(["a"]);
   });
 
   test("modifyOtherKeys", () => {

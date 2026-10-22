@@ -111,16 +111,63 @@ const thinker: ProviderAdapter = {
 };
 
 describe("events a TUI client needs", () => {
-  test("the reasoning of a request ends with thinking_end and its duration", async () => {
+  test("turn_end, approval_resolved, outstanding approvals, thinking_end and the sessions channel", async () => {
     const { client } = await start(thinker);
-    const turn = watch(client, "turn.t0");
-    const sent = send(client, { sessionId: "s0", turnId: "t0", permissionMode: "allow-all" });
+    const turn = watch(client, "turn.t1");
+    const sessions = watch(client, "sessions");
+    const sent = send(client, { sessionId: "s1", turnId: "t1" });
+    while (!turn.some((e) => e.type === "approval_requested")) await sleep(10);
+
+    const listed = (await client.call("turns_list", {})) as {
+      turns: Array<{
+        turnId: string;
+        approvals: Array<{ requestId: string; command?: string; tool: string }>;
+      }>;
+    };
+    const ask = listed.turns.find((t) => t.turnId === "t1")?.approvals[0];
+    expect(ask).toMatchObject({ tool: "bash", command: "git push origin main" });
+    expect(ask?.requestId).toBe(turn.find((e) => e.type === "approval_requested")?.requestId as string);
+
+    await client.call("approval_respond", { requestId: ask?.requestId, decision: "once", sessionId: "s1" });
     await sent;
     await sleep(20);
+
     const types = turn.map((e) => e.type);
+    expect(turn.find((e) => e.type === "approval_resolved")).toMatchObject({
+      requestId: ask?.requestId,
+      decision: "once",
+    });
     expect(types.indexOf("thinking_end")).toBeGreaterThan(types.indexOf("thinking_delta"));
     expect(types.indexOf("thinking_end")).toBeLessThan(types.indexOf("tool_start"));
     expect((turn.find((e) => e.type === "thinking_end")?.ms as number) >= 30).toBe(true);
+    expect(turn.at(-1)).toMatchObject({ type: "turn_end", stopReason: "end_turn", cancelled: false });
+    expect(sessions).toEqual([
+      { type: "turn_start", sessionId: "s1", turnId: "t1" },
+      { type: "turn_end", sessionId: "s1", turnId: "t1" },
+    ]);
+    const after = (await client.call("turns_list", {})) as { turns: unknown[] };
+    expect(after.turns).toEqual([]);
+  });
+
+  test("a cancelled turn ends with cancelled, and a failing one carries its error", async () => {
+    const { client } = await start(thinker);
+    const cancelled = watch(client, "turn.t2");
+    const sent = send(client, { sessionId: "s2", turnId: "t2" });
+    while (!cancelled.some((e) => e.type === "approval_requested")) await sleep(10);
+    await client.call("cancel_turn", { turnId: "t2" });
+    await sent.catch(() => undefined);
+    await sleep(20);
+    expect(cancelled.at(-1)).toMatchObject({ type: "turn_end", cancelled: true });
+
+    const failed = watch(client, "turn.t3");
+    await send(client, { sessionId: "s3", turnId: "t3", provider: "nope" }).catch(() => undefined);
+    await sleep(20);
+    expect(failed.at(-1)).toMatchObject({
+      type: "turn_end",
+      stopReason: "error",
+      cancelled: false,
+      error: { message: expect.any(String) },
+    });
   });
 
   test("status_get tells where the session compacts", async () => {

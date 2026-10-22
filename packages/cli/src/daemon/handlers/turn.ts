@@ -61,7 +61,7 @@ import {
   type TeamBudgets,
 } from "../types.ts";
 import { applyMcpPrompt, applySlashCommand } from "./commands.ts";
-import { createTurnApproval } from "./plan.ts";
+import { createTurnApproval, outstandingApprovals } from "./plan.ts";
 import { generateSessionTitle } from "./session.ts";
 import { suggestNextPrompt } from "./suggest.ts";
 import { writeTurnCassette } from "./trace.ts";
@@ -90,6 +90,7 @@ export function registerTurnHandlers(handlers: Record<string, MethodHandler>, ct
       provider: meta.provider,
       model: meta.model,
       startedAt: meta.startedAt,
+      approvals: outstandingApprovals(ctx, turnId),
     })),
   });
 }

@@ -101,9 +101,39 @@ export function createTurnApproval(
       ctx.hookRun,
     ).catch(() => {});
     const decision = await promise;
+    // Every way an ask settles lands here: a client that did not answer it learns that it is gone.
+    const resolved = { type: "approval_resolved" as const, requestId: id, decision };
+    broadcast(eventStream, resolved);
+    if (params.sessionId !== undefined) broadcast(`session.${sessionId}`, resolved);
     reply(decision, approvals.closeReason(id) ?? "answered");
     return decision;
   };
+}
+
+/** The asks a turn still waits on, redacted as the approval_requested broadcast is: a client that joins late shows them. */
+export function outstandingApprovals(ctx: DaemonContext, turnId: string) {
+  const { redactor } = ctx;
+  return [...ctx.approvalManagers.values()]
+    .flatMap((manager) => manager.listPending())
+    .filter((ask) => ask.turnId === turnId)
+    .map(({ id, request }) => {
+      const title = redactor.redact(request.title);
+      const command = request.command !== undefined ? redactor.redact(request.command) : undefined;
+      const path = request.path !== undefined ? redactor.redact(request.path) : undefined;
+      return {
+        requestId: id,
+        tool: request.tool,
+        title,
+        ...(command !== undefined ? { command } : {}),
+        ...(path !== undefined ? { path } : {}),
+        riskTier: request.riskTier ?? "unknown",
+        argsSummary: approvalArgsSummary({
+          ...(command !== undefined ? { command } : {}),
+          ...(path !== undefined ? { path } : {}),
+          title,
+        }),
+      };
+    });
 }
 
 export function registerPlanHandlers(handlers: Record<string, MethodHandler>, ctx: DaemonContext): void {

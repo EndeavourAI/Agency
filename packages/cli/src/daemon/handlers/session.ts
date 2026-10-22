@@ -313,7 +313,38 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
       () => ctx.turnOwners.delete(turnId),
     );
   };
-  const sendTurn = async (p: SessionSendParams, context: { clientId: string }): Promise<SessionSendResult> => {
+  // The turn stream ends with turn_end, so a client needs no polling to know; the `sessions` stream tells every
+  // client which sessions run, for an orbit and a recent list.
+  const sendTurn = async (
+    p: SessionSendParams,
+    context: { clientId: string },
+  ): Promise<SessionSendResult> => {
+    const turnId = p.turnId ?? randomUUID();
+    const turn = { sessionId: p.sessionId, turnId };
+    broadcast("sessions", { type: "turn_start", ...turn });
+    try {
+      const result = await runSend({ ...p, turnId }, context);
+      broadcast(`turn.${turnId}`, {
+        type: "turn_end",
+        stopReason: result.stopReason,
+        cancelled: result.cancelled === true,
+        ...(result.error ? { error: result.error } : {}),
+      });
+      return result;
+    } catch (error) {
+      const failure = error instanceof AgencyError ? { code: error.code, message: error.message } : undefined;
+      broadcast(`turn.${turnId}`, {
+        type: "turn_end",
+        stopReason: "error",
+        cancelled: false,
+        error: failure ?? { code: "error", message: error instanceof Error ? error.message : String(error) },
+      });
+      throw error;
+    } finally {
+      broadcast("sessions", { type: "turn_end", ...turn });
+    }
+  };
+  const runSend = async (p: SessionSendParams, context: { clientId: string }): Promise<SessionSendResult> => {
     const store = todoStore;
     if (!store.list().includes(p.sessionId)) {
       store.create(p.sessionId);

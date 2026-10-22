@@ -8,6 +8,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`shell_run`** for the `!` mode of a TUI: the command runs through the bash tool under the permission rules, and
+  its output joins the session as a user message.
 - **`history_list`**: each prompt sent with `session_send` is kept per workspace in the data folder; the method
   returns them newest first, with a query and a limit.
 - **`files_list` for @ completion**: up to 50,000 workspace paths that git does not ignore (nested `.gitignore`

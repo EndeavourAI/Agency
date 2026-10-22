@@ -51,8 +51,11 @@ export interface MessageEntry extends SessionEntryBase {
   turnId?: string;
 }
 
-/** "harness": the loop wrote it (Stop-hook feedback). "inbox": the user or a teammate sent it while the turn ran. */
-export type MessageOrigin = "harness" | "inbox";
+/**
+ * "harness": the loop wrote it (Stop-hook feedback). "inbox": the user or a teammate sent it while the turn ran.
+ * "shell": the output of a command that the user ran with `shell_run`.
+ */
+export type MessageOrigin = "harness" | "inbox" | "shell";
 
 export interface ModelChangeEntry extends SessionEntryBase {
   type: "model_change";

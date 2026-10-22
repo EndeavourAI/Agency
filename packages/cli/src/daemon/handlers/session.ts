@@ -64,6 +64,7 @@ import {
   STRUCTURED_OUTPUT_TOOL,
 } from "../types.ts";
 import { setSessionGoal } from "./goal.ts";
+import { createTurnApproval } from "./plan.ts";
 import { executeTurn, PROMPT_HOOK_SOURCE } from "./turn.ts";
 
 /** Fallback window for daemon-side proactive compaction, matching the
@@ -497,6 +498,53 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
     };
     return response;
   };
+  // The `!` mode of a TUI: the user's own command runs under the same rules as a model call, and its output
+  // joins the session as a user message that the next turn reads.
+  handlers.shell_run = async (rawParams) => {
+    const { sessionId, command } = (rawParams ?? {}) as { sessionId?: string; command?: string };
+    if (!sessionId || !command?.trim())
+      throw new AgencyError(ErrorCode.INVALID_REQUEST, "shell_run requires sessionId and command", {
+        source: "session",
+      });
+    const scopeTools = ctx.builtinsMode ? (await ctx.getOrCreateScope(sessionId)).tools : ctx.tools;
+    const bash = scopeTools.find((tool) => tool.name === "bash");
+    if (!bash) throw new AgencyError(ErrorCode.INVALID_REQUEST, "no bash tool", { source: "session" });
+    const turnId = randomUUID();
+    const ask = createTurnApproval(
+      ctx,
+      { turnId, sessionId, provider: "user", model: "user", systemPrompt: "", session: [] } as RunTurnParams,
+      sessionId,
+      `turn.${turnId}`,
+    );
+    const verdict = await gateForSession(ctx, sessionId).check(
+      { tool: "bash", command, riskTier: bash.riskTier },
+      ask,
+    );
+    if (verdict === "deny")
+      throw new AgencyError(ErrorCode.PERMISSION_DENIED, `the permission rules refuse: ${command}`, {
+        source: "session",
+      });
+    const result = await bash.handler(
+      { command },
+      {
+        signal: new AbortController().signal,
+        cwd: ctx.options.workspaceRoot,
+        sessionId,
+        requestApproval: ask,
+      },
+    );
+    const text = `The user ran a shell command. This is its output.
+$ ${command}
+${result.content}`;
+    const entry = await todoStore.append(sessionId, {
+      type: "message",
+      parentId: todoStore.latestTip(todoStore.load(sessionId)) ?? null,
+      message: { role: "user", content: [{ type: "text", text }] },
+      origin: "shell",
+    });
+    return { output: result.content, isError: result.isError === true, entryId: entry.id };
+  };
+
   handlers.session_message = async (rawParams) => {
     const { sessionId, text } = rawParams as SessionMessageParams;
     if (!sessionId)

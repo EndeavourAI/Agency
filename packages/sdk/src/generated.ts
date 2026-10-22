@@ -64,6 +64,7 @@ export type RpcMethod =
   | "session_send"
   | "session_show"
   | "session_title_set"
+  | "shell_run"
   | "skill_write"
   | "skills_list"
   | "task_file"
@@ -391,6 +392,8 @@ export interface SurfaceClient {
   session_show(params?: Record<string, unknown>): Promise<unknown>;
   /** Set the title of a session (1 to 200 characters); session_list shows it. */
   session_title_set(params?: Record<string, unknown>): Promise<unknown>;
+  /** Run a user shell command under the sandbox and the permission rules; its output joins the session as user context. */
+  shell_run(params?: Record<string, unknown>): Promise<unknown>;
   /** Create a SKILL.md in the project or user skills folder; never overwrites. */
   skill_write(params?: Record<string, unknown>): Promise<unknown>;
   /** List discovered skills with origin, tier, tools, body, and enabled flag, and whether the workspace is trusted. */
@@ -486,6 +489,7 @@ export function createSurfaceClient(
     session_send: (params) => call("session_send", params ?? {}),
     session_show: (params) => call("session_show", params ?? {}),
     session_title_set: (params) => call("session_title_set", params ?? {}),
+    shell_run: (params) => call("shell_run", params ?? {}),
     skill_write: (params) => call("skill_write", params ?? {}),
     skills_list: (params) => call("skills_list", params ?? {}),
     task_file: (params) => call("task_file", params ?? {}),

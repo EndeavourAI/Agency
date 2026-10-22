@@ -24,6 +24,8 @@ export const METHOD_DOCS: Record<string, string> = {
   models_list: "List catalog models merged with config overrides.",
   providers_list:
     'List providers with defaults, connectivity, and liveness; models: "connected" lists models only for connected or configured providers.',
+  shell_run:
+    "Run a user shell command under the sandbox and the permission rules; its output joins the session as user context.",
   history_list:
     "The prompts submitted in this workspace, newest first; query keeps those that contain it, limit caps the rows.",
   files_list:

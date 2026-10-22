@@ -8,6 +8,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`/btw` and `/recap`**: `/btw <session> <question>` answers from the session with no tools and stores nothing;
+  `/recap <session>` returns a one-line summary. Both ask the configured model (`/recap` the small model first).
 - **`promptSuggestions`** (off by default): the small model proposes the next prompt after each finished turn, sent as
   the `prompt_suggestion` event. It adds one request per turn, so it stays off until the user turns it on.
 - **`shell_run`** for the `!` mode of a TUI: the command runs through the bash tool under the permission rules, and

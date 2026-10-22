@@ -32,6 +32,13 @@ const TIER_1: BuiltinCommand[] = [
     usage: "/undo [session]",
   },
   { name: "redo", tier: 1, description: "Redo a snapshot-backed file change.", usage: "/redo [session]" },
+  {
+    name: "btw",
+    tier: 1,
+    description: "Ask a side question about a session: no tools, nothing stored.",
+    usage: "/btw <session> <question>",
+  },
+  { name: "recap", tier: 1, description: "A one-line summary of a session.", usage: "/recap <session>" },
   { name: "exit", tier: 1, description: "Ask the client to end this session.", usage: "/exit" },
 ];
 

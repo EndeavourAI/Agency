@@ -85,6 +85,23 @@ describe("markdown", () => {
   test("an unclosed fence at the end of the answer is kept, not dropped", () => {
     expect(renderMd("```\nlost?")).toHaveLength(1);
   });
+
+  test("an earlier state does not see what a later push appends", () => {
+    const a = pushMd(emptyMd, "```\nx\ny\n");
+    const b = pushMd(a, "z\n```\nafter\n");
+    expect(a.fence?.lines).toEqual(["x", "y"]);
+    expect(a.settled).toHaveLength(0);
+    expect(b.settled.map((x) => x.kind)).toEqual(["code", "text"]);
+  });
+
+  // Copying the settled blocks and fence lines for every line made one big delta quadratic: seconds at 50k lines.
+  test("one delta of 50k lines costs its size, in text and in code", () => {
+    const text = "a line of prose\n".repeat(50_000);
+    const t0 = performance.now();
+    expect(pushMd(emptyMd, text).settled).toHaveLength(50_000);
+    expect(pushMd(emptyMd, `\`\`\`\n${text}`).fence?.lines).toHaveLength(50_000);
+    expect(performance.now() - t0).toBeLessThan(1000);
+  });
 });
 
 describe("step output", () => {

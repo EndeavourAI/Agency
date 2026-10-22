@@ -40,28 +40,35 @@ function textBlock(line: string, prev: MdBlock | undefined): MdBlock {
   };
 }
 
-/** Feeds one complete line; returns the new fence and the block it settled, if any. */
-function line(state: MdState, text: string): MdState {
+/** Feeds one complete line into a draft that `pushMd` owns: its arrays are copies, so they grow in place. */
+function line(
+  draft: { settled: MdBlock[]; fence: { lang: string; lines: string[] } | null },
+  text: string,
+): void {
   const fence = /^```(.*)$/.exec(text);
-  if (state.fence) {
+  if (draft.fence) {
     if (fence) {
-      const block: MdBlock = { kind: "code", lang: state.fence.lang, lines: state.fence.lines, gap: true };
-      return { ...state, settled: [...state.settled, block], fence: null };
-    }
-    return { ...state, fence: { ...state.fence, lines: [...state.fence.lines, text] } };
-  }
-  if (fence) return { ...state, fence: { lang: (fence[1] ?? "").trim(), lines: [] } };
-  if (!text.trim()) return state;
-  return { ...state, settled: [...state.settled, textBlock(text, state.settled.at(-1))] };
+      draft.settled.push({ kind: "code", lang: draft.fence.lang, lines: draft.fence.lines, gap: true });
+      draft.fence = null;
+    } else draft.fence.lines.push(text);
+  } else if (fence) draft.fence = { lang: (fence[1] ?? "").trim(), lines: [] };
+  else if (text.trim()) draft.settled.push(textBlock(text, draft.settled.at(-1)));
 }
 
-/** Appends streamed text. Complete lines settle (code settles at its closing fence); the rest stays open. */
+/**
+ * Appends streamed text. Complete lines settle (code settles at its closing fence); the rest stays open.
+ * One copy per push, so a delta of many lines costs its own size, not its square; one copy per delta stays linear in the blocks so far.
+ */
 export function pushMd(state: MdState, delta: string): MdState {
   const parts = (state.tail + delta).split("\n");
   const tail = parts.pop() ?? "";
-  let next: MdState = { ...state, tail: "" };
-  for (const l of parts) next = line(next, l);
-  return { ...next, tail };
+  if (parts.length === 0) return { ...state, tail };
+  const draft = {
+    settled: state.settled.slice(),
+    fence: state.fence ? { lang: state.fence.lang, lines: state.fence.lines.slice() } : null,
+  };
+  for (const l of parts) line(draft, l);
+  return { ...draft, tail };
 }
 
 /** The block still growing: an unclosed fence, or the unfinished line. Null when there is none. */

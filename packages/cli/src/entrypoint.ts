@@ -2375,7 +2375,8 @@ async function openTui(): Promise<number> {
   return await new Promise<number>(() => undefined);
 }
 
-if (import.meta.main) {
+// Bun.build({ compile }) leaves import.meta.main false (Bun 1.4); the build script defines AGENCY_BUNDLED instead.
+if (import.meta.main || process.env.AGENCY_BUNDLED === "1") {
   if (process.argv[2] === DAEMON_COMMAND) {
     await (await import("./daemon-entry.ts")).runDaemonEntry(process.argv.slice(3));
   }

@@ -52,6 +52,8 @@ export interface PluginLoaderOptions {
   userAgentPlugins?: boolean;
   /** Names of skills the user switched off (`skills.disabled` of the config): they do not load. */
   disabledSkills?: readonly string[];
+  /** Managed policy `allowManagedHooksOnly`: plugins are in-process code and none is managed, so none loads. */
+  managedOnly?: boolean;
 }
 
 export interface PluginLoadResult {
@@ -274,6 +276,7 @@ export async function loadPlugins(options: PluginLoaderOptions): Promise<PluginL
   const logger = options.logger;
   const capabilities = options.capabilities ?? { tools: "*", pathScopes: "*", network: "none" };
   void options.identity;
+  if (options.managedOnly) return { plugins: [], errors: [], instructions: [], skills: [] };
   const registry = options.registry;
 
   const plugins: LoadedPlugin[] = [];

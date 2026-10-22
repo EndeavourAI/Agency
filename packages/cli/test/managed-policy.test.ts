@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolSpec } from "@agency/core";
@@ -42,8 +42,16 @@ async function setup(layers: {
   user?: Record<string, unknown>;
   managed?: Record<string, unknown>;
   claudeAllow?: string[];
+  pluginMarker?: string;
 }): Promise<{ ran: string[]; turn: () => Promise<unknown> }> {
   const configDir = tmp("cfg");
+  if (layers.pluginMarker) {
+    mkdirSync(join(configDir, "plugins"), { recursive: true });
+    writeFileSync(
+      join(configDir, "plugins", "mark.js"),
+      `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(layers.pluginMarker)}, "loaded");`,
+    );
+  }
   const workspaceRoot = tmp("ws");
   // The settings of Claude Code in the real home must not leak into the test.
   process.env.AGENCY_AGENTS_HOME = "off";
@@ -157,5 +165,17 @@ describe("managed policy in a daemon", () => {
     const { ran, turn } = await setup({ managed: { allowManagedHooksOnly: true, hooks: denyNote } });
     await turn();
     expect(ran).toEqual([]);
+  }, 30000);
+
+  test("allowManagedHooksOnly keeps user plugins from loading", async () => {
+    const marker = join(tmp("marker"), "loaded.txt");
+    await setup({ managed: { allowManagedHooksOnly: true }, pluginMarker: marker });
+    expect(existsSync(marker)).toBe(false);
+  }, 30000);
+
+  test("without allowManagedHooksOnly the same user plugin loads", async () => {
+    const marker = join(tmp("marker"), "loaded.txt");
+    await setup({ pluginMarker: marker });
+    expect(existsSync(marker)).toBe(true);
   }, 30000);
 });

@@ -296,9 +296,9 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
       cacheHitRate: input > 0 ? Math.min(cached / input, 1) : null,
       branch: ctx.git(ctx.options.workspaceRoot, ["branch", "--show-current"])?.trim() || null,
     };
-    if (!config.statusLine) return { status };
+    if (!ctx.statusLine) return { status };
     const ran = await runHookCommand(
-      config.statusLine.command,
+      ctx.statusLine.command,
       JSON.stringify(status),
       { ...ctx.hookRun, cwd: ctx.options.workspaceRoot },
       STATUS_LINE_TIMEOUT_S,

@@ -751,6 +751,8 @@ export interface DaemonContext {
   teamMcpPools: Map<string, import("@agency/tools").TeamMcpPool>;
   /** Merged catalog models with config overrides (offline, never fetched). */
   listModels: () => ModelInfo[];
+  /** The statusLine command in force: only the managed one under `allowManagedHooksOnly`. */
+  statusLine: Config["statusLine"];
   activeControllers: Map<string, AbortController>;
   turnOwners: Map<string, string>;
   activeTurnMeta: Map<string, ActiveTurnMeta>;

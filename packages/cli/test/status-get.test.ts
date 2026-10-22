@@ -42,7 +42,13 @@ const adapter: ProviderAdapter = {
   },
 };
 
-async function setup(statusLine?: { command: string }) {
+function managedFile(layer: Record<string, unknown>): string {
+  const file = join(tmp("managed"), "managed.jsonc");
+  writeFileSync(file, JSON.stringify(layer));
+  return file;
+}
+
+async function setup(statusLine?: { command: string }, managed?: Record<string, unknown>) {
   const configDir = tmp("cfg");
   writeFileSync(join(configDir, "config.jsonc"), JSON.stringify(statusLine ? { statusLine } : {}));
   const workspaceRoot = tmp("ws");
@@ -52,6 +58,7 @@ async function setup(statusLine?: { command: string }) {
     instanceFile: join(workspaceRoot, ".agency", "instance.json"),
     sessionsDir: tmp("sess"),
     trustStorePath: join(tmp("trust"), "trust.json"),
+    ...(managed ? { managedPath: managedFile(managed) } : {}),
     adapterFor: () => adapter,
     http: noopHttp,
     tools: [],
@@ -109,4 +116,24 @@ test("the statusLine command gets the status JSON on stdin and its output comes 
   const client = await setup({ command: `"${process.execPath}" "${script}"` });
   const { line } = (await client.call("status_get", { sessionId: "s1" })) as { line: string };
   expect(line).toBe("LINE claude-test allow-edits");
+});
+
+test("allowManagedHooksOnly does not run a user statusLine command", async () => {
+  const client = await setup(
+    { command: `"${process.execPath}" -e "console.log('USER')"` },
+    {
+      allowManagedHooksOnly: true,
+    },
+  );
+  const { line } = (await client.call("status_get", { sessionId: "s1" })) as { line?: string };
+  expect(line).toBeUndefined();
+});
+
+test("allowManagedHooksOnly still runs a managed statusLine command", async () => {
+  const client = await setup(undefined, {
+    allowManagedHooksOnly: true,
+    statusLine: { command: `"${process.execPath}" -e "console.log('MANAGED')"` },
+  });
+  const { line } = (await client.call("status_get", { sessionId: "s1" })) as { line?: string };
+  expect(line?.trim()).toBe("MANAGED");
 });

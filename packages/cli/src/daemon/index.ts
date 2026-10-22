@@ -571,6 +571,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
       userAgentPlugins: config.userAgentPlugins === true,
       disabledSkills: config.skills?.disabled,
       projectTrusted,
+      managedOnly: managed.allowManagedHooksOnly === true,
       bus: eventBus,
       logger,
       registry: sharedPluginRegistry as unknown as never,
@@ -598,6 +599,7 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
       userAgentPlugins: config.userAgentPlugins === true,
       disabledSkills: config.skills?.disabled,
       projectTrusted,
+      managedOnly: managed.allowManagedHooksOnly === true,
       bus: eventBus,
       logger,
       registry: pluginToolRegistry as unknown as never,
@@ -781,6 +783,10 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
     telemetry,
     http,
     redactor,
+    statusLine:
+      managed.allowManagedHooksOnly === true
+        ? ConfigSchema.shape.statusLine.parse(managed.statusLine)
+        : config.statusLine,
     adapterFor,
     schedulerFor,
     todoStore,

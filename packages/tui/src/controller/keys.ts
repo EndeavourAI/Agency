@@ -179,7 +179,9 @@ function submit(state: AppState, ctx: KeyContext): Out {
       const a = clientAct(state, act.act);
       return out([{ type: "composer_sent" }, ...a.events], a.effects);
     }
-    if (text.startsWith("/") && state.sessionId) {
+    // A path such as /etc/hosts is a prompt; only a known command name goes to the daemon.
+    const name = text.split(/\s/, 1)[0];
+    if (state.sessionId && [...CLIENT_SLASH, ...state.slash].some((x) => `/${x.name}` === name)) {
       return out([{ type: "composer_sent" }], [{ type: "slash_command", sessionId: state.sessionId, text }]);
     }
   }
@@ -502,5 +504,5 @@ export function dispatchPaste(state: AppState, text: string): Out {
   if (contexts[0] !== "composer" && contexts[0] !== "completion") return none;
   // A terminal with an image on the clipboard pastes nothing: that is the person asking for the image.
   if (text === "") return out([], [{ type: "paste_image" }]);
-  return out([{ type: "edit", edit: { op: "insert", text: clean } }]);
+  return out([{ type: "edit", edit: { op: "insert", text: clean, pasted: true } }]);
 }

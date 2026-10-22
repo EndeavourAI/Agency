@@ -41,10 +41,10 @@ export function setText(c: Composer, text: string, cursor = text.length): Compos
   return { ...c, text, cursor };
 }
 
-/** Inserts typed or pasted text at the caret; a first `!` in an empty prompt switches to shell mode instead. */
-export function insert(c: Composer, text: string): Composer {
+/** Inserts typed or pasted text at the caret; a typed `!` in an empty prompt switches to shell mode, a pasted one stays text. */
+export function insert(c: Composer, text: string, pasted = false): Composer {
   const clean = text.replace(/\r\n?/g, "\n");
-  if (!c.shell && c.text === "" && clean.startsWith("!")) {
+  if (!pasted && !c.shell && c.text === "" && clean.startsWith("!")) {
     return insert({ ...c, shell: true }, clean.slice(1));
   }
   return {
@@ -56,9 +56,10 @@ export function insert(c: Composer, text: string): Composer {
 
 export const newline = (c: Composer): Composer => insert(c, "\n");
 
-/** `\` then enter is a new line: returns the buffer with the backslash replaced, or null when it does not apply. */
+/** `\` then enter is a new line: returns the buffer with it replaced, or null. A path end (`C:\`, `a\\`, `a/\`) and shell text send. */
 export function continueLine(c: Composer): Composer | null {
-  if (c.cursor === 0 || c.text[c.cursor - 1] !== "\\") return null;
+  if (c.shell || c.cursor === 0 || c.text[c.cursor - 1] !== "\\") return null;
+  if (/[:\\/]/.test(c.text[c.cursor - 2] ?? "")) return null;
   return {
     ...c,
     text: `${c.text.slice(0, c.cursor - 1)}\n${c.text.slice(c.cursor)}`,

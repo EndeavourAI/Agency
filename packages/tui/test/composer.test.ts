@@ -42,6 +42,19 @@ describe("composer buffer", () => {
     expect(cont?.text).toBe("first\n");
     expect(cont?.cursor).toBe(6);
     expect(continueLine(typed("plain"))).toBeNull();
+    expect(continueLine(typed("\\"))?.text).toBe("\n");
+  });
+
+  test("a path or shell text ending in a backslash is not a continuation", () => {
+    expect(continueLine(typed("open C:\\"))).toBeNull();
+    expect(continueLine(typed("a\\\\"))).toBeNull();
+    expect(continueLine(typed("!dir \\"))).toBeNull();
+  });
+
+  test("only a typed ! enters shell mode; a pasted one stays text", () => {
+    expect(typed("!ls").shell).toBe(true);
+    const p = insert(emptyComposer, "!ls", true);
+    expect(p).toMatchObject({ text: "!ls", shell: false });
   });
 
   test("up and down keep the cell column across rows and report when they cannot move", () => {

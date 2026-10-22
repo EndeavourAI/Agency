@@ -12,7 +12,7 @@ import type {
 } from "./wire.ts";
 
 export type ComposerOp =
-  | { op: "insert"; text: string }
+  | { op: "insert"; text: string; pasted?: boolean }
   | { op: "newline" }
   | { op: "backspace" }
   | { op: "delete" }

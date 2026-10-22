@@ -524,7 +524,7 @@ function applyEdit(state: AppState, op: ComposerOp): AppState {
   let images = state.images;
   switch (op.op) {
     case "insert":
-      next = C.insert(c, op.text);
+      next = C.insert(c, op.text, op.pasted);
       break;
     case "newline":
       next = C.newline(c);

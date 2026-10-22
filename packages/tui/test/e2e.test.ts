@@ -188,6 +188,12 @@ describe("a person drives a real daemon", () => {
     expect(t.steps[0]).toMatchObject({ tool: "bash", status: "denied" });
   }, 30_000);
 
+  test("ctrl+v with no image on the clipboard says so", async () => {
+    live.send("\x16");
+    await live.settle();
+    expect(live.state.flash).toEqual({ text: "no image on the clipboard", tone: "info" });
+  });
+
   test("a session opened later rebuilds the same transcript from the daemon", async () => {
     const other = new Live();
     await other.attach((onConnection) => scenario.connect(onConnection));

@@ -412,6 +412,7 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
             case "paste_image": {
               const chip = await deps.host.readClipboardImage();
               if (chip) dispatch([{ type: "image_added", chip }]);
+              else dispatch([{ type: "flash", text: "no image on the clipboard", tone: "info" }]);
               return;
             }
             case "reconnect":

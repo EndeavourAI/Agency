@@ -1,9 +1,9 @@
-/**
+﻿/**
  * The `agency` bin of the npm wrapper package, bundled to plain Node JS by npm-pack.ts: finds the platform package
  * that holds the binary and runs it. No postinstall: npm picks the platform package through os/cpu/libc.
  */
 import { spawn } from "node:child_process";
-import { chmodSync } from "node:fs";
+import { chmodSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export interface PlatformPackage {
@@ -59,6 +59,45 @@ function linuxLibc(): "musl" | "glibc" {
   return header?.glibcVersionRuntime ? "glibc" : "musl";
 }
 
+/** Runs the binary and mirrors how it ended: its exit code, or the same signal re-raised on this process. */
+export function launch(binary: string, args: string[], opts: { chmod: boolean; musl: boolean }): void {
+  // A package packed on Windows may carry no execute bit; the failure is kept for the spawn error.
+  let chmodError = "";
+  if (opts.chmod) {
+    try {
+      chmodSync(binary, 0o755);
+    } catch (e) {
+      chmodError = ` (chmod +x failed: ${(e as Error).message})`;
+    }
+  }
+  const alpineHint = () => {
+    if (opts.musl && !existsSync("/usr/lib/libstdc++.so.6"))
+      console.error("agency: Alpine needs libstdc++ and libgcc. Run: apk add libstdc++ libgcc");
+  };
+  const child = spawn(binary, args, { stdio: "inherit" });
+  // On a terminal ctrl+c reaches the child through the process group; only a lone signal needs forwarding.
+  const onInt = () => {
+    if (!process.stdin.isTTY) child.kill("SIGINT");
+  };
+  const onTerm = () => child.kill("SIGTERM");
+  process.on("SIGINT", onInt);
+  process.on("SIGTERM", onTerm);
+  child.on("error", (e) => {
+    console.error(`agency: could not start ${binary}: ${e.message}${chmodError}`);
+    alpineHint();
+    process.exit(1);
+  });
+  child.on("exit", (code, signal) => {
+    if (code === 127) alpineHint();
+    if (signal) {
+      // Our own handlers would swallow the re-raised signal and turn it into exit 0.
+      process.off("SIGINT", onInt);
+      process.off("SIGTERM", onTerm);
+      process.kill(process.pid, signal);
+    } else process.exit(code ?? 1);
+  });
+}
+
 function run(): void {
   const libc = process.platform === "linux" ? linuxLibc() : undefined;
   const pkg = platformPackage(process.platform, process.arch, libc);
@@ -79,22 +118,7 @@ function run(): void {
     );
     process.exit(1);
   }
-  // A package packed on Windows carries no execute bit.
-  try {
-    if (pkg.os !== "win32") chmodSync(binary, 0o755);
-  } catch {}
-  const child = spawn(binary, process.argv.slice(2), { stdio: "inherit" });
-  // A terminal sends ctrl+c to the child as well; this process must outlive it to pass the exit code on.
-  process.on("SIGINT", () => {});
-  process.on("SIGTERM", () => child.kill("SIGTERM"));
-  child.on("error", (e) => {
-    console.error(`agency: could not start ${binary}: ${e.message}`);
-    process.exit(1);
-  });
-  child.on("exit", (code, signal) => {
-    if (signal) process.kill(process.pid, signal);
-    else process.exit(code ?? 1);
-  });
+  launch(binary, process.argv.slice(2), { chmod: pkg.os !== "win32", musl: pkg.libc === "musl" });
 }
 
 if (typeof require !== "undefined" && require.main === module) run();

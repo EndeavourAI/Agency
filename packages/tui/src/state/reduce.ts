@@ -30,7 +30,7 @@ export function initialState(
     effort: "high",
     cols: init.cols ?? 80,
     rows: init.rows ?? 24,
-    details: (init.cols ?? 80) >= 120,
+    details: true,
     workspace: init.workspace ?? "",
     sessions: [],
     weekCostUsd: null,

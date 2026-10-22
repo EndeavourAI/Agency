@@ -217,3 +217,79 @@ describe("the keyboard", () => {
     }
   }, 90_000);
 });
+
+describe("resizing the terminal", () => {
+  const boxWidth = (rows: string[]): { at: number; w: number } => {
+    // The top border of the prompt box: the one row that holds both corners.
+    const row = rows.find((r) => r.includes("┌") && r.includes("┐")) ?? "";
+    return { at: row.indexOf("┌"), w: row.lastIndexOf("┐") - row.indexOf("┌") + 1 };
+  };
+  const logo = (rows: string[]) => has(rows, "▓▓");
+  const sizes = [
+    [120, 40],
+    [200, 60],
+    [80, 24],
+  ] as const;
+
+  test("home re-lays out on every size: the logo needs 30 rows, the box is 88 wide at most and stays centred", async () => {
+    const p = await launch({ cols: 80, rows: 24 });
+    try {
+      let rows = await p.until("home", (r) => has(r, "What should Agency work on?"), 45_000);
+      expect(logo(rows)).toBe(false);
+      expect(boxWidth(rows)).toEqual({ at: 2, w: 76 });
+      const expected = [
+        { logo: true, at: 16, w: 88 },
+        { logo: true, at: 56, w: 88 },
+        { logo: false, at: 2, w: 76 },
+      ];
+      for (const [i, [c, r]] of sizes.entries()) {
+        const want = expected[i] as (typeof expected)[number];
+        p.resize(c, r);
+        rows = await p.until(
+          `${c}x${r}`,
+          (s) => boxWidth(s).w === want.w && boxWidth(s).at === want.at && logo(s) === want.logo,
+          15_000,
+        );
+        expect(has(rows, "enter start")).toBe(true);
+        expect(rows.length).toBe(r);
+      }
+    } finally {
+      await p.stop();
+    }
+  }, 120_000);
+
+  test("a session shows the details pane from 120 columns and hides it below, at every size", async () => {
+    const p = await launch({ cols: 80, rows: 24 });
+    try {
+      await p.until("home", (r) => has(r, "What should Agency work on?"), 45_000);
+      p.send("Make the 54 task runs faster without changing results.");
+      p.send("\r");
+      await p.until("the ask to edit", (r) => has(r, "? Edit"));
+      p.send("y");
+      await p.until("the ask to run", (r) => has(r, "? Run"));
+      p.send("y");
+      let rows = await p.until("the closing row", (r) => has(r, "✓ done"), 30_000);
+      await p.until("idle", (r) => has(r, "esc esc turns"));
+      expect(has(rows, "No task list yet")).toBe(false);
+      expect(boxWidth(rows).w).toBe(76);
+      const steps = [
+        { size: [120, 40], details: true, box: 75 },
+        { size: [200, 60], details: true, box: 155 },
+        { size: [80, 24], details: false, box: 76 },
+      ] as const;
+      for (const s of steps) {
+        p.resize(s.size[0], s.size[1]);
+        rows = await p.until(
+          `${s.size[0]}x${s.size[1]}`,
+          (r) => has(r, "No task list yet") === s.details && boxWidth(r).w === s.box,
+          15_000,
+        );
+        expect(has(rows, "↑ history")).toBe(s.details);
+        expect(has(rows, "✓ done")).toBe(true);
+        expect(rows.length).toBe(s.size[1]);
+      }
+    } finally {
+      await p.stop();
+    }
+  }, 150_000);
+});

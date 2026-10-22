@@ -13,6 +13,8 @@ export interface Pty {
   /** Raw bytes the app wrote, for the checks of what it restored. */
   readonly out: string;
   send(bytes: string): void;
+  /** Resizes the pseudo-terminal and the emulator that reads it, as dragging a window edge does. */
+  resize(cols: number, rows: number): void;
   screen(): Promise<string[]>;
   /** Polls the screen until `ok` holds; the error carries the last screen. */
   until(what: string, ok: (rows: string[]) => boolean, ms?: number): Promise<string[]>;
@@ -23,8 +25,8 @@ export interface Pty {
 export async function launch(
   o: { cols?: number; rows?: number; env?: Record<string, string> } = {},
 ): Promise<Pty> {
-  const cols = o.cols ?? 120;
-  const rows = o.rows ?? 36;
+  let cols = o.cols ?? 120;
+  let rows = o.rows ?? 36;
   const workspace = mkdtempSync(join(tmpdir(), "agency-tui-pty-ws-"));
   const term = new Terminal({ cols, rows, allowProposedApi: true });
   let out = "";
@@ -54,7 +56,7 @@ export async function launch(
     await chain;
     return Array.from(
       { length: rows },
-      (_, y) => term.buffer.active.getLine(y)?.translateToString(true) ?? "",
+      (_, y) => term.buffer.active.getLine(y)?.translateToString(true, 0, cols) ?? "",
     );
   };
   const self: Pty = {
@@ -62,6 +64,12 @@ export async function launch(
       return out;
     },
     send: (bytes) => proc.terminal?.write(bytes),
+    resize(c, r) {
+      cols = c;
+      rows = r;
+      proc.terminal?.resize(c, r);
+      term.resize(c, r);
+    },
     screen,
     async until(what, ok, ms = 20_000) {
       const end = Date.now() + ms;

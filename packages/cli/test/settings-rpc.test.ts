@@ -204,6 +204,19 @@ test("history_list gives the submitted prompts of this workspace, newest first, 
   expect((await other.call("history_list")).result?.prompts).toEqual([]);
 }, 15_000);
 
+test("client_config gives the client keys, and the project value wins over the user value", async () => {
+  const { call } = await start({
+    configText: '{ "theme": "dark", "editorMode": "vim", "keybindings": { "submit": "enter" } }',
+    projectConfig: '{ "theme": "light", "voice": { "enabled": true } }',
+  });
+  expect((await call("client_config")).result?.config).toEqual({
+    theme: "light",
+    editorMode: "vim",
+    keybindings: { submit: "enter" },
+    voice: { enabled: true },
+  });
+});
+
 test("config_user gives the user file alone: no project hooks, no provider keys", async () => {
   const { call, workspaceRoot } = await start({
     configText: '{\n  // mine\n  "hooks": { "Stop": [] },\n  "provider": { "x": { "apiKey": "k" } }\n}\n',

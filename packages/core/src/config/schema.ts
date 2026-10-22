@@ -141,6 +141,11 @@ export const ConfigSchema = z.object({
   lspServers: z.record(z.string(), z.unknown()).optional(),
   /** The name of an output style: a Markdown file of `output-styles/` whose text joins the instructions. */
   outputStyle: z.string().optional(),
+  /** Client keys, kept here so every client reads them with `client_config`: the daemon never acts on them. */
+  keybindings: z.record(z.string(), z.string()).optional(),
+  editorMode: z.enum(["normal", "vim"]).optional(),
+  voice: z.object({ enabled: z.boolean().default(false), language: z.string().optional() }).optional(),
+  clientPlugins: z.array(z.string()).optional(),
   /** The `memory` tool and its notes in the prompt of each session. Default true. */
   memory: z.boolean().optional(),
   /** Loads the code plugins of the user folders of OpenCode and Pi too. Off by default: they are code. */

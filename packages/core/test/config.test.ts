@@ -289,6 +289,26 @@ describe("loadConfig", () => {
     expect(config.logLevel).toBe("error");
   });
 
+  test("the client keys accept good values and reject bad ones", () => {
+    const globalDir = tempDir();
+    cleanup.push(globalDir);
+    const load = (text: string) => {
+      writeFileSync(join(globalDir, "config.jsonc"), text);
+      return loadConfig({ globalDir, env: {} });
+    };
+    const good = load(
+      '{ "keybindings": { "submit": "ctrl+enter" }, "editorMode": "vim", "voice": { "enabled": true }, "clientPlugins": ["a"] }',
+    );
+    expect(good.keybindings).toEqual({ submit: "ctrl+enter" });
+    expect(good.editorMode).toBe("vim");
+    expect(good.voice).toEqual({ enabled: true });
+    expect(good.clientPlugins).toEqual(["a"]);
+    expect(() => load('{ "keybindings": { "submit": 1 } }')).toThrow("config is not valid");
+    expect(() => load('{ "editorMode": "emacs" }')).toThrow("config is not valid");
+    expect(() => load('{ "voice": { "enabled": "yes" } }')).toThrow("config is not valid");
+    expect(() => load('{ "clientPlugins": "a" }')).toThrow("config is not valid");
+  });
+
   test("the managed file sits at a fixed path of each OS, and an absent one is an empty layer", () => {
     expect(managedConfigPath("win32")).toBe("C:/Program Files/Agency/managed.jsonc");
     expect(managedConfigPath("darwin")).toBe("/Library/Application Support/Agency/managed.jsonc");

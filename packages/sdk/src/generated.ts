@@ -22,6 +22,7 @@ export type RpcMethod =
   | "board_status"
   | "cancel_turn"
   | "channel_read"
+  | "client_config"
   | "command_run"
   | "commands_expand"
   | "commands_list"
@@ -316,6 +317,8 @@ export interface SurfaceClient {
   cancel_turn(params?: Record<string, unknown>): Promise<unknown>;
   /** Pull shared channel posts after a cursor. */
   channel_read(params?: Record<string, unknown>): Promise<unknown>;
+  /** The merged config keys that a client reads: theme, outputStyle, keybindings, editorMode, voice, clientPlugins. */
+  client_config(params?: Record<string, unknown>): Promise<unknown>;
   /** Resolve /name to a built-in handler or markdown template. */
   command_run(params?: Record<string, unknown>): Promise<unknown>;
   /** Expand a slash command template with args. */
@@ -457,6 +460,7 @@ export function createSurfaceClient(
     board_status: (params) => call("board_status", params ?? {}),
     cancel_turn: (params) => call("cancel_turn", params ?? {}),
     channel_read: (params) => call("channel_read", params ?? {}),
+    client_config: (params) => call("client_config", params ?? {}),
     command_run: (params) => call("command_run", params ?? {}),
     commands_expand: (params) => call("commands_expand", params ?? {}),
     commands_list: (params) => call("commands_list", params ?? {}),

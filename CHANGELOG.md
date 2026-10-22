@@ -8,6 +8,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`client_config`**: one method returns the keys a TUI reads (`theme`, `outputStyle`, and the new `keybindings`,
+  `editorMode`, `voice`, `clientPlugins`), merged across the layers.
 - **`status_get` and the `statusLine` key**: model, effort, mode, cost, context used and limit, cache hit, branch and
   session in one call. A `statusLine.command` gets that JSON on stdin and its output comes back as `line`.
 - **`/btw` and `/recap`**: `/btw <session> <question>` answers from the session with no tools and stores nothing;

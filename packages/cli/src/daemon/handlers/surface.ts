@@ -32,6 +32,16 @@ const FILES_LIST_LIMIT = 50_000;
 
 const STATUS_LINE_TIMEOUT_S = 5;
 
+/** The keys that only a client reads. */
+const CLIENT_CONFIG_KEYS = [
+  "theme",
+  "outputStyle",
+  "keybindings",
+  "editorMode",
+  "voice",
+  "clientPlugins",
+] as const;
+
 const RUNTIME_CONFIG_KEYS = [
   "logLevel",
   "locale",
@@ -215,6 +225,12 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
       };
     });
     return { sessions };
+  };
+
+  handlers.client_config = async () => {
+    const client: Record<string, unknown> = {};
+    for (const key of CLIENT_CONFIG_KEYS) if (config[key] !== undefined) client[key] = config[key];
+    return { config: client };
   };
 
   handlers.status_get = async (rawParams) => {

@@ -1365,7 +1365,10 @@ describe("-p headless mode", () => {
           role: "assistant",
           content: [{ type: "tool_call", id: "c1", name: "glob", input: { pattern: "*.toml" } }],
         },
-        { role: "user", content: [{ type: "tool_result", toolCallId: "c1", content: "no files matched" }] },
+        {
+          role: "user",
+          content: [{ type: "tool_result", toolCallId: "c1", content: "no files matched", isError: false }],
+        },
         { role: "assistant", content: [{ type: "text", text: "No project checks apply." }] },
       ],
     };

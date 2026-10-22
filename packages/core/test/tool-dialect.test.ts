@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { Message } from "@agency/schema";
 import { validateToolInput } from "../src/loop.ts";
 import { canonicalCall, dialectFor, wireMessages, wireTools } from "../src/tool-dialect.ts";
 
@@ -158,7 +159,7 @@ test("Claude Code's dialect renames the tools, their schemas and the history, an
       ],
     },
   ];
-  const [sent, result] = wireMessages(history, "claude-code");
+  const [sent, result] = wireMessages(history as Message[], "claude-code");
   expect(sent!.content[0]).toEqual({
     type: "tool_call",
     id: "c1",
@@ -169,7 +170,7 @@ test("Claude Code's dialect renames the tools, their schemas and the history, an
   expect(wireMessages(history, "native")).toBe(history);
   // What the model sends back in those names is ours again.
   const back = sent!.content[0] as Parameters<typeof canonicalCall>[0];
-  expect(canonicalCall(back, tools)).toEqual(history[0]!.content[0]);
+  expect(canonicalCall(back, tools)).toEqual(history[0]!.content[0] as typeof back);
 });
 
 test("Codex's dialect offers apply_patch for edit and write, and a patch comes back as an edit of its file", () => {

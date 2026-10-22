@@ -234,7 +234,10 @@ describe("createBashTool", () => {
     // The daemon swaps this exact note under allow-all: a reworded note would keep "no network" there.
     const offline = Object.assign(new SandboxBoundary(tmpdir()), { offline: true });
     const deps: ToolDeps = { identity: { type: "user" }, capabilities: FULL_CAPABILITIES, sandbox: offline };
-    expect(createBashTool(deps, resolveShell(process.platform)).description).toContain(BASH_SANDBOX_NOTE);
+    expect(
+      createBashTool(deps, resolveShell(process.platform), { cwd: tmpdir() }, new ProcessManager())
+        .description,
+    ).toContain(BASH_SANDBOX_NOTE);
   });
 
   test("under allow-all a command runs outside the OS sandbox, in the foreground and the background", async () => {

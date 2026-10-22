@@ -273,12 +273,12 @@ describe("runTurn", () => {
     const base = toolThenDoneAdapter("Edit", { file_path: "a.ts", old_string: "x", new_string: "y" });
     const adapter: ProviderAdapter = {
       family: "fake",
-      stream(request) {
+      stream(request, http) {
         sent.push({
           tools: (request.tools ?? []).map((tool) => tool.name),
           call: request.messages.flatMap((m) => m.content).find((block) => block.type === "tool_call"),
         });
-        return base.stream(request);
+        return base.stream(request, http);
       },
     };
     const spec: ToolSpec = {
@@ -938,7 +938,7 @@ describe("runTurn", () => {
   test("a call that the output limit cut between two complete arguments does not run as repaired", async () => {
     // The repair closes `{... "newText": "b"`, and the edit would run without the replaceAll that the cut took.
     const ran: unknown[] = [];
-    const edit: CoreToolSpec = {
+    const edit: ToolSpec = {
       name: "edit",
       description: "edit",
       inputSchema: { type: "object", properties: { path: { type: "string" }, hunks: { type: "array" } } },

@@ -419,7 +419,7 @@ test("a text next to tool results goes to the model as a user message after the 
           {
             role: "user",
             content: [
-              { type: "tool_result", toolCallId: "c1", content: "file text" },
+              { type: "tool_result", toolCallId: "c1", content: "file text", isError: false },
               { type: "text", text: "Now write the summary." },
             ],
           },

@@ -227,7 +227,12 @@ describe("a fold after a request that the provider cached", () => {
       {
         role: "user",
         content: [
-          { type: "tool_result", toolCallId: "c0", content: `the secret is w919 ${"filler ".repeat(600)}` },
+          {
+            type: "tool_result",
+            toolCallId: "c0",
+            content: `the secret is w919 ${"filler ".repeat(600)}`,
+            isError: false,
+          },
         ],
       },
       text("assistant", "read"),

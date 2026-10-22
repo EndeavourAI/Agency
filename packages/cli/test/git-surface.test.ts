@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gitDiff, gitStatus } from "../src/daemon/handlers/git.ts";
+import { gitCommit, gitDiff, gitStatus, suggestMessage } from "../src/daemon/handlers/git.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -120,4 +120,67 @@ test("a staged rename keeps its line counts", async () => {
     files: Array<{ path: string; added: number | null; deleted: number | null }>;
   };
   expect(files.find((f) => f.path === "c.txt")).toMatchObject({ added: 1, deleted: 1 });
+});
+
+const head = (cwd: string) =>
+  execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd }).toString().trim();
+const subjects = (cwd: string) =>
+  execFileSync("git", ["log", "--format=%s", "-3"], { cwd }).toString().trim().split(lf);
+
+test("git_commit commits only the paths it is given and pushes to the upstream", async () => {
+  const root = repo();
+  git(root, "config", "user.name", "t");
+  git(root, "config", "user.email", "t@t");
+  writeFileSync(join(root, "a.txt"), `changed${lf}`);
+  writeFileSync(join(root, "b.txt"), `changed${lf}`);
+  writeFileSync(join(root, "new.txt"), `fresh${lf}`);
+  const done = await gitCommit(root, { message: "touch a and new", paths: ["a.txt", "new.txt"], push: true });
+  expect(done).toEqual({ sha: head(root), branch: "main", pushed: true });
+  const status = (await gitStatus(root)) as { ahead: number; files: Array<{ path: string }> };
+  expect(status.ahead).toBe(0);
+  expect(status.files.map((f) => f.path)).toEqual(["b.txt"]);
+  expect(subjects(root)[0]).toBe("touch a and new");
+});
+
+test("git_commit without paths takes every change of the workspace", async () => {
+  const root = repo();
+  git(root, "config", "user.name", "t");
+  git(root, "config", "user.email", "t@t");
+  writeFileSync(join(root, "a.txt"), `changed${lf}`);
+  writeFileSync(join(root, "new.txt"), `fresh${lf}`);
+  await gitCommit(root, { message: "all" });
+  expect(((await gitStatus(root)) as { files: unknown[] }).files).toEqual([]);
+});
+
+test("git_commit refuses an empty message, an outside path, a conflict and a push with no upstream", async () => {
+  const root = repo();
+  git(root, "config", "user.name", "t");
+  git(root, "config", "user.email", "t@t");
+  writeFileSync(join(root, "a.txt"), `changed${lf}`);
+  const before = head(root);
+  await expect(gitCommit(root, { message: "  " })).rejects.toThrow("empty");
+  await expect(gitCommit(root, { message: "x", paths: ["../x"] })).rejects.toThrow("outside");
+  git(root, "checkout", "-q", "-b", "lonely");
+  await expect(gitCommit(root, { message: "x", push: true })).rejects.toThrow("no upstream");
+  expect(head(root)).toBe(before);
+
+  git(root, "checkout", "-q", "-f", "main");
+  git(root, "checkout", "-q", "-b", "other");
+  writeFileSync(join(root, "a.txt"), `other${lf}`);
+  git(root, "commit", "-q", "-am", "other");
+  git(root, "checkout", "-q", "main");
+  writeFileSync(join(root, "a.txt"), `main${lf}`);
+  git(root, "commit", "-q", "-am", "main");
+  try {
+    git(root, "merge", "other");
+  } catch {}
+  await expect(gitCommit(root, { message: "x" })).rejects.toThrow("unmerged");
+});
+
+test("the suggested message is the session's own line, else the changed files", () => {
+  const file = (path: string) => ({ path, status: "M", added: 1, deleted: 0 });
+  expect(suggestMessage([file("a.ts")], `fix the parser${lf}more`)).toBe("fix the parser");
+  expect(suggestMessage([file("src/a.ts"), file("b.ts")])).toBe("update a.ts, b.ts");
+  expect(suggestMessage(["a", "b", "c", "d", "e"].map(file))).toBe("update a, b, c and 2 more");
+  expect(suggestMessage([])).toBe("");
 });

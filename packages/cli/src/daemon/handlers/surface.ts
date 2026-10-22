@@ -29,7 +29,7 @@ import {
   resolvePrompt,
   type SystemPromptParts,
 } from "../types.ts";
-import { gitDiff, gitStatus } from "./git.ts";
+import { type GitFile, gitDiff, gitStatus, suggestMessage } from "./git.ts";
 
 /** Paths that files_list returns at most: a TUI completes @ mentions from them. */
 const FILES_LIST_LIMIT = 50_000;
@@ -261,7 +261,16 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
     return { sessions };
   };
 
-  handlers.git_status = async () => gitStatus(ctx.options.workspaceRoot);
+  handlers.git_status = async (rawParams) => {
+    const status = await gitStatus(ctx.options.workspaceRoot);
+    if (status.repo !== true) return status;
+    const { sessionId } = (rawParams ?? {}) as { sessionId?: string };
+    const entries =
+      sessionId !== undefined && todoStore.list().includes(sessionId) ? todoStore.load(sessionId) : [];
+    // ponytail: the session keeps no summary of its work, so its title or last prompt stands for it.
+    const hint = getSessionTitle(entries) ?? lastPrompt(entries);
+    return { ...status, suggestedMessage: suggestMessage(status.files as GitFile[], hint) };
+  };
 
   handlers.git_diff = async () => gitDiff(ctx.options.workspaceRoot);
 

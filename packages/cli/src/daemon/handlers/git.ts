@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -120,4 +120,71 @@ export async function gitDiff(root: string): Promise<{
     .filter(Boolean)
     .map((path) => ({ path, text: readText(root, path) ?? null }));
   return { diff: diff ?? "", untracked };
+}
+
+/** The line a commit of these files starts from: the session's own title or last prompt wins when it has one. */
+export function suggestMessage(files: readonly GitFile[], hint?: string): string {
+  const line = (hint ?? "").split(/\n/)[0]?.trim() ?? "";
+  if (line !== "") return line.length > 72 ? `${line.slice(0, 71)}…` : line;
+  if (files.length === 0) return "";
+  const names = files.slice(0, 3).map((f) => f.path.split("/").pop());
+  return `update ${names.join(", ")}${files.length > 3 ? ` and ${files.length - 3} more` : ""}`;
+}
+
+export interface CommitResult {
+  sha: string;
+  branch: string;
+  pushed: boolean;
+}
+
+/** Runs git and throws its own message on failure, which tells the person what refused. */
+async function gitOrThrow(root: string, args: string[]): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync("git", args, {
+      cwd: root,
+      timeout: 60_000,
+      windowsHide: true,
+      encoding: "utf8",
+    });
+    return stdout;
+  } catch (error) {
+    const e = error as { stderr?: string; stdout?: string; message: string };
+    throw new Error((e.stderr || e.stdout || e.message).trim());
+  }
+}
+
+/**
+ * Commits `paths` (or every change of the workspace), then pushes to the upstream of the current branch when asked.
+ * Never forces: a push that the remote refuses is an error after a commit that stays.
+ */
+export async function gitCommit(
+  root: string,
+  opts: { message: string; paths?: string[]; push?: boolean },
+): Promise<CommitResult> {
+  const message = opts.message.trim();
+  if (message === "") throw new Error("commit message is empty");
+  if ((await git(root, ["rev-parse", "--is-inside-work-tree"])) === undefined)
+    throw new Error("not a git repository");
+  if (lines(await git(root, ["diff", "--name-only", "--diff-filter=U"])).length > 0)
+    throw new Error("the index has unmerged paths: resolve the conflict first");
+  const paths = opts.paths ?? [];
+  for (const path of paths)
+    if (isAbsolute(path) || path.split(/[\\/]/).includes("..") || path === "")
+      throw new Error(`path is outside the workspace: ${path}`);
+  const branch = ((await git(root, ["branch", "--show-current"])) ?? "").trim();
+  if (opts.push) {
+    if (branch === "") throw new Error("cannot push a detached HEAD");
+    if ((await git(root, ["rev-parse", "--abbrev-ref", "@{upstream}"])) === undefined)
+      throw new Error(`branch ${branch} has no upstream: nothing was committed`);
+  }
+  if (paths.length > 0) {
+    await gitOrThrow(root, ["add", "--", ...paths]);
+    await gitOrThrow(root, ["commit", "-m", message, "--", ...paths]);
+  } else {
+    await gitOrThrow(root, ["add", "-A", "--", "."]);
+    await gitOrThrow(root, ["commit", "-m", message]);
+  }
+  const sha = ((await git(root, ["rev-parse", "--short", "HEAD"])) ?? "").trim();
+  if (opts.push) await gitOrThrow(root, ["push"]);
+  return { sha, branch, pushed: opts.push === true };
 }

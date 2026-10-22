@@ -36,6 +36,7 @@ export type RpcMethod =
   | "decisions_read"
   | "dispatch_compare"
   | "files_list"
+  | "git_commit"
   | "git_diff"
   | "git_status"
   | "history_list"
@@ -347,9 +348,11 @@ export interface SurfaceClient {
   dispatch_compare(params?: Record<string, unknown>): Promise<unknown>;
   /** Up to 50,000 workspace paths that git does not ignore, plus the resources of the session's MCP servers (mention: server:uri). */
   files_list(params?: Record<string, unknown>): Promise<unknown>;
+  /** Commit paths (or every change of the workspace) with a message, behind the permission rules; push goes to the upstream of the current branch, never forced. */
+  git_commit(params?: Record<string, unknown>): Promise<unknown>;
   /** The unified diff against HEAD, plus the text of untracked files (null for a binary or a large one). */
   git_diff(params?: Record<string, unknown>): Promise<unknown>;
-  /** Branch, ahead and behind, the last commit and the changed files of the workspace with their line counts; repo is false outside a repository. */
+  /** Branch, ahead and behind, the last commit and the changed files of the workspace with their line counts, and a suggested commit message; repo is false outside a repository. */
   git_status(params?: Record<string, unknown>): Promise<unknown>;
   /** The prompts submitted in this workspace, newest first; query keeps those that contain it, limit caps the rows. */
   history_list(params?: Record<string, unknown>): Promise<unknown>;
@@ -480,6 +483,7 @@ export function createSurfaceClient(
     decisions_read: (params) => call("decisions_read", params ?? {}),
     dispatch_compare: (params) => call("dispatch_compare", params ?? {}),
     files_list: (params) => call("files_list", params ?? {}),
+    git_commit: (params) => call("git_commit", params ?? {}),
     git_diff: (params) => call("git_diff", params ?? {}),
     git_status: (params) => call("git_status", params ?? {}),
     history_list: (params) => call("history_list", params ?? {}),

@@ -64,6 +64,7 @@ import {
   type SessionSendResult,
   STRUCTURED_OUTPUT_TOOL,
 } from "../types.ts";
+import { gitCommit } from "./git.ts";
 import { setSessionGoal } from "./goal.ts";
 import { createTurnApproval } from "./plan.ts";
 import { executeTurn, PROMPT_HOOK_SOURCE } from "./turn.ts";
@@ -589,6 +590,42 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
       return await enqueue(sessionId, () => runShell(sessionId, command, bash, turnId, controller.signal));
     } finally {
       ctx.activeControllers.delete(turnId);
+    }
+  };
+  /** Commit (and push) the workspace changes for the review screen, behind the same permission rules as a shell command. */
+  handlers.git_commit = async (rawParams) => {
+    const { sessionId, message, paths, push } = (rawParams ?? {}) as {
+      sessionId?: string;
+      message?: string;
+      paths?: string[];
+      push?: boolean;
+    };
+    if (!sessionId || !message?.trim())
+      throw new AgencyError(ErrorCode.INVALID_REQUEST, "git_commit requires sessionId and message", {
+        source: "session",
+      });
+    const turnId = randomUUID();
+    const ask = createTurnApproval(
+      ctx,
+      { turnId, sessionId, provider: "user", model: "user", systemPrompt: "", session: [] } as RunTurnParams,
+      sessionId,
+      `turn.${turnId}`,
+    );
+    const gate = gateForSession(ctx, sessionId);
+    for (const command of push ? ["git commit", "git push"] : ["git commit"]) {
+      if ((await gate.check({ tool: "bash", command, riskTier: "dangerous" }, ask)) === "deny")
+        throw new AgencyError(ErrorCode.PERMISSION_DENIED, `the permission rules refuse: ${command}`, {
+          source: "session",
+        });
+    }
+    try {
+      return await gitCommit(ctx.options.workspaceRoot, {
+        message,
+        ...(Array.isArray(paths) ? { paths } : {}),
+        ...(push === true ? { push } : {}),
+      });
+    } catch (error) {
+      throw new AgencyError(ErrorCode.TOOL_ERROR, (error as Error).message, { source: "git" });
     }
   };
   const runShell = async (

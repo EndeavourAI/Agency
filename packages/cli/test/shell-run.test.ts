@@ -1,4 +1,5 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -81,7 +82,7 @@ async function setup(
   daemons.push(daemon);
   const client = await connectToDaemon(daemon.server.port, "127.0.0.1", { token: daemon.server.token });
   clients.push(client);
-  return { client, requests, ran, release };
+  return { client, requests, ran, release, workspaceRoot };
 }
 
 test("shell_run runs the command and its output reaches the next request", async () => {
@@ -211,4 +212,40 @@ test("cancel_turn aborts a running shell_run and drops its output", async () => 
   expect(aborted).toBe(true);
   await send(client, "hello");
   expect(requests[0]).not.toContain("output of sleep 99");
+});
+
+test("git_commit commits when the rules allow it, suggests a message and refuses when they deny", async () => {
+  const { client, workspaceRoot: ws } = await setup("allow");
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: ws, stdio: "ignore" });
+  git("init", "-q", "-b", "main");
+  writeFileSync(join(ws, "a.txt"), "one\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "first");
+  writeFileSync(join(ws, "a.txt"), "two\n");
+  await client.call("session_send", {
+    sessionId: "s1",
+    provider: "anthropic",
+    model: "m",
+    systemPrompt: "sys",
+    userText: "fix a",
+  });
+  const status = (await client.call("git_status", { sessionId: "s1" })) as { suggestedMessage: string };
+  expect(status.suggestedMessage).toBe("fix a");
+  const done = (await client.call("git_commit", { sessionId: "s1", message: "fix a" })) as {
+    pushed: boolean;
+  };
+  expect(done.pushed).toBe(false);
+  expect(execFileSync("git", ["log", "-1", "--format=%s"], { cwd: ws }).toString().trim()).toBe("fix a");
+  await expect(client.call("git_commit", { sessionId: "s1", message: "again", push: true })).rejects.toThrow(
+    "upstream",
+  );
+});
+
+test("git_commit refuses a commit that the permission rules deny", async () => {
+  const { client, workspaceRoot: ws } = await setup("deny");
+  execFileSync("git", ["init", "-q"], { cwd: ws });
+  writeFileSync(join(ws, "a.txt"), "x");
+  await client.call("session_create", { sessionId: "s1" });
+  await expect(client.call("git_commit", { sessionId: "s1", message: "m" })).rejects.toThrow("refuse");
 });

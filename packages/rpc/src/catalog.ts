@@ -27,7 +27,9 @@ export const METHOD_DOCS: Record<string, string> = {
   shell_run:
     "Run a user shell command under the sandbox and the permission rules; its output joins the session as user context.",
   git_status:
-    "Branch, ahead and behind, the last commit and the changed files of the workspace with their line counts; repo is false outside a repository.",
+    "Branch, ahead and behind, the last commit and the changed files of the workspace with their line counts, and a suggested commit message; repo is false outside a repository.",
+  git_commit:
+    "Commit paths (or every change of the workspace) with a message, behind the permission rules; push goes to the upstream of the current branch, never forced.",
   git_diff:
     "The unified diff against HEAD, plus the text of untracked files (null for a binary or a large one).",
   client_config:

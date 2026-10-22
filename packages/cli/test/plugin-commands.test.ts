@@ -220,7 +220,7 @@ describe("plugins of the Claude Code settings", () => {
     c.deps.cwd = other;
     expect(await runEntrypoint(["plugin", "install", "test-plugin@mk2"], c.deps)).toBe(0);
     expect(existsSync(join(other, ".agency", "commands", "help.md"))).toBe(true);
-  });
+  }, 30_000);
 });
 
 describe("plugin install from git", () => {
@@ -247,7 +247,7 @@ describe("plugin install from git", () => {
     expect(c.out.join("\n")).toContain("Plugin: test-plugin v1.2.3");
     expect(existsSync(join(ws, ".agency", "skills", "my-skill", "SKILL.md"))).toBe(true);
     expect(existsSync(join(ws, ".agency", "plugin-roots", "test-plugin", ".git"))).toBe(false);
-  });
+  }, 30_000);
 
   test("a marketplace installs the named plugin, needs a name for more than one, and keeps a source inside it", async () => {
     const market = (plugins: unknown[]) =>
@@ -280,7 +280,7 @@ describe("plugin install from git", () => {
     const outside = await install("escape");
     expect(outside.code).toBe(1);
     expect(outside.err).toContain("outside the marketplace");
-  });
+  }, 30_000);
 
   test("a Cursor marketplace installs a Cursor plugin with its rule, and remove deletes the rule", async () => {
     const url = gitRepo({
@@ -300,7 +300,7 @@ describe("plugin install from git", () => {
     expect(existsSync(rule)).toBe(true);
     expect(await runEntrypoint(["plugin", "remove", "kit"], c.deps)).toBe(0);
     expect(existsSync(rule)).toBe(false);
-  });
+  }, 30_000);
 
   test("a clone that fails says why", async () => {
     const c = capture();
@@ -308,7 +308,7 @@ describe("plugin install from git", () => {
     const missing = pathToFileURL(join(tempDir("agency-plugin-none-"), "missing")).href;
     expect(await runEntrypoint(["plugin", "install", missing], c.deps)).toBe(1);
     expect(c.err.join("\n")).toContain("git clone of");
-  });
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------

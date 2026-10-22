@@ -31,6 +31,22 @@ Environment overrides:
 
 After install, ensure the install directory is on `PATH`. The Linux/macOS script prints a hint if it is not; the Windows script appends it to the user `PATH`, unless `AGENCY_NO_MODIFY_PATH` is `1`.
 
+## npm
+
+```sh
+npm i -g @endeavourai/agency
+```
+
+npm installs the binary of your platform as an optional dependency, so do not use `--omit=optional`. Node 18+ runs the small launcher; the binary does the work.
+
+Alpine (musl) needs the C++ runtime that the binary links to:
+
+```sh
+apk add libstdc++ libgcc
+```
+
+Upgrade with `npm i -g @endeavourai/agency@latest`. `agency update` does not replace an npm install; it prints this command. On Windows a running `agency.exe` cannot be replaced: close every agency window and check that no daemon is left (`agency daemon status`; end a stray `agency.exe` in Task Manager) before you upgrade. There is no command that stops the daemon.
+
 ## Manual install
 
 1. Download the asset for your platform from the GitHub release (e.g. `agency-linux-x64`, `agency-darwin-arm64`, `agency-windows-x64.exe`) and `checksums.txt`.

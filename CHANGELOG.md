@@ -8,6 +8,8 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **`history_list`**: each prompt sent with `session_send` is kept per workspace in the data folder; the method
+  returns them newest first, with a query and a limit.
 - **`files_list` for @ completion**: up to 50,000 workspace paths that git does not ignore (nested `.gitignore`
   files apply to their folder), plus the MCP resources of the session as `server:uri`.
 - **Managed policy at fixed paths**: `loadConfig` reads the managed file from a fixed path of the OS, so every

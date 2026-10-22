@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { chmodSync, type Dirent, existsSync, mkdirSync, rmSync } from "node:fs";
+import { appendFileSync, chmodSync, type Dirent, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { configDir } from "./paths.ts";
 
 /**
@@ -89,6 +89,32 @@ export function storagePaths(
 /** The notes file of the `memory` tool for a workspace: in the data folder of the user, not in the repository. */
 export function memoryFile(workspaceRoot: string, env: NodeJS.ProcessEnv = process.env): string {
   return join(dataDir(env), "memory", `${workspaceId(workspaceRoot)}.md`);
+}
+
+/** The submitted prompts of a workspace, one JSON line each: in the data folder, since a prompt may hold secrets. */
+export function promptHistoryFile(workspaceRoot: string, env: NodeJS.ProcessEnv = process.env): string {
+  return join(dataDir(env), "history", `${workspaceId(workspaceRoot)}.jsonl`);
+}
+
+export function appendPrompt(file: string, text: string): void {
+  mkdirSync(dirname(file), { recursive: true });
+  appendFileSync(file, `${JSON.stringify({ text, at: new Date().toISOString() })}\n`);
+}
+
+/** Newest first; `query` keeps the prompts that contain it, ignoring case. */
+export function listPrompts(file: string, query?: string, limit = 200): Array<{ text: string; at: string }> {
+  if (!existsSync(file)) return [];
+  const needle = query?.toLowerCase();
+  const rows: Array<{ text: string; at: string }> = [];
+  for (const line of readFileSync(file, "utf8").split("\n").reverse()) {
+    if (rows.length >= limit) break;
+    try {
+      const row = JSON.parse(line) as { text: string; at: string };
+      if (typeof row.text === "string" && (!needle || row.text.toLowerCase().includes(needle)))
+        rows.push(row);
+    } catch {}
+  }
+  return rows;
 }
 
 /**

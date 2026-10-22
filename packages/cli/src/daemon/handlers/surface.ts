@@ -3,8 +3,10 @@ import {
   announceHook,
   getSessionTitle,
   isReminderText,
+  listPrompts,
   loadTraceSpansSync,
   type MessageEntry,
+  promptHistoryFile,
   restoreIntegrationCheckpoint,
   storagePaths,
 } from "@agency/core";
@@ -210,6 +212,11 @@ export function registerSurfaceHandlers(handlers: Record<string, MethodHandler>,
       };
     });
     return { sessions };
+  };
+
+  handlers.history_list = async (rawParams) => {
+    const { query, limit } = (rawParams ?? {}) as { query?: string; limit?: number };
+    return { prompts: listPrompts(promptHistoryFile(ctx.options.workspaceRoot), query, limit) };
   };
 
   handlers.files_list = async (rawParams) => {

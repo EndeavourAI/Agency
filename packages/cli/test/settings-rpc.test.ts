@@ -180,6 +180,30 @@ test("files_list gives the workspace files that git does not ignore", async () =
   expect(result.resources).toEqual([]);
 });
 
+test("history_list gives the submitted prompts of this workspace, newest first, filtered by a query", async () => {
+  const { call, keychain } = await start();
+  await keychain.set("anthropic", "test-key");
+  const multi = ["second Idea", "with two lines"].join(String.fromCharCode(10));
+  for (const [i, text] of ["first idea", multi, "third"].entries()) {
+    const turn = call("session_send", {
+      sessionId: `h${i}`,
+      provider: "anthropic",
+      model: "m",
+      userText: text,
+    });
+    await Bun.sleep(300);
+    release();
+    await turn;
+  }
+  const texts = async (params: Record<string, unknown> = {}) =>
+    (((await call("history_list", params)).result?.prompts ?? []) as { text: string }[]).map((p) => p.text);
+  expect(await texts()).toEqual(["third", multi, "first idea"]);
+  expect(await texts({ query: "IDEA" })).toEqual([multi, "first idea"]);
+  expect(await texts({ limit: 1 })).toEqual(["third"]);
+  const other = await start();
+  expect((await other.call("history_list")).result?.prompts).toEqual([]);
+}, 15_000);
+
 test("config_user gives the user file alone: no project hooks, no provider keys", async () => {
   const { call, workspaceRoot } = await start({
     configText: '{\n  // mine\n  "hooks": { "Stop": [] },\n  "provider": { "x": { "apiKey": "k" } }\n}\n',

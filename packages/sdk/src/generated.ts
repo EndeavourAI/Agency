@@ -35,6 +35,7 @@ export type RpcMethod =
   | "decisions_read"
   | "dispatch_compare"
   | "files_list"
+  | "history_list"
   | "inbox_send"
   | "lsp_status"
   | "mcp_status"
@@ -332,6 +333,8 @@ export interface SurfaceClient {
   dispatch_compare(params?: Record<string, unknown>): Promise<unknown>;
   /** Up to 50,000 workspace paths that git does not ignore, plus the resources of the session's MCP servers (mention: server:uri). */
   files_list(params?: Record<string, unknown>): Promise<unknown>;
+  /** The prompts submitted in this workspace, newest first; query keeps those that contain it, limit caps the rows. */
+  history_list(params?: Record<string, unknown>): Promise<unknown>;
   /** Post a typed message to a teammate inbox. */
   inbox_send(params?: Record<string, unknown>): Promise<unknown>;
   /** Language server statuses for a session scope. */
@@ -454,6 +457,7 @@ export function createSurfaceClient(
     decisions_read: (params) => call("decisions_read", params ?? {}),
     dispatch_compare: (params) => call("dispatch_compare", params ?? {}),
     files_list: (params) => call("files_list", params ?? {}),
+    history_list: (params) => call("history_list", params ?? {}),
     inbox_send: (params) => call("inbox_send", params ?? {}),
     lsp_status: (params) => call("lsp_status", params ?? {}),
     mcp_status: (params) => call("mcp_status", params ?? {}),

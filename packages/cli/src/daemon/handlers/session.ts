@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   addUsage,
+  appendPrompt,
   buildEnvironmentBlock,
   CALL_TOOL,
   CODE_TOOL,
@@ -16,6 +17,7 @@ import {
   newEntryId,
   planOffReminder,
   projectSessionView,
+  promptHistoryFile,
   readOnlyReminder,
   resolveSmallModel,
   runChildTurn,
@@ -283,6 +285,7 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
       throw new AgencyError(ErrorCode.INVALID_REQUEST, "session_send requires userText", {
         source: "session",
       });
+    appendPrompt(promptHistoryFile(ctx.options.workspaceRoot), p.userText);
     // Owned while it waits: a disconnect removes the owner, and a turn with no owner does not start.
     const turnId = p.turnId ?? randomUUID();
     ctx.turnOwners.set(turnId, context.clientId);

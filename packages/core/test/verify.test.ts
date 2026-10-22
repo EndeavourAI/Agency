@@ -369,3 +369,22 @@ test("checkOutcome reads the last check against the last edit", () => {
   expect(checkOutcome([...test("t"), ...edit])).toBe("stale");
   expect(checkOutcome([...test("t", true), ...test("u")])).toBe("passed");
 });
+
+test("checkOutcome counts a check only as a command that ran and whose exit code is the command's", () => {
+  const run = (command: string, isError = false): Message[] => [
+    { role: "assistant", content: [{ type: "tool_call", id: "c", name: "bash", input: { command } }] },
+    { role: "user", content: [{ type: "tool_result", toolCallId: "c", content: "x", isError }] },
+  ];
+  for (const command of [
+    "echo lint",
+    "cat tsconfig.json # tsc",
+    "git commit -m 'fix lint'",
+    "bun test || true",
+    "bun test; true",
+    "tsc --noEmit | tail -3",
+  ])
+    expect(checkOutcome(run(command))).toBe("none");
+  expect(checkOutcome(run("cd app && bun test"))).toBe("passed");
+  expect(checkOutcome(run("CI=1 bunx tsc --noEmit && echo ok", true))).toBe("failed");
+  expect(checkOutcome(run("bun test && echo done"))).toBe("passed");
+});

@@ -160,6 +160,43 @@ export function reviewNote(task: string, missing: string[]): string {
 const CHECK_COMMAND =
   /\b(?:tsc|eslint|biome|ruff|mypy|pyright|clippy|typecheck|lint)\b|\bcargo\s+(?:check|build)\b|\bgo\s+(?:vet|build)\b/;
 
+const NOT_A_RUNNER = new Set([
+  "echo",
+  "cat",
+  "printf",
+  "grep",
+  "rg",
+  "sed",
+  "awk",
+  "head",
+  "tail",
+  "ls",
+  "find",
+  "git",
+  "man",
+  "which",
+  "type",
+  "less",
+  "wc",
+  "true",
+]);
+
+/** "check": a segment runs a check and its exit code is the command's; "masked": a pipe, `|| true` or a later `;` hides it. */
+function checkKind(command: string): "check" | "masked" | undefined {
+  const parts = command.replace(/(^|\s)#.*$/gm, "").split(/(&&|\|\||[;|\n])/);
+  let kind: "check" | "masked" | undefined;
+  for (let i = 0; i < parts.length; i += 2) {
+    const segment = (parts[i] ?? "").trim().replace(/^(?:\w+=\S*\s+)+/, "");
+    const word = segment.split(/\s+/)[0] ?? "";
+    if (NOT_A_RUNNER.has(word)) continue;
+    if (!TEST_COMMAND.test(segment) && !CHECK_COMMAND.test(segment)) continue;
+    const next = parts[i + 1];
+    if (next === undefined || next === "&&") kind = "check";
+    else kind ??= "masked";
+  }
+  return kind;
+}
+
 /**
  * What the turn's checks say: the last test, typecheck, lint or build command ran after the last successful edit,
  * and passed or failed; "stale" when an edit came after it, "none" when no such command ran.
@@ -175,7 +212,7 @@ export function checkOutcome(turn: Message[]): "passed" | "failed" | "stale" | "
       const call = calls.get(block.toolCallId);
       if (call === undefined) continue;
       const command = call.name === "bash" ? String(call.input.command ?? "") : "";
-      if (TEST_COMMAND.test(command) || CHECK_COMMAND.test(command)) {
+      if (checkKind(command) === "check") {
         last = block.isError ? "failed" : "passed";
         stale = false;
       } else if (EDIT_TOOLS.has(call.name) && !block.isError) stale = true;

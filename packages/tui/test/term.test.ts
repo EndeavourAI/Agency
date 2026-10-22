@@ -90,3 +90,51 @@ describe("rows", () => {
     expect(rows.map((r) => r.map((s) => s.t).join(""))).toEqual(["see code,", "then go"]);
   });
 });
+
+describe("theme contrast (WCAG, truecolor)", () => {
+  const lum = (hex: string): number => {
+    const [r = 0, g = 0, b = 0] = [1, 3, 5]
+      .map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (a: string, b: string): number => {
+    const [hi = 0, lo = 0] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const themes = ["agency", "night", "light"] as const;
+
+  test("every text colour reads at 4.5:1 on the background, the panel and an element", () => {
+    for (const name of themes) {
+      const t = HEX[name];
+      for (const fg of ["text", "soft", "muted", "brand", "you", "plan", "auto", "add", "del"] as const)
+        for (const bg of ["bg", "panel", "element"] as const)
+          expect([name, fg, bg, ratio(t[fg], t[bg]) >= 4.5]).toEqual([name, fg, bg, true]);
+    }
+  });
+
+  test("text on the fills that the canvas draws it on reads at 4.5:1", () => {
+    for (const name of themes) {
+      const t = HEX[name];
+      const pairs = [
+        ["text", "youBg"],
+        ["soft", "youBg"],
+        ["you", "youBg"],
+        ["text", "addBg"],
+        ["add", "addBg"],
+        ["text", "delBg"],
+        ["del", "delBg"],
+      ] as const;
+      for (const [fg, bg] of pairs)
+        expect([name, fg, bg, ratio(t[fg], t[bg]) >= 4.5]).toEqual([name, fg, bg, true]);
+    }
+  });
+
+  test("the box edge (dim) stands out 3:1 from the background and the panel", () => {
+    for (const name of themes) {
+      const t = HEX[name];
+      for (const bg of ["bg", "panel"] as const)
+        expect([name, bg, ratio(t.dim, t[bg]) >= 3]).toEqual([name, bg, true]);
+    }
+  });
+});

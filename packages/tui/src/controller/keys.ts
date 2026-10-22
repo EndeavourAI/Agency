@@ -20,7 +20,7 @@ import {
   settingValue,
 } from "../state/derive.ts";
 import type { Event } from "../state/events.ts";
-import { nextValue, parseText, SETTINGS } from "../state/settings.ts";
+import { nextValue, parseText, rowsOf } from "../state/settings.ts";
 import {
   type AppState,
   type Block,
@@ -416,22 +416,20 @@ function run(state: AppState, command: Command, ctx: KeyContext): Out {
     case "settings.change": {
       const { sec, row } = state.settings;
       if (row === null) return out([{ type: "settings_in" }]);
-      const r = SETTINGS[sec]?.rows[row];
+      const r = rowsOf(state.settings.config, sec)[row];
       if (!r) return none;
       if (r.kind === "model") return out([{ type: "model_open" }]);
       if (r.kind === "text") return out([{ type: "settings_edit", text: String(settingValue(state, r)) }]);
       if (r.kind === "info") return none;
-      const value = nextValue(r, settingValue(state, r));
-      return out(
-        [{ type: "settings_value", path: r.key, value }],
-        [{ type: "config_write", key: r.key, value }],
-      );
+      const next = nextValue(r, settingValue(state, r));
+      const { key, value } = r.write ? r.write(next) : { key: r.key, value: next };
+      return out([{ type: "settings_value", path: key, value }], [{ type: "config_write", key, value }]);
     }
     case "settings.editCommit": {
-      const r = SETTINGS[state.settings.sec]?.rows[state.settings.row ?? -1];
+      const r = rowsOf(state.settings.config, state.settings.sec)[state.settings.row ?? -1];
       const text = state.settings.edit;
       if (!r || text === null) return none;
-      const parsed = parseText(r.key, text);
+      const parsed = parseText(r.key, text, state.settings.config);
       if (parsed instanceof Error)
         return out([
           { type: "settings_edit", text: null },

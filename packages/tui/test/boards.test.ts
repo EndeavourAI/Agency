@@ -500,6 +500,56 @@ describe("settings", () => {
     expect(keys).toContain("esc back");
   });
 
+  test("the Models section says where each key comes from", async () => {
+    const d = connected();
+    d.send(ctrl.comma);
+    d.send("\x1b[B");
+    const m = await board(d);
+    expect(m.grid.some((r) => /Anthropic\s+key set\s+from the keychain/.test(r))).toBe(true);
+    expect(m.grid.some((r) => /OpenAI\s+key set\s+from OPENAI_API_KEY/.test(r))).toBe(true);
+    expect(m.grid.some((r) => /Google\s+key set\s+from your login/.test(r))).toBe(true);
+    expect(snap(m)).toMatchSnapshot();
+  });
+
+  const userConfig = {
+    permissions: { bash: { "git push *": "ask", "rm -rf *": "deny" }, edit: "allow" },
+    mcpServers: { context7: { command: "npx" }, github: { url: "https://x.test/mcp", enabled: false } },
+    hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "./scripts/guard.sh" }] }] },
+    statusLine: { command: "./scripts/status.sh" },
+  };
+  const down = (d: Driver, n: number): void => {
+    for (let i = 0; i < n; i++) d.send("\x1b[B");
+  };
+
+  test("permission rules, MCP servers and hooks of the user config, and the empty states without them", async () => {
+    const d = connected();
+    d.daemon({ type: "config_loaded", config: userConfig });
+    d.send(ctrl.comma);
+    down(d, 2);
+    const perms = await board(d);
+    expect(perms.grid.some((r) => /Bash git push \*\s+ask/.test(r))).toBe(true);
+    expect(perms.grid.some((r) => /Edit\s+allow/.test(r))).toBe(true);
+    expect(snap(perms)).toMatchSnapshot();
+    down(d, 3);
+    const mcp = await board(d);
+    expect(mcp.grid.some((r) => /context7\s+on\s+stdio/.test(r))).toBe(true);
+    expect(mcp.grid.some((r) => /github\s+off\s+http/.test(r))).toBe(true);
+    expect(snap(mcp)).toMatchSnapshot();
+    down(d, 1);
+    const hooks = await board(d);
+    expect(hooks.grid.some((r) => /PreToolUse Bash\s+\.\/scripts\/guard\.sh/.test(r))).toBe(true);
+    expect(hooks.grid.some((r) => /Status line\s+\.\/scripts\/status\.sh/.test(r))).toBe(true);
+
+    const bare = connected();
+    bare.send(ctrl.comma);
+    down(bare, 2);
+    expect((await board(bare)).grid.some((r) => r.includes("No rules in your user config"))).toBe(true);
+    down(bare, 3);
+    expect((await board(bare)).grid.some((r) => r.includes("No MCP servers in your user config"))).toBe(true);
+    down(bare, 1);
+    expect((await board(bare)).grid.some((r) => r.includes("No hooks in your user config"))).toBe(true);
+  });
+
   test("a row is picked with the arrows; space changes it and the theme applies at once", async () => {
     const d = connected();
     d.send(ctrl.comma);
@@ -531,7 +581,7 @@ describe("settings", () => {
     expect(d.last("config_write")).toMatchObject({ key: "budgets.dailyUsd", value: 20 });
     expect(d.state.settings.edit).toBeNull();
     const m = await board(d);
-    expect(m.grid.some((r) => /Daily cap \(USD\)\s+20/.test(r))).toBe(true);
+    expect(m.grid.some((r) => /Daily cap \(USD\)\s+\$20/.test(r))).toBe(true);
   });
 
   test("a value that is not a number is not written", async () => {
@@ -543,7 +593,7 @@ describe("settings", () => {
     d.send("lots");
     d.send("\r");
     expect(d.last("config_write")).toBeUndefined();
-    expect(d.state.flash?.text).toContain("not a number");
+    expect(d.state.flash?.text).toContain("not an amount");
   });
 
   test("providers that have a key are listed under Models", async () => {

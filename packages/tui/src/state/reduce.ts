@@ -4,7 +4,7 @@ import { emptyMd, finishMd, pushMd } from "../render-model/markdown.ts";
 import type { ComposerOp, DaemonEvent, Event, UiEvent } from "./events.ts";
 import { formatTokens } from "./format.ts";
 import { hydrate } from "./hydrate.ts";
-import { SETTINGS, setPath } from "./settings.ts";
+import { rowsOf, SETTINGS, setPath } from "./settings.ts";
 import {
   type AppState,
   type Block,
@@ -48,6 +48,7 @@ export function initialState(
     model: { open: false, q: "", at: 0, recent: [] },
     models: [],
     connectedProviders: [],
+    keySource: {},
     defaultModel: null,
     review: {
       open: false,
@@ -311,6 +312,7 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
         ...state,
         models: e.models,
         connectedProviders: e.connected,
+        keySource: e.keySource ?? {},
         defaultModel: e.defaultModel ?? state.defaultModel,
       };
     case "git_loaded":
@@ -745,7 +747,7 @@ function reduceUi(state: AppState, e: UiEvent): AppState {
       return { ...state, images: [...state.images, e.chip] };
     case "settings_move": {
       const { sec, row } = state.settings;
-      const n = row === null ? SETTINGS.length : (SETTINGS[sec]?.rows.length ?? 0);
+      const n = row === null ? SETTINGS.length : rowsOf(state.settings.config, sec).length;
       if (n === 0) return state;
       const at = ((row === null ? sec : row) + e.d + n) % n;
       return {
@@ -754,7 +756,7 @@ function reduceUi(state: AppState, e: UiEvent): AppState {
       };
     }
     case "settings_in":
-      return state.settings.row === null && (SETTINGS[state.settings.sec]?.rows.length ?? 0) > 0
+      return state.settings.row === null && rowsOf(state.settings.config, state.settings.sec).length > 0
         ? { ...state, settings: { ...state.settings, row: 0 } }
         : state;
     case "settings_out":

@@ -49,7 +49,7 @@ describe("a text row of settings", () => {
     d.type("lots");
     d.send(KEY.enter);
     expect(d.effects.filter((e) => e.type === "config_write")).toHaveLength(1);
-    expect(d.state.flash).toMatchObject({ tone: "error", text: "lots is not a number" });
+    expect(d.state.flash).toMatchObject({ tone: "error", text: "lots is not an amount" });
   });
 
   test("keys typed in a text row are not commands of the screen", () => {
@@ -64,7 +64,7 @@ describe("a text row of settings", () => {
   test("parseText", () => {
     expect(parseText("budgets.monthlyUsd", " $1,200 ")).toBe(1200);
     expect(parseText("compactionLimit", "90000")).toBe(90000);
-    expect(parseText("small_model", " haiku ")).toBe("haiku");
+    expect(parseText("small_model", " anthropic/haiku ")).toBe("anthropic/haiku");
     expect(parseText("budgets.dailyUsd", "")).toBeNull();
     expect(parseText("budgets.dailyUsd", "-3")).toBeInstanceOf(Error);
   });

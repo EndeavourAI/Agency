@@ -236,6 +236,8 @@ export interface AppState {
   model: ModelPicker;
   models: ModelRow[];
   connectedProviders: string[];
+  /** Where each connected key comes from: a variable name, "login", "keychain" or "config". */
+  keySource: Record<string, string>;
   /** Chosen for the next turn: `provider/model`. */
   defaultModel: string | null;
   review: ReviewState;

@@ -55,6 +55,7 @@ interface ProvidersResult {
   }>;
   default: Record<string, string>;
   connected: string[];
+  keySource?: Record<string, string>;
 }
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -149,7 +150,15 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
     const p = await call<ProvidersResult>("providers_list", { models: "connected" });
     const first = p.connected[0];
     const dm = first && p.default[first] ? `${first}/${p.default[first]}` : null;
-    dispatch([{ type: "models_loaded", models: modelRows(p), connected: p.connected, defaultModel: dm }]);
+    dispatch([
+      {
+        type: "models_loaded",
+        models: modelRows(p),
+        connected: p.connected,
+        ...(p.keySource ? { keySource: p.keySource } : {}),
+        defaultModel: dm,
+      },
+    ]);
   }
 
   async function loadConfig(): Promise<void> {

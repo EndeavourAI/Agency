@@ -11,6 +11,7 @@ import {
   type WireEntry,
   type WireEvent,
 } from "../src/state/index.ts";
+import { parseText, rowsOf, rowValue, SETTINGS } from "../src/state/settings.ts";
 import { sessionMark } from "../src/view/home.ts";
 import { Driver, KEY } from "./helpers.ts";
 
@@ -306,5 +307,86 @@ describe("image paste", () => {
     d.type("what is this?");
     d.send(KEY.enter);
     expect(d.last("send_turn")?.images).toEqual([chip]);
+  });
+});
+
+describe("settings built from the user config", () => {
+  const config = {
+    permissions: {
+      bash: { "git push *": "ask", "rm -rf *": "deny" },
+      edit: "allow",
+      "ext.tool": "deny",
+    },
+    mcpServers: { context7: { command: "npx" }, github: { url: "https://x.test/mcp", enabled: false } },
+    hooks: {
+      PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "./scripts/guard.sh" }] }],
+      SessionStart: [{ hooks: [{ type: "http", url: "https://x.test/hook" }] }],
+    },
+  };
+  const section = (name: string): number => SETTINGS.findIndex((s) => s.name === name);
+  const labels = (name: string): string[] => rowsOf(config, section(name)).map((r) => r.label);
+
+  test("rules, servers and hooks become rows after the fixed ones", () => {
+    expect(labels("Permissions")).toEqual(["Workspace trust", "Bash git push *", "Bash rm -rf *", "Edit"]);
+    expect(labels("Tools and MCP")).toEqual(["Code mode", "context7", "github"]);
+    expect(labels("Hooks")).toEqual(["Status line", "PreToolUse Bash", "SessionStart"]);
+    const values = rowsOf(config, section("Hooks")).map((r) => rowValue(r, config));
+    expect(values.slice(1)).toEqual(["./scripts/guard.sh", "POST https://x.test/hook"]);
+    expect(rowsOf({}, section("Permissions")).map((r) => r.label)).toEqual(["Workspace trust"]);
+  });
+
+  test("a change writes the rule back: a pattern keeps its map, a server keeps its fields", () => {
+    const d = opened();
+    d.daemon({ type: "config_loaded", config });
+    d.daemon({ type: "go", view: "settings" } as never);
+    const rows = rowsOf(config, section("Permissions"));
+    const push = rows.find((r) => r.label === "Bash git push *");
+    expect(push && rowValue(push, config)).toBe("ask");
+    expect(push?.write?.("allow")).toEqual({
+      key: "permissions.bash",
+      value: { "git push *": "allow", "rm -rf *": "deny" },
+    });
+    const gh = rowsOf(config, section("Tools and MCP")).find((r) => r.label === "github");
+    expect(gh && rowValue(gh, config)).toBe(false);
+    expect(gh?.write?.(true)).toEqual({
+      key: "mcpServers",
+      value: { ...config.mcpServers, github: { url: "https://x.test/mcp" } },
+    });
+    const c7 = rowsOf(config, section("Tools and MCP")).find((r) => r.label === "context7");
+    expect(c7?.write?.(false)).toEqual({
+      key: "mcpServers",
+      value: { ...config.mcpServers, context7: { command: "npx", enabled: false } },
+    });
+  });
+
+  test("space on a rule cycles ask, allow, deny and sends one config_write", () => {
+    const d = opened();
+    d.daemon({ type: "config_loaded", config });
+    d.daemon({ type: "go", view: "settings" } as never);
+    d.state = { ...d.state, settings: { ...d.state.settings, sec: section("Permissions"), row: 1 } };
+    d.send(" ");
+    expect(d.last("config_write")).toEqual({
+      type: "config_write",
+      key: "permissions.bash",
+      value: { "git push *": "allow", "rm -rf *": "deny" },
+    });
+    expect(d.state.settings.config).toMatchObject({ permissions: { bash: { "git push *": "allow" } } });
+  });
+
+  test("typed values are checked: caps are amounts and ordered, the limit a whole number, the command one line", () => {
+    const cfg = { budgets: { dailyUsd: 20, monthlyUsd: 200 } };
+    expect(parseText("budgets.dailyUsd", "$15", cfg)).toBe(15);
+    expect(parseText("budgets.dailyUsd", "abc", cfg)).toBeInstanceOf(Error);
+    expect(parseText("budgets.dailyUsd", "-1", cfg)).toBeInstanceOf(Error);
+    expect((parseText("budgets.dailyUsd", "250", cfg) as Error).message).toContain("above the monthly cap");
+    expect((parseText("budgets.monthlyUsd", "10", cfg) as Error).message).toContain("below the daily cap");
+    expect(parseText("compactionLimit", "90000")).toBe(90000);
+    expect(parseText("compactionLimit", "0")).toBeInstanceOf(Error);
+    expect(parseText("compactionLimit", "1.5")).toBeInstanceOf(Error);
+    expect(parseText("small_model", "anthropic/haiku")).toBe("anthropic/haiku");
+    expect(parseText("small_model", "haiku")).toBeInstanceOf(Error);
+    expect(parseText("statusLine.command", "./status.sh")).toBe("./status.sh");
+    expect(parseText("statusLine.command", "a\nb")).toBeInstanceOf(Error);
+    expect(parseText("statusLine.command", "  ")).toBeNull();
   });
 });

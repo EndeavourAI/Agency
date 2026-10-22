@@ -210,6 +210,7 @@ export function connected(o: BoardOptions = {}): Driver {
       type: "models_loaded",
       models: MODELS,
       connected: ["anthropic", "openai", "google", "openrouter"],
+      keySource: { anthropic: "keychain", openai: "OPENAI_API_KEY", google: "login", openrouter: "config" },
       defaultModel: "anthropic/sonnet",
     },
     { type: "config_loaded", config: {} },

@@ -44,7 +44,13 @@ export type DaemonEvent =
   | { type: "files_loaded"; files: string[] }
   | { type: "slash_loaded"; slash: SlashEntry[] }
   | { type: "history_loaded"; prompts: string[] }
-  | { type: "models_loaded"; models: ModelRow[]; connected: string[]; defaultModel: string | null }
+  | {
+      type: "models_loaded";
+      models: ModelRow[];
+      connected: string[];
+      keySource?: Record<string, string>;
+      defaultModel: string | null;
+    }
   | { type: "git_loaded"; git: WireGitStatus; diff?: WireGitDiff }
   | { type: "config_loaded"; config: Record<string, unknown>; theme?: ThemeName }
   | {

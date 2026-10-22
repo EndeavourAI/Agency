@@ -935,3 +935,135 @@ exports[`review the changed files on the left, the diff of one on the right, the
    build · Sonnet 5.5 · high  │  ci passing · 2 open PRs                                   esc stop  ctrl+p commands   │
 "
 `;
+
+exports[`settings the Models section says where each key comes from 1`] = `
+"  agency  settings                                                                                                                          ctrl+p 3 more  dev
+
+   General                │  Default model           Sonnet 5.5 …
+   Models                 │  Small model             not set  Titles, summaries and other background work.
+   Permissions            │  Effort                  high
+   Environments           │  Anthropic               key set  from the keychain
+   Context                │  OpenAI                  key set  from OPENAI_API_KEY
+   Tools and MCP          │  Google                  key set  from your login
+   Hooks                  │  OpenRouter              key set  from your config file
+   Agents and budgets     │
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   writes your user config                                                                                            ↑↓ move  → open  space change  esc back
+"
+`;
+
+exports[`settings permission rules, MCP servers and hooks of the user config, and the empty states without them 1`] = `
+"  agency  settings                                                                                                                          ctrl+p 3 more  dev
+
+   General                │  Workspace trust         off  Project config loads only in trusted folders.
+   Models                 │  Bash git push *         ask
+   Permissions            │  Bash rm -rf *           deny
+   Environments           │  Edit                    allow
+   Context                │
+   Tools and MCP          │  Rules apply in this order. A project rule needs a trusted workspace.
+   Hooks                  │
+   Agents and budgets     │
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   writes your user config                                                                                            ↑↓ move  → open  space change  esc back
+"
+`;
+
+exports[`settings permission rules, MCP servers and hooks of the user config, and the empty states without them 2`] = `
+"  agency  settings                                                                                                                          ctrl+p 3 more  dev
+
+   General                │  Code mode               off
+   Models                 │  context7                on  stdio · applies when the daemon restarts
+   Permissions            │  github                  off  http · applies when the daemon restarts
+   Environments           │
+   Context                │
+   Tools and MCP          │
+   Hooks                  │
+   Agents and budgets     │
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   writes your user config                                                                                            ↑↓ move  → open  space change  esc back
+"
+`;

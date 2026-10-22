@@ -1,15 +1,27 @@
 import type { SlashEntry } from "../input/completion.ts";
 
+/** What one change writes: the dotted config key and its new value. */
+export type RowWrite = (value: unknown) => { key: string; value: unknown };
+
+interface RowBase {
+  label: string;
+  key: string;
+  note?: string;
+  /** A row built from the config (a rule, a server, a hook): its own value, and how a change is written back. */
+  value?: string | boolean;
+  write?: RowWrite;
+}
+
 /**
  * Settings sections of the canvas, each row one dotted config key for `config_write`. A `dynamic` section also
- * lists machine data (provider keys, permission rules, MCP servers, hooks) from the daemon; the canvas samples it.
+ * lists rows built from the user config (permission rules, MCP servers, hooks) and from the daemon (provider keys).
  */
 export type SettingRow =
-  | { label: string; kind: "choice"; key: string; opts: readonly string[]; note?: string }
-  | { label: string; kind: "toggle"; key: string; note?: string }
-  | { label: string; kind: "text"; key: string; note?: string }
-  | { label: string; kind: "model"; key: string; note?: string }
-  | { label: string; kind: "info"; key: string; note?: string };
+  | (RowBase & { kind: "choice"; opts: readonly string[] })
+  | (RowBase & { kind: "toggle" })
+  | (RowBase & { kind: "text" })
+  | (RowBase & { kind: "model" })
+  | (RowBase & { kind: "info" });
 
 export interface SettingSection {
   name: string;
@@ -118,23 +130,157 @@ export function setPath(obj: Record<string, unknown>, path: string, value: unkno
   return { ...obj, [head]: setPath(base, rest.join("."), value) };
 }
 
-/** The value a row shows: the config value, else the first option or the off state. */
+/** The value a row shows: its own, else the config value, else the first option or the off state. */
 export function rowValue(row: SettingRow, config: Record<string, unknown>): string | boolean {
+  if (row.value !== undefined) return row.value;
   const v = getPath(config, row.key);
   if (row.kind === "toggle") return v === true;
   if (v === undefined || v === null) return row.kind === "choice" ? (row.opts[0] ?? "") : "";
   return String(v);
 }
 
+const DECISIONS = ["ask", "allow", "deny"] as const;
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+const title = (tool: string): string => tool.charAt(0).toUpperCase() + tool.slice(1).replace(/_/g, " ");
+
+/** One row for each permission rule of the user config: a bare decision, or a pattern of a tool. */
+function permissionRows(config: Record<string, unknown>): SettingRow[] {
+  const rows: SettingRow[] = [];
+  const perms = getPath(config, "permissions");
+  if (!isRecord(perms)) return rows;
+  for (const [tool, rule] of Object.entries(perms)) {
+    // A dotted key cannot name a tool with a dot in it.
+    if (tool.includes(".")) continue;
+    const key = `permissions.${tool}`;
+    if (typeof rule === "string" && (DECISIONS as readonly string[]).includes(rule)) {
+      rows.push({
+        label: title(tool),
+        kind: "choice",
+        key,
+        opts: DECISIONS,
+        value: rule,
+        write: (value) => ({ key, value }),
+      });
+    } else if (isRecord(rule)) {
+      for (const [pattern, decision] of Object.entries(rule)) {
+        if (typeof decision !== "string" || !(DECISIONS as readonly string[]).includes(decision)) continue;
+        // The whole map goes back: a pattern such as ".agency/**" has dots that a key cannot hold.
+        rows.push({
+          label: `${title(tool)} ${pattern}`,
+          kind: "choice",
+          key,
+          opts: DECISIONS,
+          value: decision,
+          write: (value) => ({ key, value: { ...rule, [pattern]: value } }),
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+/** One toggle for each MCP server of the user config; off writes `enabled: false`, on drops it. */
+function mcpRows(config: Record<string, unknown>): SettingRow[] {
+  const servers = getPath(config, "mcpServers");
+  if (!isRecord(servers)) return [];
+  return Object.entries(servers).map(([name, raw]) => {
+    const server = isRecord(raw) ? raw : {};
+    return {
+      label: name,
+      kind: "toggle" as const,
+      key: "mcpServers",
+      note: `${typeof server.url === "string" ? "http" : "stdio"} · applies when the daemon restarts`,
+      value: server.enabled !== false,
+      write: (on: unknown) => {
+        const { enabled: _was, ...rest } = server;
+        return {
+          key: "mcpServers",
+          value: { ...servers, [name]: on === true ? rest : { ...rest, enabled: false } },
+        };
+      },
+    };
+  });
+}
+
+/** What a hook of the user config does, in a line. */
+function hookText(hook: Record<string, unknown>): string {
+  if (typeof hook.command === "string") return hook.command;
+  if (typeof hook.url === "string") return `POST ${hook.url}`;
+  if (typeof hook.server === "string") return `${hook.server} ${String(hook.tool ?? "")}`.trim();
+  return String(hook.type ?? "hook");
+}
+
+/** The hooks of the user config, read-only: change them in the file. */
+function hookRows(config: Record<string, unknown>): SettingRow[] {
+  const hooks = getPath(config, "hooks");
+  if (!isRecord(hooks)) return [];
+  const rows: SettingRow[] = [];
+  for (const [event, groups] of Object.entries(hooks)) {
+    if (!Array.isArray(groups)) continue;
+    for (const group of groups) {
+      if (!isRecord(group) || !Array.isArray(group.hooks)) continue;
+      const matcher = typeof group.matcher === "string" && group.matcher !== "*" ? group.matcher : "";
+      for (const hook of group.hooks)
+        if (isRecord(hook))
+          rows.push({
+            label: matcher ? `${event} ${matcher}` : event,
+            kind: "info",
+            key: `hooks.${event}`,
+            value: hookText(hook),
+          });
+    }
+  }
+  return rows;
+}
+
+/** The rows of a section: the fixed ones, then those that the user config adds. */
+export function rowsOf(config: Record<string, unknown>, sec: number): readonly SettingRow[] {
+  const s = SETTINGS[sec];
+  if (!s) return [];
+  const extra =
+    s.dynamic === "permissions"
+      ? permissionRows(config)
+      : s.dynamic === "mcp"
+        ? mcpRows(config)
+        : s.dynamic === "hooks"
+          ? hookRows(config)
+          : [];
+  return extra.length ? [...s.rows, ...extra] : s.rows;
+}
+
 const NUMBERS = new Set(["budgets.dailyUsd", "budgets.monthlyUsd", "compactionLimit"]);
 
-/** What a typed value writes: numbers for the caps and the compaction limit, null (removes the key) when empty. */
-export function parseText(key: string, text: string): string | number | null | Error {
+/**
+ * What a typed value writes, or why it cannot be: the caps are amounts (the daily one no higher than the monthly one),
+ * the compaction limit a whole number of tokens, the small model `provider/model`, the status line one line of command.
+ * Empty removes the key.
+ */
+export function parseText(
+  key: string,
+  text: string,
+  config: Record<string, unknown> = {},
+): string | number | null | Error {
   const t = text.trim();
   if (t === "") return null;
+  if (key === "small_model") return /^[^/\s]+\/\S+$/.test(t) ? t : new Error(`${t} is not provider/model`);
+  if (key === "statusLine.command")
+    return [...t].some((ch) => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127)
+      ? new Error("the command must be one line")
+      : t;
   if (!NUMBERS.has(key)) return t;
   const n = Number(t.replace(/[$,\s]/g, ""));
-  return Number.isFinite(n) && n >= 0 ? n : new Error(`${t} is not a number`);
+  if (!Number.isFinite(n) || n < 0) return new Error(`${t} is not an amount`);
+  if (key === "compactionLimit")
+    return Number.isInteger(n) && n > 0 ? n : new Error(`${t} is not a whole number of tokens`);
+  const other = getPath(config, key === "budgets.dailyUsd" ? "budgets.monthlyUsd" : "budgets.dailyUsd");
+  if (typeof other === "number") {
+    if (key === "budgets.dailyUsd" && n > other)
+      return new Error(`the daily cap is above the monthly cap ($${other})`);
+    if (key === "budgets.monthlyUsd" && n < other)
+      return new Error(`the monthly cap is below the daily cap ($${other})`);
+  }
+  return n;
 }
 
 /** The value one press of space or enter writes: toggles flip, choices step to the next option. */

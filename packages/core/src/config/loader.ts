@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { migrate, type VersionedRecord } from "@agency/schema";
 import { parse as parseJsonc } from "jsonc-parser";
-import { configDir } from "../paths.ts";
+import { configDir, managedConfigPath } from "../paths.ts";
 import {
   CONFIG_SCHEMA_VERSION,
   type Config,
@@ -163,6 +163,12 @@ export function configFlags(
   return out;
 }
 
+/** The managed file alone, migrated: policy that a daemon applies outside the config merge reads it here. */
+export function loadManagedLayer(managedPath: string = managedConfigPath()): Record<string, unknown> {
+  const layer = readLayer(managedPath);
+  return layer ? migrateLayer(layer) : {};
+}
+
 export function loadConfig(sources: ConfigSources = {}): Config {
   const env = sources.env ?? process.env;
   let merged: Record<string, unknown> = { ...defaultConfig };
@@ -184,10 +190,8 @@ export function loadConfig(sources: ConfigSources = {}): Config {
     merged = deepMergeLayer(merged, configFlags(sources.flags) as Record<string, unknown>);
   }
 
-  if (sources.managedPath) {
-    const managedLayer = readLayer(sources.managedPath);
-    if (managedLayer) merged = deepMergeLayer(merged, migrateLayer(managedLayer));
-  }
+  const managedLayer = loadManagedLayer(sources.managedPath);
+  merged = deepMergeLayer(merged, managedLayer);
 
   const parsed = ConfigSchema.safeParse({ ...merged, schemaVersion: CONFIG_SCHEMA_VERSION });
   if (!parsed.success) {
@@ -195,7 +199,7 @@ export function loadConfig(sources: ConfigSources = {}): Config {
     const projectPaths = PROJECT_LAYERS.map(
       (name) => sources.projectRoot && join(sources.projectRoot, ".agency", name),
     );
-    const files = [globalPath, ...projectPaths, sources.managedPath].filter(
+    const files = [globalPath, ...projectPaths, sources.managedPath ?? managedConfigPath()].filter(
       (path) => path && existsSync(path),
     );
     throw new Error(`config is not valid: ${issues.join("; ")} (files: ${files.join(", ") || "none"})`, {

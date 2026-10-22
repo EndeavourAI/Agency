@@ -155,6 +155,10 @@ export const ConfigSchema = z.object({
    * default by risk tier: `safe` tools run freely, everything else asks.
    */
   permissions: z.record(z.string(), ToolPermissionSchema).default({}),
+  /** Managed file only: the permission rules of the user, the project and Claude settings do not apply. */
+  allowManagedPermissionRulesOnly: z.boolean().optional(),
+  /** Managed file only: only the hooks of the managed file run. */
+  allowManagedHooksOnly: z.boolean().optional(),
   /** Trust behavior: when `required`, tools above the `safe` risk tier refuse to run in an untrusted workspace. */
   trust: z.object({ required: z.boolean().default(false) }).default({ required: false }),
   /** Sandbox backend switch plus container options. */

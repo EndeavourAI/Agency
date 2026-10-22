@@ -3,8 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PermissionsGate } from "@agency/guard";
-import { configFlags, loadConfig } from "../src/config/loader.ts";
+import { configFlags, loadConfig, loadManagedLayer } from "../src/config/loader.ts";
 import { type AgentConfig, parseModelRef } from "../src/config/schema.ts";
+import { managedConfigPath } from "../src/paths.ts";
 
 /** Explicit user-defined roster: the gate maps the starter agents once shipped with. */
 const ROSTER: Record<string, AgentConfig> = {
@@ -286,6 +287,17 @@ describe("loadConfig", () => {
       flags: { logLevel: "debug" },
     });
     expect(config.logLevel).toBe("error");
+  });
+
+  test("the managed file sits at a fixed path of each OS, and an absent one is an empty layer", () => {
+    expect(managedConfigPath("win32")).toBe("C:/Program Files/Agency/managed.jsonc");
+    expect(managedConfigPath("darwin")).toBe("/Library/Application Support/Agency/managed.jsonc");
+    expect(managedConfigPath("linux")).toBe("/etc/agency/managed.jsonc");
+    const dir = tempDir();
+    cleanup.push(dir);
+    expect(loadManagedLayer(join(dir, "none.jsonc"))).toEqual({});
+    writeFileSync(join(dir, "managed.jsonc"), `{ "schemaVersion": 1, "allowManagedHooksOnly": true }`);
+    expect(loadManagedLayer(join(dir, "managed.jsonc"))).toEqual({ allowManagedHooksOnly: true });
   });
 
   test("migrates a v0 global config forward transparently", () => {

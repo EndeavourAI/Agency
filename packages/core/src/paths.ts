@@ -19,6 +19,13 @@ export function userPluginStore(configDirOverride?: string): string {
   return join(configDirOverride ?? configDir(), "plugin-store");
 }
 
+/** Where an admin puts the managed policy file: it wins over every layer, flags included. */
+export function managedConfigPath(platform: string = process.platform): string {
+  if (platform === "win32") return "C:/Program Files/Agency/managed.jsonc";
+  if (platform === "darwin") return "/Library/Application Support/Agency/managed.jsonc";
+  return "/etc/agency/managed.jsonc";
+}
+
 /** Per-OS config directory. Data/cache/log directories live in storage.ts. */
 export function configDir(env: NodeJS.ProcessEnv = process.env, platform: string = process.platform): string {
   if (env.AGENCY_HOME) return join(env.AGENCY_HOME, "config");

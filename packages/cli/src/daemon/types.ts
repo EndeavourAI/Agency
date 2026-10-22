@@ -438,6 +438,8 @@ export interface AgentDaemonOptions {
    * Tests point this at a temp file so trust decisions never leak between runs.
    */
   trustStorePath?: string;
+  /** Overrides the managed policy file (default: the fixed path of the OS). Tests point this at a temp file. */
+  managedPath?: string;
   /**
    * Overrides where the todo-persistence SessionStore reads/writes; defaults
    * to the workspace's storagePaths sessionsDir. Tests point this at a temp

@@ -10,7 +10,9 @@ import {
   ChannelStore,
   ChoiceLog,
   type CommandHooks,
+  CommandHooksSchema,
   type Config,
+  ConfigSchema,
   collectPluginAgents,
   collectPluginCommands,
   configDir,
@@ -32,6 +34,7 @@ import {
   loadConfig,
   loadForeignHooks,
   loadHookFiles,
+  loadManagedLayer,
   loadPlugins,
   memoryFile,
   mergeCommandHooks,
@@ -223,7 +226,11 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
     globalDir: options.configDir,
     env: process.env,
     ...(trustStore.isTrusted(options.workspaceRoot) ? { projectRoot: options.workspaceRoot } : {}),
+    ...(options.managedPath ? { managedPath: options.managedPath } : {}),
   });
+  // Policy that applies outside the config merge: Claude permissions and the hook files.
+  const managed = loadManagedLayer(options.managedPath);
+  const managedRules = ConfigSchema.shape.permissions.parse(managed.permissions ?? {});
   const sandboxFallback = await chooseSandboxBackend(config, options.workspaceRoot);
   // fetch, websearch and the browser get the network limit of shell commands.
   const network = sandboxNetwork(config.sandbox);
@@ -278,11 +285,19 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
   // check; the sandbox gets the deny-pattern command policy and the
   // external_directory decision, so containment and policy are real.
   // The permission rules of Claude Code settings come first: those of the config win on a call.
+  // A managed rule comes last, so it beats an allow of any other layer.
   const permissions = mergePermissions(
-    loadClaudePermissions(options.workspaceRoot, trustStore.isTrusted(options.workspaceRoot), (message) =>
-      logger.warn(message),
-    ),
-    config.permissions,
+    managed.allowManagedPermissionRulesOnly === true
+      ? {}
+      : mergePermissions(
+          loadClaudePermissions(
+            options.workspaceRoot,
+            trustStore.isTrusted(options.workspaceRoot),
+            (message) => logger.warn(message),
+          ),
+          config.permissions,
+        ),
+    managedRules,
   );
   const gate = new PermissionsGate({
     permissions,
@@ -449,13 +464,16 @@ export async function createAgentDaemon(options: AgentDaemonOptions): Promise<Ag
   // Plugin, command and agent files can run code or grant tools: those of a workspace load only after trust.
   const projectTrusted = trustStore.isTrusted(options.workspaceRoot);
   // The hooks of the user's config, then those that `plugin install` put into a trusted workspace.
-  const commandHooks: CommandHooks = mergeCommandHooks(
-    config.hooks ?? {},
-    loadHookFiles(join(store, ".agency", "hooks"), (message) => logger.warn(message)),
-    projectTrusted ? loadHookFiles(hooksDir, (message) => logger.warn(message)) : {},
-    // The hooks that Claude Code, Codex, Cursor and Gemini CLI keep in the workspace.
-    projectTrusted ? loadForeignHooks(options.workspaceRoot, (message) => logger.warn(message)) : {},
-  );
+  const commandHooks: CommandHooks =
+    managed.allowManagedHooksOnly === true
+      ? CommandHooksSchema.parse(managed.hooks ?? {})
+      : mergeCommandHooks(
+          config.hooks ?? {},
+          loadHookFiles(join(store, ".agency", "hooks"), (message) => logger.warn(message)),
+          projectTrusted ? loadHookFiles(hooksDir, (message) => logger.warn(message)) : {},
+          // The hooks that Claude Code, Codex, Cursor and Gemini CLI keep in the workspace.
+          projectTrusted ? loadForeignHooks(options.workspaceRoot, (message) => logger.warn(message)) : {},
+        );
   // The CLAUDE_ENV_FILE of a session, named by a hash: a session id is not a safe file name.
   const envFileOf = (sessionId: string): string =>
     join(dataDir(), "session-env", `${createHash("sha256").update(sessionId).digest("hex").slice(0, 32)}.sh`);

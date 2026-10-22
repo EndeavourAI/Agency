@@ -8,6 +8,9 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Changed
 
+- **Managed policy at fixed paths**: `loadConfig` reads the managed file from a fixed path of the OS, so every
+  caller gets it. A managed permission rule now comes after every other rule, and `allowManagedPermissionRulesOnly`
+  and `allowManagedHooksOnly` drop the rules and hooks of the user, the project and other agents' settings.
 - **`/model` persists**: it sets the model for the running daemon and writes it to the user config file, so the
   next session starts on it. A `model` key in a trusted project file still wins, as the layer order says.
 - **Project config loads**: `.agency/config.jsonc` and the new `.agency/config.local.jsonc` (above it, kept out of

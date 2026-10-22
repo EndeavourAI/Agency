@@ -7,7 +7,7 @@ Agency loads one `Config` from stacked layers, lowest to highest:
 3. Project file: `<projectRoot>/.agency/config.jsonc` (when a project root is given)
 4. Environment variables (see below)
 5. CLI flags layer (`--model` via `configFlags`; only known `Config` keys survive, unknown flags are dropped)
-6. Managed file (`managedPath` when supplied) — wins over everything, including flags
+6. Managed file: `C:/Program Files/Agency/managed.jsonc`, `/Library/Application Support/Agency/managed.jsonc` or `/etc/agency/managed.jsonc` (`managedPath` overrides) — wins over everything, including flags. `allowManagedPermissionRulesOnly` and `allowManagedHooksOnly` in it drop the permission rules and the hooks of every other source
 
 Layers merge with `deepMergeLayer`: plain objects recurse (e.g. `provider.<id>` extends rather than replaces), arrays and scalars replace.
 

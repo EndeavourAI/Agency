@@ -7,6 +7,7 @@ import {
   defaultModelIDs,
   filterModels,
   type KeychainBackend,
+  keySource,
   loadModelsDevCatalog,
   type ModelCapabilities,
   type ModelInfo,
@@ -41,6 +42,8 @@ export interface ProviderListResult {
   all: ProviderListEntry[];
   default: Record<string, string>;
   connected: string[];
+  /** Where the key of each connected provider comes from: a variable name, "login", "keychain" or "config". */
+  keySource: Record<string, string>;
 }
 
 function toListModel(model: ModelInfo): ProviderListModel {
@@ -67,8 +70,9 @@ async function connectedProviderIds(
   config: Config,
   env: NodeJS.ProcessEnv,
   keychain: KeychainBackend,
-): Promise<string[]> {
+): Promise<{ connected: string[]; keySource: Record<string, string> }> {
   const connected: string[] = [];
+  const keySources: Record<string, string> = {};
   for (const id of providerIds) {
     const providerConfig = config.provider[id];
     const key = await resolveApiKey({
@@ -80,9 +84,18 @@ async function connectedProviderIds(
       oauthClientId: providerConfig?.oauth?.clientId,
       oauthBaseUrl: providerConfig?.oauth?.baseUrl,
     });
-    if (key) connected.push(id);
+    if (!key) continue;
+    connected.push(id);
+    const source = await keySource({
+      provider: id,
+      env,
+      keychain,
+      declaredEnv: providerConfig?.env,
+      config: providerConfig?.apiKey,
+    });
+    if (source) keySources[id] = source;
   }
-  return connected;
+  return { connected, keySource: keySources };
 }
 
 export async function listProviders(options: {
@@ -131,7 +144,12 @@ export async function listProviders(options: {
 
   const keychain = options.keychain ?? (await createKeychain(process.platform, join(dataDir(env), "keys")));
 
-  const connected = await connectedProviderIds([...byFamily.keys()], options.config, env, keychain);
+  const { connected, keySource: keySources } = await connectedProviderIds(
+    [...byFamily.keys()],
+    options.config,
+    env,
+    keychain,
+  );
   const defaultProvider = parseModelRef(options.config.model ?? "")?.provider;
   const listed = new Set([...connected, ...Object.keys(options.config.provider)]);
   if (defaultProvider) listed.add(defaultProvider);
@@ -142,5 +160,6 @@ export async function listProviders(options: {
         : entries,
     default: defaultModelIDs(filtered),
     connected,
+    keySource: keySources,
   };
 }

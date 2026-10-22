@@ -91,3 +91,22 @@ export async function resolveApiKey(options: ResolveApiKeyOptions): Promise<stri
 
   return options.config;
 }
+
+/** Where the key comes from, in the order of `resolveApiKey` but with no token refresh: a variable name, "login", "keychain" or "config". */
+export async function keySource(options: ResolveApiKeyOptions): Promise<string | undefined> {
+  const env = options.env ?? process.env;
+  const name = envNames(options.provider, options.declaredEnv).find((n) => env[n]);
+  if (name) return name;
+  if (options.keychain) {
+    if (options.provider === CHATGPT_PROVIDER) return "login";
+    if (await options.keychain.get(oauthKey(options.provider))) return "login";
+    const raw = await options.keychain.get(options.provider);
+    if (raw) {
+      try {
+        if ((JSON.parse(raw) as Record<string, unknown>).type === "oauth") return "login";
+      } catch {}
+      return "keychain";
+    }
+  }
+  return options.config ? "config" : undefined;
+}

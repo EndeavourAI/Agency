@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { keyEnvName, resolveApiKey } from "../../src/auth/resolve.ts";
+import { keyEnvName, keySource, resolveApiKey } from "../../src/auth/resolve.ts";
 import type { KeychainBackend } from "../../src/auth/types.ts";
 
 function fakeKeychain(stored?: string): KeychainBackend {
@@ -97,5 +97,28 @@ describe("resolveApiKey", () => {
     expect(await resolveApiKey({ provider: "google", env: { GEMINI_API_KEY: "sk-gemini" } })).toBe(
       "sk-gemini",
     );
+  });
+});
+
+describe("keySource", () => {
+  const keychain = (stored: Record<string, string>): KeychainBackend => ({
+    ...fakeKeychain(),
+    get: async (name: string) => stored[name],
+  });
+
+  test("names the variable, not its value, and tells a login from a stored key", async () => {
+    expect(await keySource({ provider: "anthropic", env: { ANTHROPIC_API_KEY: "sk-secret" } })).toBe(
+      "ANTHROPIC_API_KEY",
+    );
+    expect(await keySource({ provider: "anthropic", env: {}, keychain: keychain({ anthropic: "sk" }) })).toBe(
+      "keychain",
+    );
+    expect(
+      await keySource({ provider: "anthropic", env: {}, keychain: keychain({ "anthropic:oauth": "{}" }) }),
+    ).toBe("login");
+    expect(await keySource({ provider: "anthropic", env: {}, keychain: keychain({}), config: "k" })).toBe(
+      "config",
+    );
+    expect(await keySource({ provider: "anthropic", env: {}, keychain: keychain({}) })).toBeUndefined();
   });
 });

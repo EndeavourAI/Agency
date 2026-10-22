@@ -127,6 +127,7 @@ describe("providers_list models: connected", () => {
       gamma: ["m-c"],
     });
     expect(slim.connected).toEqual(["alpha"]);
+    expect(slim.keySource).toEqual({ alpha: "keychain" });
     expect(slim.all[0]?.models[0]).toMatchObject({
       pricing: { inputPerMTok: 1, outputPerMTok: 2 },
       capabilities: { tools: true },

@@ -380,7 +380,7 @@ export interface SurfaceClient {
   provider_connect(params?: Record<string, unknown>): Promise<unknown>;
   /** Remove the stored key of a provider; a key from an environment variable stays. */
   provider_disconnect(params?: Record<string, unknown>): Promise<unknown>;
-  /** List providers with defaults, connectivity, and liveness; models: "connected" lists models only for connected or configured providers. */
+  /** List providers with defaults, connectivity, liveness and keySource (where each connected key comes from: env var name, login, keychain, config); models: "connected" lists models only for connected or configured providers. */
   providers_list(params?: Record<string, unknown>): Promise<unknown>;
   /** Redo a snapshot-backed file change. */
   redo(params?: Record<string, unknown>): Promise<unknown>;

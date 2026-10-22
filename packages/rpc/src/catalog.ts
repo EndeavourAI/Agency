@@ -23,7 +23,7 @@ export const METHOD_DOCS: Record<string, string> = {
     "Queue mid-turn steering text drained per tool iteration; queued is false when no running turn reads it.",
   models_list: "List catalog models merged with config overrides.",
   providers_list:
-    'List providers with defaults, connectivity, and liveness; models: "connected" lists models only for connected or configured providers.',
+    'List providers with defaults, connectivity, liveness and keySource (where each connected key comes from: env var name, login, keychain, config); models: "connected" lists models only for connected or configured providers.',
   shell_run:
     "Run a user shell command under the sandbox and the permission rules; its output joins the session as user context.",
   git_status:

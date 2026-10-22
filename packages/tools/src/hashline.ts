@@ -222,10 +222,34 @@ function diffLines(oldLines: string[], newLines: string[]): DiffOp[] {
   return ops;
 }
 
-/** Lines added and removed from old to new: the common head and tail are cut, and a large middle counts whole. */
+/** Edit count (inserted plus deleted lines) by Myers' O(ND) walk; undefined past `maxD`, which keeps a huge rewrite cheap. */
+function editDistance(a: string[], b: string[], maxD: number): number | undefined {
+  const n = a.length;
+  const m = b.length;
+  const limit = Math.min(n + m, maxD);
+  const v = new Int32Array(2 * limit + 3);
+  const at = limit + 1;
+  for (let d = 0; d <= limit; d++) {
+    for (let k = -d; k <= d; k += 2) {
+      const down = k === -d || (k !== d && (v[at + k - 1] ?? 0) < (v[at + k + 1] ?? 0));
+      let x = down ? (v[at + k + 1] ?? 0) : (v[at + k - 1] ?? 0) + 1;
+      let y = x - k;
+      while (x < n && y < m && a[x] === b[y]) {
+        x++;
+        y++;
+      }
+      v[at + k] = x;
+      if (x >= n && y >= m) return d;
+    }
+  }
+  return undefined;
+}
+
+/** Lines added and removed from old to new. Exact for an edit within 2000 changed lines, else the middle counts whole. */
 export function lineDelta(oldText: string, newText: string): { added: number; removed: number } {
-  const a = toDiffLines(oldText);
-  const b = toDiffLines(newText);
+  // Raw lines, so a CRLF to LF rewrite counts as the change it is.
+  const a = rawLines(oldText);
+  const b = rawLines(newText);
   let head = 0;
   while (head < a.length && head < b.length && a[head] === b[head]) head++;
   let tail = 0;
@@ -237,12 +261,17 @@ export function lineDelta(oldText: string, newText: string): { added: number; re
     tail++;
   const x = a.slice(head, a.length - tail);
   const y = b.slice(head, b.length - tail);
-  if (x.length * y.length > 4_000_000) return { added: y.length, removed: x.length };
-  const ops = diffLines(x, y);
-  return {
-    added: ops.filter((o) => o.kind === "ins").length,
-    removed: ops.filter((o) => o.kind === "del").length,
-  };
+  const d = editDistance(x, y, 2000);
+  if (d === undefined) return { added: y.length, removed: x.length };
+  const common = (x.length + y.length - d) / 2;
+  return { added: y.length - common, removed: x.length - common };
+}
+
+function rawLines(text: string): string[] {
+  if (text === "") return [];
+  const lines = text.split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  return lines;
 }
 
 function toDiffLines(text: string): string[] {

@@ -33,6 +33,19 @@ describe("lineDelta", () => {
     expect(lineDelta("", "x\ny\n")).toEqual({ added: 2, removed: 0 });
     expect(lineDelta("same\n", "same\n")).toEqual({ added: 0, removed: 0 });
   });
+
+  test("a line added at the top and one at the bottom of a big file count as two", () => {
+    const big = `${Array.from({ length: 5000 }, (_, i) => `line ${i}`).join("\n")}\n`;
+    expect(lineDelta(big, `TOP\n${big}BOTTOM\n`)).toEqual({ added: 2, removed: 0 });
+  });
+
+  test("a huge rewrite stays cheap and a CRLF to LF rewrite is not a no-op", () => {
+    const huge = `${Array.from({ length: 300_000 }, (_, i) => `line ${i}`).join("\n")}\n`;
+    const started = performance.now();
+    expect(lineDelta(huge, "replacement\n")).toEqual({ added: 1, removed: 300_000 });
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(lineDelta("a\r\nb\r\n", "a\nb\n")).toEqual({ added: 2, removed: 2 });
+  });
 });
 
 describe("tool meta", () => {

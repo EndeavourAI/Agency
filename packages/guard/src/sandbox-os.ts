@@ -121,7 +121,8 @@ const regexOf = (path: string): string => path.replace(/[.*+?^${}()|[\]\\]/g, "\
 
 /**
  * Seatbelt profile with the same rules as the bubblewrap argv. The last rule that matches wins. With `proxyPort`
- * the command reaches only the proxy on that port.
+ * the command reaches only the proxy on that port. Without `hasGit` the `.git` rules go, as bubblewrap holds only
+ * what exists: `git init` in a new folder works.
  */
 export function buildSeatbeltProfile(
   root: string,
@@ -129,9 +130,13 @@ export function buildSeatbeltProfile(
   tmpDir = "/private/tmp",
   hidden: string[] = [],
   proxyPort?: number,
+  hasGit = true,
 ): string {
   const rules = (kind: string, paths: readonly string[]): string =>
-    paths.map((path) => `(${kind} ${quote(`${root}/${path}`)})`).join(" ");
+    paths
+      .filter((path) => hasGit || (path !== ".git" && !path.startsWith(".git/")))
+      .map((path) => `(${kind} ${quote(`${root}/${path}`)})`)
+      .join(" ");
   return [
     "(version 1)",
     "(allow default)",
@@ -441,6 +446,7 @@ export class OsSandboxBackend implements SandboxBackend {
         process.env.TMPDIR ?? "/private/tmp",
         this.hidden(),
         port,
+        existsSync(join(this.root, ".git")),
       );
       const env =
         port === undefined

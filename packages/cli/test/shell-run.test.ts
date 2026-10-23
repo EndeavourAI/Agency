@@ -224,6 +224,8 @@ test("git_commit commits when the rules allow it, suggests a message and refuses
   const git = (...args: string[]) =>
     execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: ws, stdio: "ignore" });
   git("init", "-q", "-b", "main");
+  git("config", "user.name", "t");
+  git("config", "user.email", "t@t");
   writeFileSync(join(ws, "a.txt"), "one\n");
   git("add", "a.txt");
   git("commit", "-q", "-m", "first");
@@ -260,6 +262,8 @@ test("git_commit under an ask rule commits at once: the key press that sent it i
   const git = (...args: string[]) =>
     execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: ws, stdio: "ignore" });
   git("init", "-q", "-b", "main");
+  git("config", "user.name", "t");
+  git("config", "user.email", "t@t");
   writeFileSync(join(ws, "a.txt"), "one");
   await client.call("session_create", { sessionId: "s1" });
   const done = (await client.call("git_commit", { sessionId: "s1", message: "first" })) as { sha: string };

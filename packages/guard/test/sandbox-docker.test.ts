@@ -92,6 +92,10 @@ describe("sandbox-docker pure translation (no daemon)", () => {
         }).stdout.trim();
         if (short.toLowerCase() === root.toLowerCase()) return; // no 8.3 names on this volume
         expect(translateHostToMount(join(root, "sub"), short, "/workspace")).toBe("/workspace/sub");
+        // A file that does not exist yet still resolves through its nearest existing folder.
+        expect(translateHostToMount(join(short, "sub", "new.txt"), short, "/workspace")).toBe(
+          "/workspace/sub/new.txt",
+        );
       } finally {
         cleanup(dir);
       }

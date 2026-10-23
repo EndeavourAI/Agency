@@ -25,6 +25,9 @@ function repo() {
   git(remote, "init", "-q", "--bare", "-b", "main");
   const root = tmp("work");
   git(root, "init", "-q", "-b", "main");
+  // The daemon's own git commit needs an identity; CI runners have none.
+  git(root, "config", "user.name", "t");
+  git(root, "config", "user.email", "t@t");
   writeFileSync(join(root, "a.txt"), ["one", "two", "three"].join(lf) + lf);
   writeFileSync(join(root, "b.txt"), `b${lf}`);
   git(root, "add", ".");

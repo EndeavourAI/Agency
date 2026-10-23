@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { AgencyError, ErrorCode } from "@agency/schema";
 import type { RequestApproval } from "./approval.ts";
 import type { CommandPolicy, ExternalDirectoryDecision, SandboxBackend } from "./sandbox.ts";
@@ -138,7 +138,9 @@ function tryRealpath(p: string): string {
   try {
     return realpathSync.native(p);
   } catch {
-    return p;
+    // A path that does not exist yet takes the real form (long name, /private/var) of its nearest existing folder.
+    const parent = dirname(p);
+    return parent === p ? p : join(tryRealpath(parent), basename(p));
   }
 }
 

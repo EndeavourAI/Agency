@@ -1,4 +1,5 @@
 import type { SlashEntry } from "../input/completion.ts";
+import { EFFORTS } from "./types.ts";
 
 /** What one change writes: the dotted config key and its new value. */
 export type RowWrite = (value: unknown) => { key: string; value: unknown };
@@ -51,7 +52,7 @@ export const SETTINGS: readonly SettingSection[] = [
         key: "small_model",
         note: "Titles, summaries and other background work.",
       },
-      { label: "Effort", kind: "choice", key: "effort", opts: ["low", "medium", "high", "xhigh"] },
+      { label: "Effort", kind: "choice", key: "effort", opts: EFFORTS },
     ],
   },
   {

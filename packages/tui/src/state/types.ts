@@ -18,8 +18,9 @@ export const MODES: readonly UiMode[] = ["build", "plan", "auto"];
 export const PERMISSION_OF: Readonly<Record<UiMode, string>> = { build: "ask", plan: "plan", auto: "auto" };
 
 export type ThemeName = "agency" | "night" | "light";
-export type Effort = "low" | "medium" | "high" | "xhigh";
-export const EFFORTS: readonly Effort[] = ["low", "medium", "high", "xhigh"];
+export type Effort = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+/** The scale in order; a model's own levels are a subset. */
+export const EFFORTS: readonly Effort[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 export type Connection = "connecting" | "online" | "offline";
 export type View = "home" | "session" | "settings";
@@ -168,6 +169,8 @@ export interface ModelRow {
   inPerMTok: number | null;
   outPerMTok: number | null;
   tags: string;
+  /** Levels the model takes, in scale order; just `off` when it has no reasoning control. */
+  efforts: readonly Effort[];
 }
 
 export interface ModelPicker {
@@ -212,7 +215,7 @@ export interface AppState {
   view: View;
   back: "home" | "session";
   theme: ThemeName;
-  /** Mode and effort of the next turn; the daemon keeps them per turn, the TUI per window. */
+  /** Mode and preferred effort of the next turn; the daemon keeps them per turn, the TUI per window. */
   mode: UiMode;
   effort: Effort;
   cols: number;

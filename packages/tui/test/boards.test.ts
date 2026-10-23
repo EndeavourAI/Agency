@@ -394,6 +394,19 @@ describe("pickers", () => {
     expect(m.cell(row.x + 20, row.y).bg).toBe(A.element);
   });
 
+  test("model picker: the effort row lists the levels of the model under the cursor", async () => {
+    const d = session();
+    d.daemon({ type: "model_open" });
+    const effort = async (): Promise<string> =>
+      (await board(d)).grid.find((r) => r.includes("effort")) as string;
+    d.type("gpt");
+    expect(await effort()).toMatch(/effort\s+low\s+medium\s+high(?!\s+xhigh)/);
+    d.apply([{ type: "model_query", q: "laguna" }]);
+    const none = await effort();
+    expect(none).toContain("no reasoning control");
+    expect(none).not.toContain("medium");
+  });
+
   test("model picker: arrows and the effort row work from the keyboard", async () => {
     const d = session();
     d.daemon({ type: "model_open" });

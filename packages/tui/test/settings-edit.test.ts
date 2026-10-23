@@ -77,9 +77,11 @@ describe("the effort row of the model picker", () => {
     d.send(KEY.right);
     expect(d.state.effort).toBe("xhigh");
     d.send(KEY.right);
-    expect(d.state.effort).toBe("low");
+    d.send(KEY.right);
+    expect(d.state.effort).toBe("off");
     d.send(KEY.left);
-    expect(d.state.effort).toBe("xhigh");
+    expect(d.state.effort).toBe("max");
+    d.send(KEY.left);
     d.daemon({ type: "model_close" });
     d.send(KEY.ctrl("p"));
     d.send(KEY.right);

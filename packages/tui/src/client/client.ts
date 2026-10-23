@@ -5,7 +5,15 @@
 import type { DaemonClient } from "@agency/rpc";
 import { drainQueue, type Effect, type Out } from "../controller/index.ts";
 import { CLIENT_SLASH, type SlashEntry } from "../input/completion.ts";
-import { type AppState, type Event, type ImageChip, type ModelRow, PERMISSION_OF } from "../state/index.ts";
+import {
+  type AppState,
+  EFFORTS,
+  type Event,
+  effortOf,
+  type ImageChip,
+  type ModelRow,
+  PERMISSION_OF,
+} from "../state/index.ts";
 import type {
   WireEvent,
   WireGitDiff,
@@ -51,6 +59,7 @@ interface ProvidersResult {
       contextWindow: number;
       pricing: { inputPerMTok: number; outputPerMTok: number };
       status?: string;
+      effortLevels?: string[];
     }>;
   }>;
   default: Record<string, string>;
@@ -83,6 +92,7 @@ export function modelRows(p: ProvidersResult): ModelRow[] {
           inPerMTok: m.pricing.inputPerMTok,
           outPerMTok: m.pricing.outputPerMTok,
           tags: m.pricing.inputPerMTok === 0 && m.pricing.outputPerMTok === 0 ? "free" : "",
+          efforts: m.effortLevels ? EFFORTS.filter((l) => m.effortLevels?.includes(l)) : EFFORTS,
         })),
     );
 }
@@ -359,7 +369,7 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
         text: e.text,
         images: [],
         mode: state.mode,
-        effort: state.effort,
+        effort: effortOf(state, state.bySession[e.sessionId]?.model ?? state.defaultModel),
         model: state.bySession[e.sessionId]?.model ?? state.defaultModel,
         create: false,
       });

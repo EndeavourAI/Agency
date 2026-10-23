@@ -9,7 +9,16 @@ import { truncate } from "../render-model/width.ts";
 import { formatCost } from "./format.ts";
 import { pickable } from "./reduce.ts";
 import { COMMANDS, rowValue, type SettingRow } from "./settings.ts";
-import type { AppState, ImageChip, ModelRow, SessionState, Step, Turn } from "./types.ts";
+import {
+  type AppState,
+  EFFORTS,
+  type Effort,
+  type ImageChip,
+  type ModelRow,
+  type SessionState,
+  type Step,
+  type Turn,
+} from "./types.ts";
 
 export type Tone = "text" | "soft" | "muted" | "dim" | "brand" | "add" | "del";
 
@@ -242,7 +251,33 @@ export function ctxNote(state: AppState): string {
   );
 }
 
-export const effortNote = (state: AppState): string => (isWide(state) ? ` · ${state.effort}` : "");
+const rowOf = (state: AppState, ref: string | null): ModelRow | undefined =>
+  ref === null ? undefined : state.models.find((m) => m.ref === ref || m.id === ref);
+
+/** The preferred level if the model takes it, else the closest one below, else the lowest above. */
+export function snapEffort(pref: Effort, levels: readonly Effort[]): Effort {
+  if (levels.includes(pref)) return pref;
+  const at = EFFORTS.indexOf(pref);
+  const below = levels.filter((l) => EFFORTS.indexOf(l) < at).at(-1);
+  return below ?? levels[0] ?? pref;
+}
+
+/** The level a turn on this model runs at; `state.effort` stays the preference, so a model that takes it again gets it back. */
+export const effortOf = (state: AppState, ref: string | null): Effort => {
+  const levels = rowOf(state, ref)?.efforts;
+  return levels ? snapEffort(state.effort, levels) : state.effort;
+};
+
+/** The picker row the effort row follows: the one under the cursor, else the model in use. */
+export const pickerRow = (state: AppState): ModelRow | undefined =>
+  flatModels(state)[state.model.at] ?? rowOf(state, current(state)?.model ?? state.defaultModel);
+
+/** A model without reasoning control has no level to show. */
+export function effortNote(state: AppState): string {
+  const ref = current(state)?.model ?? state.defaultModel;
+  const levels = rowOf(state, ref)?.efforts;
+  return isWide(state) && !(levels?.length === 1 && levels[0] === "off") ? ` · ${effortOf(state, ref)}` : "";
+}
 
 /** The statusLine command output; wide screens only. */
 export function statusText(state: AppState): string {

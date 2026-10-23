@@ -16,6 +16,7 @@ import {
   imageLabel,
   isHalted,
   isWorking,
+  type ModelRow,
   newerLabel,
   noProviders,
   othersLabel,
@@ -904,7 +905,7 @@ describe("scroll, stop and narrow layout", () => {
 });
 
 describe("model picker", () => {
-  const models = [
+  const models: ModelRow[] = [
     {
       ref: "anthropic/haiku",
       provider: "anthropic",
@@ -915,6 +916,7 @@ describe("model picker", () => {
       inPerMTok: 0.1,
       outPerMTok: 0.5,
       tags: "",
+      efforts: ["low", "medium", "high", "xhigh"],
     },
     {
       ref: "anthropic/sonnet",
@@ -926,6 +928,7 @@ describe("model picker", () => {
       inPerMTok: 2,
       outPerMTok: 10,
       tags: "",
+      efforts: ["low", "medium", "high", "xhigh"],
     },
     {
       ref: "openrouter/laguna",
@@ -937,6 +940,7 @@ describe("model picker", () => {
       inPerMTok: 0,
       outPerMTok: 0,
       tags: "free",
+      efforts: ["off"],
     },
   ];
 

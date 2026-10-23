@@ -10,14 +10,17 @@ import {
   canRetry,
   completion,
   current,
+  effortOf,
   flatModels,
   isHalted,
   isWorking,
   paletteItems,
+  pickerRow,
   reviewFiles,
   reviewVisible,
   runningTurn,
   settingValue,
+  snapEffort,
 } from "../state/derive.ts";
 import type { Event } from "../state/events.ts";
 import { nextValue, parseText, rowsOf } from "../state/settings.ts";
@@ -92,7 +95,7 @@ function startPrompt(state: AppState, ctx: KeyContext, text: string, kind: "prom
       text,
       images: state.images,
       mode: state.mode,
-      effort: state.effort,
+      effort: effortOf(state, state.bySession[sessionId]?.model ?? state.defaultModel),
       model: state.bySession[sessionId]?.model ?? state.defaultModel,
       create,
     },
@@ -122,7 +125,7 @@ export function sendQueued(state: AppState, ctx: KeyContext, item: QueueItem): O
         text: item.text,
         images: item.images,
         mode: state.mode,
-        effort: state.effort,
+        effort: effortOf(state, state.bySession[sessionId]?.model ?? state.defaultModel),
         model: state.bySession[sessionId]?.model ?? state.defaultModel,
         create: false,
       },
@@ -453,9 +456,11 @@ function run(state: AppState, command: Command, ctx: KeyContext): Out {
     case "overlay.left":
     case "overlay.right": {
       if (!state.model.open) return none;
-      const i = EFFORTS.indexOf(state.effort);
-      const d = command === "overlay.right" ? 1 : EFFORTS.length - 1;
-      return out([{ type: "effort_set", effort: EFFORTS[(i + d) % EFFORTS.length] as Effort }]);
+      const levels = pickerRow(state)?.efforts ?? EFFORTS;
+      if (levels.length < 2) return none;
+      const i = levels.indexOf(snapEffort(state.effort, levels));
+      const d = command === "overlay.right" ? 1 : levels.length - 1;
+      return out([{ type: "effort_set", effort: levels[(i + d) % levels.length] as Effort }]);
     }
     case "connection.retry":
       return out([], [{ type: "reconnect" }]);

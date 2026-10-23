@@ -55,7 +55,10 @@ export function createRuntime(o: RuntimeOptions): Runtime {
   const dispatch = (events: readonly Event[]): void => {
     if (!events.length) return;
     const flash = state.flash;
+    const before = state;
     for (const e of events) state = reduce(state, e);
+    // Nothing changed: no redraw, so a view that reports what it measured does not report again and again.
+    if (state === before) return;
     if (state.flash && state.flash !== flash) {
       clearTimeout(flashTimer);
       flashTimer = setTimeout(() => dispatch([{ type: "flash_clear" }]), FLASH_MS);

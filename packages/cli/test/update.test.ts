@@ -21,7 +21,7 @@ import { join } from "node:path";
 
 // We test the exported functions by importing them. verifySignature is private,
 // so we test it indirectly through the full flow with mocked HTTP responses.
-import { checkStale, runUpdate, verifySignature } from "../src/update.ts";
+import { checkStale, npmGlobalInstall, runUpdate, startNpmUpdate, verifySignature } from "../src/update.ts";
 import { getUpdatePublicKey, UPDATE_SPKI_DER_LEN } from "../src/update-public-key.ts";
 
 /**
@@ -608,6 +608,64 @@ describe("checkStale", () => {
       checkStale("0.1.0", stamp, never, 5_000_000);
       checkStale("0.1.0", stamp, never, 5_000_001);
       expect(calls).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("npm auto-update", () => {
+  const WIN =
+    "C:\\Users\\u\\AppData\\Roaming\\npm\\node_modules\\@endeavourai\\agency\\node_modules\\@endeavourai\\agency-win32-x64\\bin\\agency.exe";
+  const MAC =
+    "/opt/homebrew/lib/node_modules/@endeavourai/agency/node_modules/@endeavourai/agency-darwin-arm64/bin/agency";
+
+  test("finds the prefix of a global install and nothing else", () => {
+    expect(npmGlobalInstall(WIN, "win32")).toEqual({
+      prefix: "C:\\Users\\u\\AppData\\Roaming\\npm",
+      pkg: "agency-win32-x64",
+    });
+    expect(npmGlobalInstall(MAC, "darwin")).toEqual({ prefix: "/opt/homebrew", pkg: "agency-darwin-arm64" });
+    // A project's own install, and a binary from install.sh, are not updated with `npm i -g`.
+    expect(
+      npmGlobalInstall("/repo/node_modules/@endeavourai/agency-linux-x64/bin/agency", "linux"),
+    ).toBeUndefined();
+    expect(npmGlobalInstall("/home/u/.local/bin/agency", "linux")).toBeUndefined();
+  });
+
+  test("installs a newer version once a day, and only once its platform package is on the registry", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agency-npm-update-"));
+    const stampFile = join(dir, "update-install.json");
+    const asked: string[] = [];
+    const spawned: string[][] = [];
+    const registry = (status: number) =>
+      (async (url: string) => {
+        asked.push(url);
+        return new Response("{}", { status });
+      }) as unknown as typeof fetch;
+    const start = (latest: string, now: number, status = 200) =>
+      startNpmUpdate({
+        current: "0.2.0",
+        latest,
+        binPath: MAC,
+        stampFile,
+        httpFetch: registry(status),
+        spawn: (cmd) => spawned.push(cmd),
+        npm: "npm",
+        now,
+      });
+    try {
+      expect(start("0.1.0", 0)).toBe(false);
+      expect(start("0.3.0", 0, 404)).toBe(true);
+      await Bun.sleep(10);
+      expect(asked).toEqual(["https://registry.npmjs.org/@endeavourai%2fagency-darwin-arm64/0.3.0"]);
+      expect(spawned).toEqual([]);
+
+      expect(start("0.3.0", 1000)).toBe(false);
+      expect(start("0.3.0", 24 * 60 * 60 * 1000)).toBe(true);
+      await Bun.sleep(10);
+      const { prefix } = npmGlobalInstall(MAC)!;
+      expect(spawned).toEqual([["npm", "i", "-g", "--prefix", prefix, "@endeavourai/agency@0.3.0"]]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -45,6 +45,65 @@ export function checkStale(
   return stamp.latest && stamp.latest !== currentVersion ? stamp.latest : undefined;
 }
 
+/** The npm prefix and platform package of a global npm install, read from the binary's path; undefined for any other install. */
+export function npmGlobalInstall(
+  binPath: string,
+  platform: string = process.platform,
+): { prefix: string; pkg: string } | undefined {
+  const m =
+    /^(.+?)[\\/]node_modules[\\/]@endeavourai[\\/]agency[\\/]node_modules[\\/]@endeavourai[\\/](agency-[\w-]+)[\\/]bin[\\/]/.exec(
+      binPath,
+    );
+  if (!m?.[1] || !m[2]) return undefined;
+  // Windows keeps global packages in <prefix>\node_modules, the others in <prefix>/lib/node_modules.
+  return { prefix: platform === "win32" ? m[1] : m[1].replace(/[\\/]lib$/, ""), pkg: m[2] };
+}
+
+/**
+ * Starts `npm i -g` of `latest` in the background for a global npm install, at most once a day per version; the next
+ * start runs it. Waits for the platform package on the registry: npm skips a missing optional one and leaves no binary.
+ */
+export function startNpmUpdate(o: {
+  current: string;
+  latest: string;
+  binPath: string;
+  stampFile: string;
+  httpFetch?: typeof fetch;
+  spawn?: (cmd: string[]) => void;
+  npm?: string | null;
+  now?: number;
+}): boolean {
+  const install = npmGlobalInstall(o.binPath);
+  const npm = o.npm === undefined ? Bun.which("npm") : o.npm;
+  if (!install || !npm || Bun.semver.order(o.latest, o.current) <= 0) return false;
+  const now = o.now ?? Date.now();
+  let tried: { version?: string; at?: number } = {};
+  try {
+    tried = JSON.parse(readFileSync(o.stampFile, "utf8"));
+  } catch {
+    // No attempt yet.
+  }
+  if (tried.version === o.latest && now - (tried.at ?? 0) < CHECK_INTERVAL_MS) return false;
+  try {
+    mkdirSync(dirname(o.stampFile), { recursive: true });
+    writeFileSync(o.stampFile, JSON.stringify({ version: o.latest, at: now }));
+  } catch {
+    return false;
+  }
+  const spawn =
+    o.spawn ??
+    ((cmd: string[]) =>
+      Bun.spawn(cmd, { stdio: ["ignore", "ignore", "ignore"], detached: true, windowsHide: true }).unref());
+  void (o.httpFetch ?? fetch)(`https://registry.npmjs.org/@endeavourai%2f${install.pkg}/${o.latest}`, {
+    signal: AbortSignal.timeout(10_000),
+  })
+    .then((res) => {
+      if (res.ok) spawn([npm, "i", "-g", "--prefix", install.prefix, `@endeavourai/agency@${o.latest}`]);
+    })
+    .catch(() => {});
+  return true;
+}
+
 /** Verify ed25519 signature for the asset buffer using the embedded public key. */
 export function verifySignature(assetBuf: Buffer, signatureBuf: Buffer): boolean {
   if (signatureBuf.length !== 64) return false;

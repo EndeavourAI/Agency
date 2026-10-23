@@ -2340,12 +2340,21 @@ async function noteAvailableUpdate(argv: string[]): Promise<void> {
   ) {
     return;
   }
-  const { checkStale } = await import("./update.ts");
+  const { checkStale, startNpmUpdate } = await import("./update.ts");
   const latest = checkStale(VERSION, join(cacheDir(), "update-check.json"));
+  if (!latest) return;
+  const updating = startNpmUpdate({
+    current: VERSION,
+    latest,
+    binPath: process.execPath,
+    stampFile: join(cacheDir(), "update-install.json"),
+  });
   // stderr: a notice on stdout would corrupt `--format json` output.
-  if (latest)
-    process.stderr.write(`Update available: ${VERSION} -> ${latest} (run agency update)
-`);
+  process.stderr.write(
+    updating
+      ? `Updating Agency ${VERSION} -> ${latest} in the background: the next start runs it.\n`
+      : `Update available: ${VERSION} -> ${latest} (run agency update)\n`,
+  );
 }
 
 /** `agency` alone on a terminal opens the TUI; any argument, a pipe or a redirect keeps the line-oriented CLI. */

@@ -4,17 +4,21 @@
  */
 import { completionItems } from "../input/completion.ts";
 import { diffStats, parseUnifiedDiff, stepDiff } from "../render-model/diff.ts";
+import { type MdBlock, renderMd } from "../render-model/markdown.ts";
 import { stepOutput } from "../render-model/output.ts";
 import { truncate } from "../render-model/width.ts";
 import { formatCost } from "./format.ts";
-import { pickable } from "./reduce.ts";
+import { initialPlanUi, pickable } from "./reduce.ts";
 import { COMMANDS, rowValue, type SettingRow } from "./settings.ts";
 import {
+  type Approval,
   type AppState,
   EFFORTS,
   type Effort,
   type ImageChip,
   type ModelRow,
+  PLAN_TOOL,
+  type PlanUi,
   type SessionState,
   type Step,
   type Turn,
@@ -57,6 +61,34 @@ export const showAsk = (state: AppState): boolean => {
   const s = current(state);
   return state.view === "session" && !state.review.open && !!runningTurn(s)?.approval;
 };
+
+/** The plan_exit ask on screen: it takes over the transcript and the prompt instead of the generic ask. */
+export function planAsk(state: AppState): Approval | null {
+  const a = showAsk(state) ? runningTurn(current(state))?.approval : undefined;
+  return a?.tool === PLAN_TOOL ? a : null;
+}
+
+/** The transcript column without the details pane, which the plan panel hides. */
+export const planWidth = (cols: number): number => Math.min(cols - 4, 120);
+/** The answers box under the plan: its two borders, the question and three choices. */
+export const PLAN_FOOT_ROWS = 6;
+/** Rows of the plan box that its top border, the title and the blank line under it use. */
+export const PLAN_HEAD_ROWS = 3;
+
+/** Plan rows that fit: the screen less the top bar and its gap, the answers box, the hint row and the box head. */
+export const planVisible = (rows: number): number =>
+  Math.max(1, rows - 2 - PLAN_FOOT_ROWS - 1 - PLAN_HEAD_ROWS);
+
+/** The plan as markdown blocks; the daemon trims the plan, and a fence on its last line closes only at a newline. */
+export const planBlocks = (plan: string): MdBlock[] => renderMd(`${plan}\n`);
+
+/** How far the plan of this ask can scroll: what the view measured, unbounded before it drew. */
+export const planMax = (state: AppState, requestId: string): number =>
+  planPanel(state, requestId).max ?? Number.POSITIVE_INFINITY;
+
+/** The panel state of an ask: a fresh one until the first key. */
+export const planPanel = (state: AppState, requestId: string): PlanUi =>
+  state.planUi.requestId === requestId ? state.planUi : initialPlanUi(requestId);
 
 export const canRetry = (state: AppState): boolean => {
   const s = current(state);
@@ -294,6 +326,12 @@ export interface Hint {
 export function hints(state: AppState): Hint[] {
   const s = current(state);
   const picks = s ? pickable(s.blocks) : [];
+  if (planAsk(state))
+    return [
+      { key: "↑↓", label: "choose" },
+      { key: "enter", label: "select" },
+      { key: "pgup/pgdn", label: "scroll" },
+    ];
   if (s && s.pickAt !== null && picks.includes(s.pickAt))
     return [
       { key: "↑↓", label: "turn" },

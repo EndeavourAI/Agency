@@ -1,5 +1,15 @@
 import type { SlashEntry } from "../input/completion.ts";
-import type { Connection, Effort, ImageChip, ModelRow, QueueItem, ThemeName, UiMode, View } from "./types.ts";
+import type {
+  Connection,
+  Effort,
+  ImageChip,
+  ModelRow,
+  PlanUi,
+  QueueItem,
+  ThemeName,
+  UiMode,
+  View,
+} from "./types.ts";
 import type {
   WireEntry,
   WireEvent,
@@ -96,6 +106,8 @@ export type DaemonEvent =
       turnId: string;
       requestId: string;
       decision: "once" | "always" | "reject";
+      /** A plan not approved: the turn goes on planning, so it is not denied. */
+      keep?: boolean;
     }
   | { type: "prompt_queued"; sessionId: string; item: QueueItem }
   | { type: "queue_shifted"; sessionId: string; id: string }
@@ -121,6 +133,7 @@ export type UiEvent =
   | { type: "new_session" }
   | { type: "mode_cycle"; back?: boolean }
   | { type: "mode_set"; mode: UiMode }
+  | { type: "plan_ui"; requestId: string; patch: Partial<Omit<PlanUi, "requestId">> }
   | { type: "palette_toggle" }
   | { type: "palette_close" }
   | { type: "palette_query"; q: string }

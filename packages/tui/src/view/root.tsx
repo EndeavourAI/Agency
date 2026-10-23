@@ -60,6 +60,7 @@ export async function mountApp(renderer: CliRenderer, runtime: Runtime, o: Mount
         now={now}
         version={o.version}
         onScrollMax={(sessionId, n) => runtime.dispatch([{ type: "scroll_max", sessionId, n }])}
+        onPlanMax={(requestId, max) => runtime.dispatch([{ type: "plan_ui", requestId, patch: { max } }])}
       />
     );
   }, renderer);

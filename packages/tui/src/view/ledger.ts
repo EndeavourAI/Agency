@@ -2,7 +2,7 @@
  * The transcript as rows: a calm ledger. A turn is the prompt on a steel band, its steps as one-liners, the answer, and one
  * closing row. Everything here is a pure function of a block, a palette and a width.
  */
-import { visibleBlocks } from "../render-model/markdown.ts";
+import { type MdBlock, visibleBlocks } from "../render-model/markdown.ts";
 import { padEnd, stringWidth, wrap } from "../render-model/width.ts";
 import { runningThought, stepView, type Tone, turnFoot, turnStamp, youText } from "../state/derive.ts";
 import { formatTokens } from "../state/format.ts";
@@ -139,12 +139,17 @@ export function shellRows(b: ShellBlock, x: LedgerCtx): Row[] {
   return rows;
 }
 
-function answerRows(t: Turn, x: LedgerCtx, hasAbove: boolean): Row[] {
-  const bw = Math.min(MAX_PROSE, x.w - 3);
-  const c = x.c;
+/** Markdown blocks as rows: prose `bw` cells wide, tables up to `full`. */
+export function mdRows(list: readonly MdBlock[], bw: number, full: number, c: Palette): Row[] {
   const rows: Row[] = [];
+  for (const [i, b] of list.entries()) rows.push(...blockRows(b, i === 0, bw, full, c));
+  return rows;
+}
+
+function answerRows(t: Turn, x: LedgerCtx, hasAbove: boolean): Row[] {
+  const c = x.c;
   const list = visibleBlocks(t.answer);
-  for (const [i, b] of list.entries()) rows.push(...blockRows(b, i === 0, bw, x.w - 3, c));
+  const rows = mdRows(list, Math.min(MAX_PROSE, x.w - 3), x.w - 3, c);
   if (t.status === "running" && !x.offline && rows.length) {
     const last = rows[rows.length - 1] as Row;
     const lastBlock = list[list.length - 1];

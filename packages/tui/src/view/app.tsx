@@ -6,12 +6,13 @@ import {
   current,
   detailsShown,
   newerLabel,
+  planAsk,
   queuedRows,
   runningTurn,
   showAsk,
   showLogo,
 } from "../state/derive.ts";
-import type { AppState, Block, SessionState } from "../state/types.ts";
+import type { Approval, AppState, Block, SessionState } from "../state/types.ts";
 import type { Palette } from "../term/themes.ts";
 import { footerRow, hintRow, topBar } from "./chrome.ts";
 import { completionBox, composerBox, imageChipsBox, noteBox } from "./composer.ts";
@@ -30,6 +31,7 @@ import {
   turnRows,
 } from "./ledger.ts";
 import { modelRows, paletteRows } from "./overlays.ts";
+import { planBody, planChoices, planOverflow } from "./plan.ts";
 import { commitBox, reviewBody } from "./review.ts";
 import { clip, type Row, segsWidth } from "./rows.ts";
 import { settingsView } from "./settings.ts";
@@ -45,6 +47,8 @@ export interface AppProps {
   version: string;
   /** How far the transcript of a session can scroll back, as measured; null while older blocks are unmeasured. */
   onScrollMax?: (sessionId: string, n: number | null) => void;
+  /** How far the plan of an ask can scroll, as drawn. */
+  onPlanMax?: (requestId: string, n: number) => void;
 }
 
 const MAX_COLUMN = 120;
@@ -238,7 +242,8 @@ function blockRows(b: Block, f: BlockFlags): Row[] {
 function Session(props: AppProps) {
   const s = props.state;
   const c = props.palette;
-  const details = () => detailsShown(s());
+  const plan = createMemo(() => planAsk(s()));
+  const details = () => detailsShown(s()) && !plan();
   const mainW = createMemo(() =>
     details() ? s().cols - 4 - DETAILS_W - DETAILS_CHROME : Math.min(s().cols - 4, MAX_COLUMN),
   );
@@ -250,11 +255,13 @@ function Session(props: AppProps) {
     canRetry(s()) ? (sess()?.blocks.findLast((y) => y.kind === "turn") ?? null) : null,
   );
   const focused = useFocused(s);
-  const region = createMemo(() =>
-    s().review.open
+  const region = createMemo(() => {
+    const ask = plan();
+    if (ask) return planChoices(s(), c(), ask);
+    return s().review.open
       ? commitBox(s(), c(), mainW())
-      : composerRegion(s(), c(), mainW(), focused(), "Message Agency. @ for files, / for commands"),
-  );
+      : composerRegion(s(), c(), mainW(), focused(), "Message Agency. @ for files, / for commands");
+  });
   const hint = createMemo(() => [hintRow(s(), c(), mainW())]);
   // The rows between the top bar (1), the gap under it (1), the box with its hint row: set by hand, so the transcript clips instead of pushing the box off the screen.
   const transcriptH = () => Math.max(1, s().rows - 2 - region().length - hint().length);
@@ -273,7 +280,7 @@ function Session(props: AppProps) {
   });
   const ask = createMemo((): Row[] => {
     const t = runningTurn(sess());
-    return showAsk(s()) && t?.approval ? approvalRows(t.approval, ctx()) : [];
+    return showAsk(s()) && t?.approval && !plan() ? approvalRows(t.approval, ctx()) : [];
   });
   // Blocks from the newest back until the view plus the scroll is full: older blocks are never measured.
   const view = createMemo(() => {
@@ -308,22 +315,41 @@ function Session(props: AppProps) {
     const top = view().top;
     if (id) props.onScrollMax?.(id, top);
   });
+  createEffect(() => {
+    const ask = plan();
+    if (ask) props.onPlanMax?.(ask.requestId, planOverflow(s(), c(), ask, transcriptH()));
+  });
   return (
     <box flexGrow={1} minHeight={0} flexDirection="row" paddingTop={1} paddingLeft={2} paddingRight={2}>
       <box flexGrow={1} flexShrink={1} minHeight={0} flexDirection="column" alignItems="center">
         <box flexGrow={1} flexShrink={1} minHeight={0} flexDirection="column" width={mainW()}>
           <Show
-            when={!s().review.open}
+            when={!s().review.open && !plan()}
             fallback={
-              <box
-                height={transcriptH()}
-                flexShrink={0}
-                flexDirection="column"
-                paddingBottom={1}
-                overflow="hidden"
+              <Show
+                when={plan()}
+                fallback={
+                  <box
+                    height={transcriptH()}
+                    flexShrink={0}
+                    flexDirection="column"
+                    paddingBottom={1}
+                    overflow="hidden"
+                  >
+                    <Rows rows={reviewBody(s(), c(), mainW(), transcriptH() - 1)} w={mainW()} />
+                  </box>
+                }
               >
-                <Rows rows={reviewBody(s(), c(), mainW(), transcriptH() - 1)} w={mainW()} />
-              </box>
+                <box
+                  height={transcriptH()}
+                  flexShrink={0}
+                  flexDirection="column"
+                  justifyContent="flex-end"
+                  overflow="hidden"
+                >
+                  <Rows rows={planBody(s(), c(), plan() as Approval, transcriptH())} w={mainW()} />
+                </box>
+              </Show>
             }
           >
             <box

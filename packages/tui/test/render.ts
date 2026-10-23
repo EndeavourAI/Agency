@@ -44,6 +44,8 @@ export async function mount(
         version: "0.1.0",
         // As the runtime does: the measured end of the scroll goes back into the state.
         onScrollMax: (sessionId, n) => setSt((s) => reduce(s, { type: "scroll_max", sessionId, n })),
+        onPlanMax: (requestId, max) =>
+          setSt((s) => reduce(s, { type: "plan_ui", requestId, patch: { max } })),
       });
     },
     { width: state.cols, height: state.rows },

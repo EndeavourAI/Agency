@@ -67,6 +67,14 @@ export function topBar(state: AppState, c: Palette, tick: number): Row {
   );
 }
 
+/** The mode of the next turn: plan and auto say what they allow and how to leave, build is just its name. */
+function modeBadge(state: AppState, c: Palette): Seg[] {
+  const tag: Seg = { t: " (shift+tab to cycle)", fg: c.muted };
+  if (state.mode === "plan") return [{ t: "⏸ plan mode on", fg: modeColor(c, "plan"), b: true }, tag];
+  if (state.mode === "auto") return [{ t: "⏵⏵ accept edits on", fg: modeColor(c, "auto"), b: true }, tag];
+  return [{ t: state.mode, fg: modeColor(c, state.mode), b: true }];
+}
+
 /** The one row under the prompt: mode, model, context, the statusLine output and only the keys that matter now. */
 export function hintRow(state: AppState, c: Palette, w: number): Row {
   const left: Seg[] = [];
@@ -80,7 +88,7 @@ export function hintRow(state: AppState, c: Palette, w: number): Row {
     left.push({ t: state.flash.text, fg: state.flash.tone === "error" ? c.del : c.text });
   } else {
     left.push(
-      { t: state.mode, fg: modeColor(c, state.mode), b: true },
+      ...modeBadge(state, c),
       { t: " · ", fg: c.muted },
       { t: modelName(state), fg: c.text },
       { t: `${effortNote(state)}${ctxNote(state)}`, fg: c.muted },

@@ -198,12 +198,14 @@ describe("main: the ledger of a session", () => {
     const m = await board(d);
     const t = find(m, "┌");
     expect(m.cell(t.x, t.y).fg).toBe(A.auto);
-    const hint = find(m, "auto · Sonnet 5.5");
+    const hint = find(m, "⏵⏵ accept edits on (shift+tab to cycle) · Sonnet 5.5");
     expect(m.cell(hint.x, hint.y).fg).toBe(A.auto);
     d.send("\x1b[Z");
     const plan = await board(d);
     const tp = find(plan, "┌");
     expect(plan.cell(tp.x, tp.y).fg).toBe(A.plan);
+    const badge = find(plan, "⏸ plan mode on (shift+tab to cycle) · Sonnet 5.5");
+    expect(plan.cell(badge.x, badge.y)).toMatchObject({ fg: A.plan, bold: true });
   });
 
   test("focus: details hidden, the column centred at 120 columns, context rides in the hint row", async () => {

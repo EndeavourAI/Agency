@@ -54,6 +54,24 @@ export interface Approval {
   argsSummary: string;
 }
 
+/** The plan_exit ask: the tool name the daemon uses, and the three answers of its panel in list order. */
+export const PLAN_TOOL = "plan_exit";
+export const PLAN_CHOICES = ["auto", "manual", "keep"] as const;
+export type PlanChoice = (typeof PLAN_CHOICES)[number];
+
+/** The panel of one plan ask; `requestId` ties it to the ask, so a new ask starts fresh. */
+export interface PlanUi {
+  requestId: string;
+  /** Index in PLAN_CHOICES. */
+  at: number;
+  /** Plan rows scrolled up out of view. */
+  scroll: number;
+  /** Feedback typed on "keep planning". */
+  note: string;
+  /** How far the plan can scroll, as the view measured it; null until it was drawn. */
+  max: number | null;
+}
+
 export interface ImageChip {
   name: string;
   /** Bytes; the chip label shows KB. */
@@ -247,6 +265,7 @@ export interface AppState {
   /** Chosen for the next turn: `provider/model`. */
   defaultModel: string | null;
   review: ReviewState;
+  planUi: PlanUi;
   settings: SettingsState;
   /** Copy feedback: the key of the turn just copied. */
   copied: string | null;

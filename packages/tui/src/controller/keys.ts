@@ -16,6 +16,10 @@ import {
   isWorking,
   paletteItems,
   pickerRow,
+  planAsk,
+  planMax,
+  planPanel,
+  planVisible,
   reviewFiles,
   reviewVisible,
   runningTurn,
@@ -29,6 +33,9 @@ import {
   type Block,
   EFFORTS,
   type Effort,
+  PLAN_CHOICES,
+  type PlanChoice,
+  type PlanUi,
   type QueueItem,
   type Turn,
 } from "../state/types.ts";
@@ -63,7 +70,8 @@ export function activeContexts(state: AppState): Context[] {
   if (state.conn === "offline") return ["offline", "global"];
   const s = current(state);
   if (state.view === "session") {
-    if (runningTurn(s)?.approval && !state.review.open) return ["approval", "global"];
+    if (runningTurn(s)?.approval && !state.review.open)
+      return [planAsk(state) ? "plan" : "approval", "global"];
     if (state.review.open) return ["review", "global"];
     if (s && s.pickAt !== null) return ["pick", "global"];
   }
@@ -224,6 +232,72 @@ function approve(state: AppState, decision: "once" | "always" | "reject"): Out {
     : out([event], [respond]);
 }
 
+/** Answers the plan ask. Keeping the plan rejects without cancelling: the model gets the words and plans on. */
+function planAnswer(state: AppState, choice: PlanChoice): Out {
+  const s = current(state);
+  const t = runningTurn(s);
+  const ask = planAsk(state);
+  if (!s || !t || !ask || s.runningTurnId === null) return none;
+  const base = { sessionId: s.id, turnId: t.id, requestId: ask.requestId };
+  const respond = { type: "respond", sessionId: s.id, requestId: ask.requestId } as const;
+  if (choice === "keep") {
+    const message = planPanel(state, ask.requestId).note.trim();
+    return out(
+      [{ type: "approval_answered", ...base, decision: "reject", keep: true }],
+      [{ ...respond, decision: "reject", ...(message ? { message } : {}) }],
+    );
+  }
+  const mode = choice === "auto" ? "auto" : "build";
+  return out(
+    [
+      { type: "approval_answered", ...base, decision: "once" },
+      { type: "mode_set", mode },
+    ],
+    [{ ...respond, decision: "once", mode: choice === "auto" ? "auto" : "ask" }],
+  );
+}
+
+/** The plan panel's own state: a patch for the ask on screen. */
+function planUi(state: AppState, patch: Partial<Omit<PlanUi, "requestId">>): Out {
+  const ask = planAsk(state);
+  return ask ? out([{ type: "plan_ui", requestId: ask.requestId, patch }]) : none;
+}
+
+/** Typing or deleting on "keep planning": the note changes and the cursor moves to that answer. */
+function planNote(state: AppState, edit: (note: string) => string): Out {
+  const ask = planAsk(state);
+  if (!ask) return none;
+  const note = planPanel(state, ask.requestId).note;
+  const next = edit(note);
+  return next === note ? none : planUi(state, { at: PLAN_CHOICES.indexOf("keep"), note: next });
+}
+
+function planKey(state: AppState, command: Command): Out {
+  const ask = planAsk(state);
+  if (!ask) return none;
+  const ui = planPanel(state, ask.requestId);
+  const n = PLAN_CHOICES.length;
+  switch (command) {
+    case "plan.prev":
+      return planUi(state, { at: (ui.at + n - 1) % n });
+    case "plan.next":
+      return planUi(state, { at: (ui.at + 1) % n });
+    case "plan.run":
+      return planAnswer(state, PLAN_CHOICES[ui.at] as PlanChoice);
+    case "plan.auto":
+      return planAnswer(state, "auto");
+    case "plan.manual":
+      return planAnswer(state, "manual");
+    case "plan.keep":
+      return planAnswer(state, "keep");
+    default: {
+      const step = Math.max(1, planVisible(state.rows) - 1);
+      const to = ui.scroll + (command === "plan.pageDown" ? step : -step);
+      return planUi(state, { scroll: Math.max(0, Math.min(planMax(state, ask.requestId), to)) });
+    }
+  }
+}
+
 function overlayRun(state: AppState): Out {
   if (state.model.open) {
     const m = flatModels(state)[state.model.at];
@@ -319,6 +393,7 @@ function run(state: AppState, command: Command, ctx: KeyContext): Out {
     case "cursor.wordRight":
       return out([{ type: "edit", edit: { op: "wordRight" } }]);
     case "delete.back":
+      if (planAsk(state)) return planNote(state, (note) => [...note].slice(0, -1).join(""));
       if (state.palette.open)
         return out([{ type: "palette_query", q: [...state.palette.query].slice(0, -1).join("") }]);
       if (state.model.open)
@@ -384,6 +459,15 @@ function run(state: AppState, command: Command, ctx: KeyContext): Out {
       return approve(state, "always");
     case "approve.deny":
       return approve(state, "reject");
+    case "plan.prev":
+    case "plan.next":
+    case "plan.run":
+    case "plan.auto":
+    case "plan.manual":
+    case "plan.keep":
+    case "plan.pageUp":
+    case "plan.pageDown":
+      return planKey(state, command);
     case "review.close":
       return out([{ type: "review_close" }]);
     case "review.commit":
@@ -483,6 +567,12 @@ export function dispatchKey(state: AppState, key: KeyEvent, ctx: KeyContext): Ou
     !key.alt
   )
     return out([{ type: "ac_close" }]);
+  // Once feedback is started every character is text, digits too; before that 1, 2 and 3 answer.
+  const ask = contexts[0] === "plan" ? planAsk(state) : null;
+  if (ask && key.text !== undefined && planPanel(state, ask.requestId).note !== "") {
+    const text = key.text;
+    return planNote(state, (note) => note + text);
+  }
   const local = resolveKey(
     contexts.filter((c) => c !== "global"),
     key,
@@ -493,6 +583,13 @@ export function dispatchKey(state: AppState, key: KeyEvent, ctx: KeyContext): Ou
     return state.palette.open && !PALETTE_GLOBALS.has(global) ? none : run(state, global, ctx);
   if (key.text === undefined) return none;
   // Typed text goes to whatever takes input now.
+  // A stray y or n must not become feedback: only the "keep planning" row takes text.
+  if (ask) {
+    const text = key.text;
+    return planPanel(state, ask.requestId).at === PLAN_CHOICES.indexOf("keep")
+      ? planNote(state, (note) => note + text)
+      : none;
+  }
   if (contexts[0] === "settingsEdit" && state.settings.edit !== null)
     return out([{ type: "settings_edit", text: state.settings.edit + key.text }]);
   if (state.model.open) return out([{ type: "model_query", q: state.model.q + key.text }]);
@@ -523,6 +620,7 @@ export function dispatchPaste(state: AppState, text: string): Out {
   if (state.palette.open)
     return out([{ type: "palette_query", q: state.palette.query + clean.replace(/\n/g, " ") }]);
   const contexts = activeContexts(state);
+  if (contexts[0] === "plan") return planNote(state, (note) => note + clean.replace(/\s*\n\s*/g, " "));
   if (contexts[0] !== "composer" && contexts[0] !== "completion") return none;
   // A terminal with an image on the clipboard pastes nothing: that is the person asking for the image.
   if (text === "") return out([], [{ type: "paste_image" }]);

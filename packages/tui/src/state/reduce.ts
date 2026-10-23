@@ -11,12 +11,21 @@ import {
   EFFORTS,
   type Effort,
   MODES,
+  type PlanUi,
   type SessionState,
   type Step,
   type Turn,
   type UiMode,
 } from "./types.ts";
 import type { WireEvent } from "./wire.ts";
+
+export const initialPlanUi = (requestId: string): PlanUi => ({
+  requestId,
+  at: 0,
+  scroll: 0,
+  note: "",
+  max: null,
+});
 
 export function initialState(
   init: Partial<Pick<AppState, "cols" | "rows" | "workspace" | "theme">> = {},
@@ -61,6 +70,7 @@ export function initialState(
       commitNote: "",
       scroll: 0,
     },
+    planUi: initialPlanUi(""),
     settings: { sec: 0, row: null, edit: null, config: {} },
     copied: null,
     lastEsc: 0,
@@ -448,6 +458,7 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
         withTurn(s, e.turnId, (t) => {
           const ask = t.approval;
           if (!ask || ask.requestId !== e.requestId) return t;
+          if (e.keep) return { ...t, approval: null };
           if (e.decision !== "reject")
             return {
               ...t,
@@ -679,6 +690,12 @@ function reduceUi(state: AppState, e: UiEvent): AppState {
     }
     case "mode_set":
       return { ...state, mode: e.mode };
+    case "plan_ui": {
+      const base = state.planUi.requestId === e.requestId ? state.planUi : initialPlanUi(e.requestId);
+      if (Object.entries(e.patch).every(([k, v]) => base[k as keyof PlanUi] === v) && base === state.planUi)
+        return state;
+      return { ...state, planUi: { ...base, ...e.patch } };
+    }
     case "palette_toggle":
       return { ...state, palette: { open: !state.palette.open, query: "", at: 0 } };
     case "palette_close":

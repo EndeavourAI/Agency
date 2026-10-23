@@ -7,6 +7,7 @@ export type Context =
   | "pick"
   | "overlay"
   | "approval"
+  | "plan"
   | "review"
   | "settings"
   | "settingsEdit"
@@ -62,6 +63,14 @@ export type Command =
   | "approve.once"
   | "approve.always"
   | "approve.deny"
+  | "plan.prev"
+  | "plan.next"
+  | "plan.run"
+  | "plan.auto"
+  | "plan.manual"
+  | "plan.keep"
+  | "plan.pageUp"
+  | "plan.pageDown"
   | "review.close"
   | "review.commit"
   | "review.commitPush"
@@ -160,6 +169,18 @@ export const KEYMAP: Readonly<Record<Context, Table>> = {
     a: "approve.always",
     n: "approve.deny",
     escape: "approve.deny",
+  },
+  plan: {
+    up: "plan.prev",
+    down: "plan.next",
+    enter: "plan.run",
+    "1": "plan.auto",
+    "2": "plan.manual",
+    "3": "plan.keep",
+    escape: "plan.keep",
+    pageup: "plan.pageUp",
+    pagedown: "plan.pageDown",
+    backspace: "delete.back",
   },
   review: {
     escape: "review.close",

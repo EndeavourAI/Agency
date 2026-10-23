@@ -404,6 +404,8 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
                 requestId: e.requestId,
                 decision: e.decision,
                 sessionId: e.sessionId,
+                ...(e.message === undefined ? {} : { message: e.message }),
+                ...(e.mode === undefined ? {} : { mode: e.mode }),
               });
               return;
             case "shell_run": {

@@ -2,7 +2,15 @@
  * Offline end to end through the real CLI: daemon spawn, RPC, agent loop, a real tool and session resume,
  * once per provider wire format. Run: bun scripts/e2e-cli.ts [compiled-binary]   (no argument runs the source entrypoint)
  */
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -199,7 +207,7 @@ env.PATH = process.platform === "win32" ? `${systemRoot}\\System32;${systemRoot}
 
 const instances = join(home, "data", "instances");
 const daemonPids = (): number[] =>
-  readdirSync(instances)
+  (existsSync(instances) ? readdirSync(instances) : [])
     .filter((f) => f.endsWith(".json"))
     .map((f) => (JSON.parse(readFileSync(join(instances, f), "utf8")) as { pid: number }).pid);
 const daemonsSeen = new Set<number>();
@@ -246,10 +254,8 @@ try {
       `${family}: the resumed request carries the first turn`,
     );
   }
-  assert(
-    daemonsSeen.size === 1,
-    `one daemon outlives the CLI that started it and serves every run, saw ${daemonsSeen.size}`,
-  );
+  // -p runs its daemon inside its own process: no shared daemon is started or left behind.
+  assert(daemonsSeen.size === 0, `-p leaves no shared daemon behind, saw ${daemonsSeen.size}`);
   console.log(
     `e2e-cli: ${binary ? "compiled binary" : "source"}: tool turn and session resume green on ${families.join(", ")}`,
   );

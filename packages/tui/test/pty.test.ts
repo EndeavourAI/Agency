@@ -270,8 +270,9 @@ describe("resizing the terminal", () => {
       p.send("y");
       await p.until("the ask to run", (r) => has(r, "? Run"));
       p.send("y");
-      let rows = await p.until("the closing row", (r) => has(r, "✓ done"), 30_000);
-      await p.until("idle", (r) => has(r, "esc esc turns"));
+      await p.until("the closing row", (r) => has(r, "✓ done"), 30_000);
+      // Measure the idle screen: the frame that first shows the closing row can still hold the ask box.
+      let rows = await p.until("idle", (r) => has(r, "esc esc turns"));
       expect(has(rows, "No task list yet")).toBe(false);
       expect(boxWidth(rows).w).toBe(76);
       const steps = [

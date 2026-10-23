@@ -66,7 +66,7 @@ Release artifacts carry detached ed25519 signatures so `agency update` can verif
 
 ## Install verification
 
-Both `scripts/install.sh` (macOS/Linux, `sha256sum`, or `shasum -a 256` where that is absent) and `scripts/install.ps1` (Windows, `Get-FileHash`) download `checksums.txt` alongside the asset and fail closed on a missing or mismatched entry. `AGENCY_VERSION` and `AGENCY_INSTALL_DIR` override the version and destination.
+Both `scripts/install.sh` (macOS/Linux, `sha256sum`, or `shasum -a 256` where that is absent) and `scripts/install.ps1` (Windows, .NET SHA-256) download `checksums.txt` alongside the asset and fail closed on a missing or mismatched entry. `AGENCY_VERSION` and `AGENCY_INSTALL_DIR` override the version and destination.
 
 ## What to check before tagging
 

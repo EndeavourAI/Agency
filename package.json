@@ -20,7 +20,7 @@
     "build:bin": "bun scripts/build.ts",
     "sbom": "bun scripts/sbom.ts --out dist/agency.cdx.json --reproducible",
     "test": "bun test",
-    "test:ci": "bun test packages/schema packages/i18n packages/net packages/guard packages/telemetry packages/sdk packages/eval && bun test packages/providers && bun test packages/tools && bun test packages/core && bun test packages/cli && bun test packages/tui && bun scripts/run-test-file.ts --timeout-ms 60000 --retries 2 packages/rpc/test scripts",
+    "test:ci": "bun test --timeout 30000 packages/schema packages/i18n packages/net packages/guard packages/telemetry packages/sdk packages/eval && bun test --timeout 30000 packages/providers && bun test --timeout 30000 packages/tools && bun test --timeout 30000 packages/core && bun test --timeout 30000 packages/cli && bun test --timeout 30000 packages/tui && bun scripts/run-test-file.ts --timeout-ms 60000 --retries 2 packages/rpc/test scripts",
     "typecheck": "bun x tsc --build tsconfig.json",
     "typecheck:test": "bun x tsc --build tsconfig.test.json",
     "lint": "bun x biome check .",

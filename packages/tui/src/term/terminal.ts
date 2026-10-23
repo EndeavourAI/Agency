@@ -110,7 +110,9 @@ export async function openTerminal(o: TerminalOptions): Promise<Terminal> {
       renderer.destroy();
     } catch {}
     restore();
-    process.stderr.write(
+    // Synchronous: process.exit right after an async stderr write can drop the message (seen on Windows CI).
+    writeSync(
+      2,
       `agency crashed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
     );
     process.exit(1);

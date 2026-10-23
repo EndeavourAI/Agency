@@ -21,7 +21,14 @@ afterAll(() => {
 afterEach(async () => {
   for (const c of clients.splice(0)) await c.close();
   for (const d of daemons.splice(0)) await d.stop();
-  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  for (const d of dirs.splice(0)) {
+    try {
+      rmSync(d, { recursive: true, force: true, maxRetries: 5 });
+    } catch (e) {
+      // Windows CI: a turn's git or tool process can hold the folder past the test; its assertions already ran.
+      if (process.platform !== "win32") throw e;
+    }
+  }
 });
 
 const tempDir = (prefix: string): string => {

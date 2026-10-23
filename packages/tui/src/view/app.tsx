@@ -306,8 +306,9 @@ function Session(props: AppProps) {
       shown.unshift({ b, rows });
       height += rows.length + 1;
     }
-    // Reached the oldest block: the scroll ends where it shows at the top. The last child has no gap after it.
-    const top = i < 0 ? Math.max(0, height - 1 - room) : null;
+    // Reached the oldest block: the scroll ends where it shows at the top, measured with the marker row a scroll
+    // adds, or the first notch stops one row short. The last child has no gap after it.
+    const top = i < 0 ? Math.max(0, height - 1 - (transcriptH() - 2)) : null;
     return { shown, shift: Math.min(x?.scroll ?? 0, top ?? Number.POSITIVE_INFINITY), top };
   });
   createEffect(() => {

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -247,6 +247,28 @@ test("git_commit refuses while a file under the hooks directory has uncommitted 
   await expect(gitCommit(root, { message: "m" })).rejects.toThrow("hook");
   expect(head(root)).toBe(before);
 }, 30_000);
+
+// A CI runner's temp folder is C:\Users\RUNNER~1\...; git reports the long form of the same folder.
+test.skipIf(process.platform !== "win32")(
+  "git_commit refuses a dirty hook when the root is an 8.3 short path",
+  async () => {
+    const root = repo();
+    git(root, "config", "core.hooksPath", ".husky");
+    mkdirSync(join(root, ".husky"));
+    writeFileSync(join(root, ".husky", "pre-commit"), "#!/bin/sh\nexit 0\n");
+    git(root, "add", ".husky");
+    git(root, "commit", "-q", "-m", "hooks");
+    writeFileSync(join(root, ".husky", "pre-commit"), "#!/bin/sh\ntouch pwned\n");
+    writeFileSync(join(root, "a.txt"), "x");
+    const short = spawnSync("cmd", ["/d", "/s", "/c", `for %I in ("${root}") do @echo %~sI`], {
+      encoding: "utf8",
+      windowsVerbatimArguments: true,
+    }).stdout.trim();
+    if (short.toLowerCase() === root.toLowerCase()) return; // no 8.3 names on this volume
+    await expect(gitCommit(short, { message: "m" })).rejects.toThrow("hook");
+  },
+  30_000,
+);
 
 test("git_commit survives a hook that prints megabytes", async () => {
   const root = repo();

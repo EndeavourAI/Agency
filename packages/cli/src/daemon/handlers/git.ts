@@ -201,9 +201,11 @@ async function withRenameSources(root: string, paths: string[]): Promise<string[
 /** A hook runs as the user, so an unreviewed edit of one (a pulled `.husky/pre-commit`) must not run from here. */
 async function dirtyHooksDir(root: string): Promise<string | undefined> {
   const top = ((await git(root, ["rev-parse", "--show-toplevel"])) ?? "").trim();
-  const hooks = ((await git(root, ["rev-parse", "--git-path", "hooks"])) ?? "").trim();
-  if (!top || !hooks) return undefined;
-  const rel = relative(top, resolve(root, hooks)).replaceAll("\\", "/");
+  if (!top) return undefined;
+  // Asked from git's own top-level path: a root in another form (8.3 name, /var vs /private/var) would read as outside.
+  const hooks = ((await git(top, ["rev-parse", "--git-path", "hooks"])) ?? "").trim();
+  if (!hooks) return undefined;
+  const rel = relative(top, resolve(top, hooks)).replaceAll("\\", "/");
   if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return undefined;
   const changed = await git(top, ["status", "--porcelain", "--untracked-files=all", "--", rel]);
   return (changed ?? "").trim() === "" ? undefined : rel;

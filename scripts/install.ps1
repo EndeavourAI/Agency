@@ -41,7 +41,13 @@ try {
   if (-not $expected) {
     throw "install: FAIL - no checksum for $asset in checksums.txt; refusing to install"
   }
-  $actual = (Get-FileHash -Path $binaryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  # .NET, not Get-FileHash: Windows PowerShell started from PowerShell 7 inherits a module path where it is missing.
+  $stream = [System.IO.File]::OpenRead($binaryPath)
+  try {
+    $actual = ([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($stream)) -replace "-", "").ToLowerInvariant()
+  } finally {
+    $stream.Dispose()
+  }
   if ($actual -ne $expected.ToLowerInvariant()) {
     throw "install: FAIL - checksum mismatch for $asset (expected $expected, got $actual); refusing to install"
   }

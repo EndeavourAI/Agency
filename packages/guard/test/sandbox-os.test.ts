@@ -76,6 +76,15 @@ describe("OS sandbox arguments", () => {
     );
   });
 
+  test("Seatbelt: with no .git yet the .git rules go, so git init works, and the rest stays held", () => {
+    const profile = buildSeatbeltProfile("/Users/u/ws", false, "/private/tmp", [], undefined, false);
+    expect(profile).not.toContain('"/Users/u/ws/.git"');
+    expect(profile).not.toContain('"/Users/u/ws/.git/config"');
+    expect(profile).not.toContain('"/Users/u/ws/.git/hooks"');
+    expect(profile).toContain('(subpath "/Users/u/ws/.agency")');
+    expect(profile).toContain('(subpath "/Users/u/ws/.gitmodules")');
+  });
+
   test("bubblewrap with allowed domains: no network but the proxy socket, which socat serves on a port inside", () => {
     const args = buildBwrapArgs(
       "/home/u/ws",

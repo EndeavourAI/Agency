@@ -31,6 +31,8 @@ export async function launch(
   const term = new Terminal({ cols, rows, allowProposedApi: true });
   let out = "";
   let chain: Promise<void> = Promise.resolve();
+  // One streaming decoder: a box-drawing character split across two reads must not become two U+FFFD.
+  const decoder = new TextDecoder();
   // A compiled binary starts its own daemon: the scripted one is a Bun script it cannot run.
   const proc = Bun.spawn(o.bin ? [o.bin] : [process.execPath, MAIN], {
     cwd: workspace,
@@ -47,7 +49,7 @@ export async function launch(
       cols,
       rows,
       data(_t: unknown, d: Uint8Array) {
-        const s = Buffer.from(d).toString("utf8");
+        const s = decoder.decode(d, { stream: true });
         out += s;
         chain = chain.then(() => new Promise<void>((r) => term.write(s, r)));
       },
@@ -118,16 +120,22 @@ export async function runScript(
   env: Record<string, string>,
 ): Promise<{ out: string; code: number }> {
   let out = "";
+  let last = Date.now();
+  const decoder = new TextDecoder();
   const proc = Bun.spawn([process.execPath, path], {
     env: { ...process.env, ...env },
     terminal: {
       cols: 80,
       rows: 24,
       data(_t: unknown, d: Uint8Array) {
-        out += Buffer.from(d).toString("utf8");
+        out += decoder.decode(d, { stream: true });
+        last = Date.now();
       },
     },
   });
   const code = await proc.exited;
+  // ConPTY can hand over the last bytes after the process has exited: read until the output is quiet.
+  const end = Date.now() + 3000;
+  while (Date.now() < end && Date.now() - last < 300) await Bun.sleep(50);
   return { out, code };
 }

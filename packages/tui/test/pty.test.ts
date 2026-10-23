@@ -222,9 +222,9 @@ describe("the keyboard", () => {
 
 describe("resizing the terminal", () => {
   const boxWidth = (rows: string[]): { at: number; w: number } => {
-    // The top border of the prompt box: the one row that holds both corners.
-    const row = rows.find((r) => r.includes("┌") && r.includes("┐")) ?? "";
-    return { at: row.indexOf("┌"), w: row.lastIndexOf("┐") - row.indexOf("┌") + 1 };
+    // The bottom border of the prompt box: the lowest box on screen, and a bottom edge carries no label.
+    const row = rows.findLast((r) => r.includes("└") && r.includes("┘")) ?? "";
+    return { at: row.indexOf("└"), w: row.lastIndexOf("┘") - row.indexOf("└") + 1 };
   };
   const logo = (rows: string[]) => has(rows, "▓▓");
   const sizes = [
@@ -274,6 +274,8 @@ describe("resizing the terminal", () => {
       // Measure the idle screen: the frame that first shows the closing row can still hold the ask box.
       let rows = await p.until("idle", (r) => has(r, "esc esc turns"));
       expect(has(rows, "No task list yet")).toBe(false);
+      // macOS CI measured 77 here where every other platform measures 76: keep the screen in the log.
+      if (boxWidth(rows).w !== 76) console.log(rows.join("\n"));
       expect(boxWidth(rows).w).toBe(76);
       const steps = [
         { size: [120, 40], details: true, box: 75 },

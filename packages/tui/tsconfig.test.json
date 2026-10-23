@@ -8,6 +8,6 @@
     "jsx": "preserve",
     "jsxImportSource": "@opentui/solid"
   },
-  "include": ["src", "scripts", "test"],
+  "include": ["src", "test"],
   "references": [{ "path": "../rpc" }, { "path": "../sdk" }, { "path": "../schema" }]
 }

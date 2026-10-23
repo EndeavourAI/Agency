@@ -134,6 +134,7 @@ export type UiEvent =
   | { type: "thinking_toggle" }
   | { type: "copied"; key: string | null }
   | { type: "scroll"; d: number }
+  | { type: "scroll_max"; sessionId: string; n: number | null }
   | { type: "scroll_latest" }
   | { type: "edit"; edit: ComposerOp }
   | { type: "ac_move"; d: number; n: number }

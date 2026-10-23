@@ -1,5 +1,5 @@
 import type { RGBA } from "@opentui/core";
-import { type Accessor, createMemo, Index, Match, Show, Switch } from "solid-js";
+import { type Accessor, createEffect, createMemo, Index, Match, Show, Switch } from "solid-js";
 import { activeContexts } from "../controller/keys.ts";
 import {
   canRetry,
@@ -8,11 +8,10 @@ import {
   newerLabel,
   queuedRows,
   runningTurn,
-  scrolledBlocks,
   showAsk,
   showLogo,
 } from "../state/derive.ts";
-import type { AppState, Block } from "../state/types.ts";
+import type { AppState, Block, SessionState } from "../state/types.ts";
 import type { Palette } from "../term/themes.ts";
 import { footerRow, hintRow, topBar } from "./chrome.ts";
 import { completionBox, composerBox, imageChipsBox, noteBox } from "./composer.ts";
@@ -43,6 +42,8 @@ export interface AppProps {
   /** Wall clock in ms, for the running time of a turn and the ages in lists. */
   now: Accessor<number>;
   version: string;
+  /** How far the transcript of a session can scroll back, as measured; null while older blocks are unmeasured. */
+  onScrollMax?: (sessionId: string, n: number | null) => void;
 }
 
 const MAX_COLUMN = 120;
@@ -196,37 +197,41 @@ function Home(props: AppProps) {
   );
 }
 
-/** Rows of one block, memoized on the block, width, palette and the few flags that reach it; only a running turn follows the clock. */
-function BlockView(props: {
-  b: Block;
-  index: number;
-  palette: Accessor<Palette>;
-  tick: Accessor<number>;
-  now: Accessor<number>;
-  offline: Accessor<boolean>;
-  pickAt: Accessor<number | null>;
-  copied: Accessor<string | null>;
-  retry: Accessor<Block | null>;
+interface BlockFlags {
+  palette: Palette;
   w: number;
-}) {
-  const picked = createMemo(() => props.pickAt() === props.index);
-  const copied = createMemo(() => (props.copied() === props.b.id ? props.b.id : null));
-  const retry = createMemo(() => props.retry() === props.b);
-  const rows = createMemo((): Row[] => {
-    const b = props.b;
-    const running = b.kind === "turn" && b.status === "running";
-    const x: LedgerCtx = {
-      c: props.palette(),
-      w: props.w,
-      tick: running ? props.tick() : 0,
-      now: running ? props.now() : 0,
-      offline: props.offline(),
-    };
-    if (b.kind === "event") return eventRows(b, x);
-    if (b.kind === "shell") return shellRows(b, x);
-    return turnRows(b, x, { picked: picked(), copied: copied(), canRetry: retry() });
-  });
-  return <Rows rows={rows()} w={props.w} />;
+  tick: number;
+  now: number;
+  offline: boolean;
+  picked: boolean;
+  copied: boolean;
+  retry: boolean;
+}
+
+/** Rows of a settled block per block object: the transcript measures every block it may scroll to, and draws a few. */
+const settled = new WeakMap<Block, { key: string; palette: Palette; rows: Row[] }>();
+
+/** Rows of one block; only a running turn follows the clock, and only it is drawn afresh each time. */
+function blockRows(b: Block, f: BlockFlags): Row[] {
+  const running = b.kind === "turn" && b.status === "running";
+  const key = `${f.w}|${f.offline}|${f.picked}|${f.copied}|${f.retry}`;
+  const hit = running ? undefined : settled.get(b);
+  if (hit && hit.key === key && hit.palette === f.palette) return hit.rows;
+  const x: LedgerCtx = {
+    c: f.palette,
+    w: f.w,
+    tick: running ? f.tick : 0,
+    now: running ? f.now : 0,
+    offline: f.offline,
+  };
+  const rows =
+    b.kind === "event"
+      ? eventRows(b, x)
+      : b.kind === "shell"
+        ? shellRows(b, x)
+        : turnRows(b, x, { picked: f.picked, copied: f.copied ? b.id : null, canRetry: f.retry });
+  if (!running) settled.set(b, { key, palette: f.palette, rows });
+  return rows;
 }
 
 function Session(props: AppProps) {
@@ -243,10 +248,6 @@ function Session(props: AppProps) {
   const retry = createMemo(() =>
     canRetry(s()) ? (sess()?.blocks.findLast((y) => y.kind === "turn") ?? null) : null,
   );
-  const all = createMemo(() => {
-    const x = sess();
-    return x ? scrolledBlocks(x) : [];
-  });
   const focused = useFocused(s);
   const region = createMemo(() =>
     s().review.open
@@ -256,9 +257,7 @@ function Session(props: AppProps) {
   const hint = createMemo(() => [hintRow(s(), c(), mainW())]);
   // The rows between the top bar (1), the gap under it (1), the box with its hint row: set by hand, so the transcript clips instead of pushing the box off the screen.
   const transcriptH = () => Math.max(1, s().rows - 2 - region().length - hint().length);
-  // A block is at least 1 row plus its gap, so this many fill the transcript; older ones are clipped above and never laid out.
-  const start = createMemo(() => Math.max(0, all().length - Math.ceil(transcriptH() / 2) - 2));
-  const blocks = createMemo(() => all().slice(start()));
+  const scrolled = () => (sess()?.scroll ?? 0) > 0;
   const ctx = (): LedgerCtx => ({
     c: c(),
     w: mainW(),
@@ -266,16 +265,43 @@ function Session(props: AppProps) {
     now: props.now(),
     offline: s().conn === "offline",
   });
-  const tail = createMemo((): Row[] => {
-    const x = sess();
-    const rows: Row[] = [];
-    if (x && x.scroll > 0) rows.push(scrollRow(newerLabel(x), ctx()));
-    for (const q of queuedRows(s())) rows.push(queuedRow(q.text, q.note, ctx()));
-    return rows;
-  });
+  const tail = createMemo((): Row[] => queuedRows(s()).map((q) => queuedRow(q.text, q.note, ctx())));
   const ask = createMemo((): Row[] => {
     const t = runningTurn(sess());
     return showAsk(s()) && t?.approval ? approvalRows(t.approval, ctx()) : [];
+  });
+  // Blocks from the newest back until the view plus the scroll is full: older blocks are never measured.
+  const view = createMemo(() => {
+    const x = sess();
+    const all = x?.blocks ?? [];
+    const room = transcriptH() - 1 - (scrolled() ? 1 : 0);
+    const want = room + (x?.scroll ?? 0);
+    let height = [tail(), ask()].reduce((n, r) => (r.length ? n + r.length + 1 : n), 0);
+    const shown: { b: Block; rows: Row[] }[] = [];
+    let i = all.length - 1;
+    for (; i >= 0 && height < want; i--) {
+      const b = all[i] as Block;
+      const rows = blockRows(b, {
+        palette: c(),
+        w: mainW(),
+        tick: props.tick(),
+        now: props.now(),
+        offline: offline(),
+        picked: pickAt() === i,
+        copied: copied() === b.id,
+        retry: retry() === b,
+      });
+      shown.unshift({ b, rows });
+      height += rows.length + 1;
+    }
+    // Reached the oldest block: the scroll ends where it shows at the top. The last child has no gap after it.
+    const top = i < 0 ? Math.max(0, height - 1 - room) : null;
+    return { shown, shift: Math.min(x?.scroll ?? 0, top ?? Number.POSITIVE_INFINITY), top };
+  });
+  createEffect(() => {
+    const id = sess()?.id;
+    const top = view().top;
+    if (id) props.onScrollMax?.(id, top);
   });
   return (
     <box flexGrow={1} minHeight={0} flexDirection="row" paddingTop={1} paddingLeft={2} paddingRight={2}>
@@ -296,15 +322,15 @@ function Session(props: AppProps) {
             }
           >
             <box
-              height={transcriptH()}
+              height={transcriptH() - (scrolled() ? 1 : 0)}
               flexShrink={0}
               flexDirection="column"
               justifyContent="flex-end"
               overflow="hidden"
               paddingBottom={1}
             >
-              <box flexDirection="column" flexShrink={0} gap={1}>
-                <Show when={sess()?.loading && blocks().length === 0}>
+              <box flexDirection="column" flexShrink={0} gap={1} marginBottom={-view().shift}>
+                <Show when={sess()?.loading && view().shown.length === 0}>
                   <Rows
                     rows={[
                       [
@@ -317,22 +343,7 @@ function Session(props: AppProps) {
                     w={mainW()}
                   />
                 </Show>
-                <Index each={blocks()}>
-                  {(b, i) => (
-                    <BlockView
-                      b={b()}
-                      index={start() + i}
-                      palette={c}
-                      tick={props.tick}
-                      now={props.now}
-                      offline={offline}
-                      pickAt={pickAt}
-                      copied={copied}
-                      retry={retry}
-                      w={mainW()}
-                    />
-                  )}
-                </Index>
+                <Index each={view().shown}>{(v) => <Rows rows={v().rows} w={mainW()} />}</Index>
                 <Show when={tail().length > 0}>
                   <Rows rows={tail()} w={mainW()} />
                 </Show>
@@ -341,6 +352,9 @@ function Session(props: AppProps) {
                 </Show>
               </box>
             </box>
+            <Show when={scrolled() && sess()}>
+              {(x: Accessor<SessionState>) => <Rows rows={[scrollRow(newerLabel(x()), ctx())]} w={mainW()} />}
+            </Show>
           </Show>
           <box flexShrink={0} flexDirection="column">
             <Rows rows={region()} w={mainW()} />

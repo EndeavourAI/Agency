@@ -68,6 +68,15 @@ describe("legacy decoding", () => {
     expect(d.push("\x1b[1;")).toEqual([]);
     expect(d.push("5F").map((e) => keyId(e as KeyEvent))).toEqual(["ctrl+end"]);
   });
+
+  test("an SGR wheel report is a wheel notch, with or without modifiers; a click is nothing", () => {
+    expect(decode("\x1b[<64;10;5M\x1b[<65;1;1M\x1b[<80;3;3M")).toEqual([
+      { type: "wheel", d: 1 },
+      { type: "wheel", d: -1 },
+      { type: "wheel", d: 1 },
+    ]);
+    expect(decode("\x1b[<0;10;5M\x1b[<0;10;5m")).toEqual([]);
+  });
 });
 
 describe("kitty and modifyOtherKeys", () => {

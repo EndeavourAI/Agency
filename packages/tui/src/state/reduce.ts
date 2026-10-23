@@ -84,6 +84,7 @@ export function newSession(id: string): SessionState {
     statusLine: null,
     todos: [],
     scroll: 0,
+    scrollMax: null,
     pickAt: null,
     runCostUsd: 0,
     tipId: null,
@@ -742,7 +743,16 @@ function reduceUi(state: AppState, e: UiEvent): AppState {
       if (!sid) return state;
       return withSession(state, sid, (s) => ({
         ...s,
-        scroll: Math.max(0, Math.min(Math.max(0, s.blocks.length - 1), s.scroll + e.d)),
+        scroll: Math.max(0, Math.min(s.scrollMax ?? Number.POSITIVE_INFINITY, s.scroll + e.d)),
+      }));
+    }
+    case "scroll_max": {
+      const s = state.bySession[e.sessionId];
+      if (!s || s.scrollMax === e.n) return state;
+      return withSession(state, e.sessionId, (x) => ({
+        ...x,
+        scrollMax: e.n,
+        scroll: Math.min(x.scroll, e.n ?? x.scroll),
       }));
     }
     case "scroll_latest":

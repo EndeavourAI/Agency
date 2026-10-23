@@ -46,6 +46,9 @@ const none: Out = { events: [], effects: [] };
 const out = (events: Event[], effects: Effect[] = []): Out => ({ events, effects });
 
 const ESC_TWICE_MS = 600;
+const WHEEL_ROWS = 3;
+/** A page of the transcript: the screen less the top bar, the composer and its hint, about. */
+const page = (state: AppState): number => Math.max(1, state.rows - 10);
 const QUIT_TWICE_MS = 1500;
 
 /** The focused context first, `global` last; an open dialog hides the global keys it does not own. */
@@ -329,9 +332,9 @@ function run(state: AppState, command: Command, ctx: KeyContext): Out {
     case "delete.toEnd":
       return out([{ type: "edit", edit: { op: "toEnd" } }]);
     case "scroll.pageUp":
-      return out([{ type: "scroll", d: 1 }]);
+      return out([{ type: "scroll", d: page(state) }]);
     case "scroll.pageDown":
-      return out([{ type: "scroll", d: -1 }]);
+      return out([{ type: "scroll", d: -page(state) }]);
     case "scroll.latest":
       return out([{ type: "scroll_latest" }]);
     case "completion.next":
@@ -492,6 +495,18 @@ export function dispatchKey(state: AppState, key: KeyEvent, ctx: KeyContext): Ou
   if (contexts[0] === "composer" || contexts[0] === "completion")
     return out([{ type: "edit", edit: { op: "insert", text: key.text } }]);
   return none;
+}
+
+/** One wheel notch: the diff under review, or the transcript; dialogs and other views ignore it. */
+export function dispatchWheel(state: AppState, d: 1 | -1): Out {
+  if (state.model.open || state.palette.open || state.view !== "session") return none;
+  if (!state.review.open) return out([{ type: "scroll", d: d * WHEEL_ROWS }]);
+  const files = reviewFiles(state);
+  const f = files[Math.min(state.review.file, Math.max(0, files.length - 1))];
+  const max = Math.max(0, (f?.lines.length ?? 0) - reviewVisible(state));
+  return out([
+    { type: "review_scroll", to: Math.max(0, Math.min(max, state.review.scroll - d * WHEEL_ROWS)) },
+  ]);
 }
 
 const MAX_PASTE = 1_000_000;

@@ -27,7 +27,13 @@ export interface FocusEvent {
   focused: boolean;
 }
 
-export type InputEvent = KeyEvent | PasteEvent | FocusEvent;
+/** One notch of the mouse wheel: 1 up, -1 down. */
+export interface WheelEvent {
+  type: "wheel";
+  d: 1 | -1;
+}
+
+export type InputEvent = KeyEvent | PasteEvent | FocusEvent | WheelEvent;
 
 const ESC = "\x1b";
 const PASTE_START = `${ESC}[200~`;
@@ -125,6 +131,12 @@ function parseCsi(data: string, at: number, keepRelease: boolean): Step {
   const used = i + 1 - at;
   const drop: Step = { events: [], used };
   const intermediates = data.slice(interStart, i);
+  // SGR mouse report `CSI < b;x;y M`: only the wheel (b 64/65 plus modifier bits 4, 8, 16) means anything here.
+  const mouse = /^<(\d+);\d+;\d+$/.exec(params);
+  if (mouse && (final === "M" || final === "m") && intermediates === "") {
+    const b = Number(mouse[1]) & ~28;
+    return b === 64 || b === 65 ? { events: [{ type: "wheel", d: b === 64 ? 1 : -1 }], used } : drop;
+  }
   // Replies to our own queries (DA1, DECRPM, kitty flags) arrive as input: never keys.
   if (/^[?>=<]/.test(params) || intermediates !== "") return drop;
   if (final === "I" || final === "O") return { events: [{ type: "focus", focused: final === "I" }], used };

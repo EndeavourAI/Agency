@@ -1,5 +1,165 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
+exports[`outputs, shell and queue, paste and scroll outputs opened: an edit shows its diff, a read its first lines, with the pick on the closing row 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+                                                                                                                       │  tasks                    2 of 4 done
+     read   packages/eval/harbor/run.sh                                                                                │  ✓  Rebuild Linux binary
+             #!/usr/bin/env bash                                                                                       │  ✓  Retry infra faults
+             set -euo pipefail                                                                                         │  ▸  Count start timeouts
+             here="$(cd "$(dirname "$0")" && pwd)"                                                                     │  ○  Compare per task
+             source=(--path "$here/tasks")                                                                             │
+             include=(--include "\${TASKS:-*}")                                                                         │  context                          56%
+             … 1 more lines                                                                                            │  112K of 200K · compacts at 180K
+     run    harbor run --help | grep -E "retr|concurren"                                                               │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+               -n, --n-concurrent INTEGER   Trials to run at once                                                      │
+               -r, --max-retries INTEGER    Retries for a failed trial                                                 │  changes                ctrl+r review
+                   --retry-include TEXT     Exception type to retry; repeat it                                         │  run.sh                         +2 −1
+     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  report.py                      +1 −1
+             −   -a "\${AGENT}" -o "$jobs" -y                                                                           │
+             +   -a "\${AGENT}" -o "$jobs" -y \\                                                                         │  run
+             +   -r 2 --retry-include RuntimeError                                                                     │  model    Sonnet 5.5
+     run    dry run with no matching task                                                                              │  sandbox  software · approvals only
+             harbor: 0 tasks match --include nothing                                                                   │  cost     $1.75 · 91% cached
+             flags accepted: -r 2, --retry-include ×3                                                                  │  branch   dev
+             exit 0                                                                                                    │
+                                                                                                                       │
+     Retries replace the failed trial in place, so both arms keep the same task set:                                   │
+                                                                                                                       │
+      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │
+                                                                                                                       │
+     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │
+     • a task that fails twice still counts as a fail                                                                  │
+                                                                                                                       │
+     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │
+                                                                                                                       │
+  ▌› Also count environment start timeouts as machine faults.                                                          │
+                                                                                                                       │
+     ✗ interrupted · you pressed esc                                                                      copy · 102s  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ › Message Agency. @ for files, / for commands                                                                   │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs         ↑↓ turn  enter output  c copy  t thinking  esc back   │
+"
+`;
+
+exports[`outputs, shell and queue, paste and scroll shell and queue: a ! block with its output below the stopped turn, a dashed queued row, the shell prompt 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+  ─────────────────────────── compacted · 6 earlier turns summarized · 148K → 31K tokens ────────────────────────────  │  tasks                    2 of 4 done
+                                                                                                                       │  ✓  Rebuild Linux binary
+  ▌› Make the 54 task runs faster without changing results.                                                            │  ✓  Retry infra faults
+                                                                                                                       │  ▸  Count start timeouts
+     read   packages/eval/harbor/run.sh                                                                                │  ○  Compare per task
+     run    harbor run --help | grep -E "retr|concurren"                                                               │
+     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  context                          56%
+     run    dry run with no matching task                                                                              │  112K of 200K · compacts at 180K
+                                                                                                                       │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     Retries replace the failed trial in place, so both arms keep the same task set:                                   │
+                                                                                                                       │  changes                ctrl+r review
+      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │  run.sh                         +2 −1
+                                                                                                                       │  report.py                      +1 −1
+     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │
+     • a task that fails twice still counts as a fail                                                                  │  run
+                                                                                                                       │  model    Sonnet 5.5
+     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │  sandbox  software · approvals only
+                                                                                                                       │  cost     $1.75 · 91% cached
+  ▌› Also count environment start timeouts as machine faults.                                                          │  branch   dev
+                                                                                                                       │
+     ✗ interrupted · you pressed esc                                                                      copy · 102s  │
+                                                                                                                       │
+  ▌! git status                                                                                                        │
+                                                                                                                       │
+     On branch dev                                                                                                     │
+     Your branch is up to date with 'origin/dev'.                                                                      │
+                                                                                                                       │
+     Changes not staged for commit:                                                                                    │
+             modified:   packages/eval/harbor/report.py                                                                │
+                                                                                                                       │
+     done · sent to the agent as data                                                                                  │
+                                                                                                                       │
+  ┆ › also check the 529 path                                                         turn stopped · enter sends it ┆  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ ! git log --oneline -3                                                                                          │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   shell · runs in ~/Agency · the output goes to the agent as data         ↑ history  esc esc turns  ctrl+p commands   │
+"
+`;
+
+exports[`outputs, shell and queue, paste and scroll paste and scroll: an image chip over the box, and the marker that says how far below the end the view is 1`] = `
+"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
+
+  ─────────────────────────── compacted · 6 earlier turns summarized · 148K → 31K tokens ────────────────────────────  │  tasks                    2 of 4 done
+                                                                                                                       │  ✓  Rebuild Linux binary
+  ▌› Make the 54 task runs faster without changing results.                                                            │  ✓  Retry infra faults
+                                                                                                                       │  ▸  Count start timeouts
+     read   packages/eval/harbor/run.sh                                                                                │  ○  Compare per task
+     run    harbor run --help | grep -E "retr|concurren"                                                               │
+     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  context                          56%
+     run    dry run with no matching task                                                                              │  112K of 200K · compacts at 180K
+                                                                                                                       │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     Retries replace the failed trial in place, so both arms keep the same task set:                                   │
+                                                                                                                       │  changes                ctrl+r review
+      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │  run.sh                         +2 −1
+                                                                                                                       │  report.py                      +1 −1
+     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │
+     • a task that fails twice still counts as a fail                                                                  │  run
+  ───────────────────────────────────── ↓ 7 newer rows below · ctrl+end latest ──────────────────────────────────────  │  model    Sonnet 5.5
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │  sandbox  software · approvals only
+  │ ▣ image 1 · 184 KB ×                                                                          backspace removes │  │  cost     $1.75 · 91% cached
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤  │  branch   dev
+  │ › the grid breaks at this width                                                                                 │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs                                 pgdn newer  ctrl+end latest   │
+"
+`;
+
+exports[`outputs, shell and queue, paste and scroll a failed turn says stopped once, with the error band and enter to retry 1`] = `
+"  agency  Sample: failed turn                                                                                                               ctrl+p 3 more  dev
+
+                                                                                                                       │  tasks
+                                                                                                                       │  No task list yet. The agent writes
+                                                                                                                       │  one for longer work.
+                                                                                                                       │
+                                                                                                                       │  context
+                                                                                                                       │  no data yet
+                                                                                                                       │
+                                                                                                                       │  changes                ctrl+r review
+                                                                                                                       │  No changes.
+                                                                                                                       │
+                                                                                                                       │  run
+                                                                                                                       │  model    —
+                                                                                                                       │  sandbox  software · approvals only
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+                                                                                                                       │
+  ▌› Pathfinding stalls near chunk borders.                                                                            │
+                                                                                                                       │
+      The provider is overloaded (HTTP 529). Nothing was lost.                                           enter retry   │
+                                                                                                                       │
+     ✗ stopped                                                                                              copy · 5s  │
+                                                                                                                       │
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
+  │ › Message Agency. @ for files, / for commands                                                                   │  │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+   build · Sonnet 5.5 · high                                               ↑ history  esc esc turns  ctrl+p commands   │
+"
+`;
+
 exports[`home logo, wordmark, the box, the hints, the recent list and the footer 1`] = `
 "  agency                                                                                                                                ctrl+p 4 sessions  dev
 
@@ -845,182 +1005,6 @@ exports[`settings permission rules, MCP servers and hooks of the user config, an
 
 
    writes your user config                                                                                            ↑↓ move  → open  space change  esc back
-"
-`;
-
-exports[`outputs, shell and queue, paste and scroll outputs opened: an edit shows its diff, a read its first lines, with the pick on the closing row 1`] = `
-"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
-
-                                                                                                                       │  tasks                    2 of 4 done
-     read   packages/eval/harbor/run.sh                                                                                │  ✓  Rebuild Linux binary
-             #!/usr/bin/env bash                                                                                       │  ✓  Retry infra faults
-             set -euo pipefail                                                                                         │  ▸  Count start timeouts
-             here="$(cd "$(dirname "$0")" && pwd)"                                                                     │  ○  Compare per task
-             source=(--path "$here/tasks")                                                                             │
-             include=(--include "\${TASKS:-*}")                                                                         │  context                          56%
-             … 1 more lines                                                                                            │  112K of 200K · compacts at 180K
-     run    harbor run --help | grep -E "retr|concurren"                                                               │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-               -n, --n-concurrent INTEGER   Trials to run at once                                                      │
-               -r, --max-retries INTEGER    Retries for a failed trial                                                 │  changes                ctrl+r review
-                   --retry-include TEXT     Exception type to retry; repeat it                                         │  run.sh                         +2 −1
-     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  report.py                      +1 −1
-             −   -a "\${AGENT}" -o "$jobs" -y                                                                           │
-             +   -a "\${AGENT}" -o "$jobs" -y \\                                                                         │  run
-             +   -r 2 --retry-include RuntimeError                                                                     │  model    Sonnet 5.5
-     run    dry run with no matching task                                                                              │  sandbox  software · approvals only
-             harbor: 0 tasks match --include nothing                                                                   │  cost     $1.75 · 91% cached
-             flags accepted: -r 2, --retry-include ×3                                                                  │  branch   dev
-             exit 0                                                                                                    │
-                                                                                                                       │
-     Retries replace the failed trial in place, so both arms keep the same task set:                                   │
-                                                                                                                       │
-      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │
-                                                                                                                       │
-     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │
-     • a task that fails twice still counts as a fail                                                                  │
-                                                                                                                       │
-     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │
-                                                                                                                       │
-  ▌› Also count environment start timeouts as machine faults.                                                          │
-                                                                                                                       │
-     ✗ interrupted · you pressed esc                                                                      copy · 102s  │
-                                                                                                                       │
-  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
-  │ › Message Agency. @ for files, / for commands                                                                   │  │
-  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
-   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs         ↑↓ turn  enter output  c copy  t thinking  esc back   │
-"
-`;
-
-exports[`outputs, shell and queue, paste and scroll shell and queue: a ! block with its output below the stopped turn, a dashed queued row, the shell prompt 1`] = `
-"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
-
-  ─────────────────────────── compacted · 6 earlier turns summarized · 148K → 31K tokens ────────────────────────────  │  tasks                    2 of 4 done
-                                                                                                                       │  ✓  Rebuild Linux binary
-  ▌› Make the 54 task runs faster without changing results.                                                            │  ✓  Retry infra faults
-                                                                                                                       │  ▸  Count start timeouts
-     read   packages/eval/harbor/run.sh                                                                                │  ○  Compare per task
-     run    harbor run --help | grep -E "retr|concurren"                                                               │
-     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  context                          56%
-     run    dry run with no matching task                                                                              │  112K of 200K · compacts at 180K
-                                                                                                                       │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-     Retries replace the failed trial in place, so both arms keep the same task set:                                   │
-                                                                                                                       │  changes                ctrl+r review
-      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │  run.sh                         +2 −1
-                                                                                                                       │  report.py                      +1 −1
-     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │
-     • a task that fails twice still counts as a fail                                                                  │  run
-                                                                                                                       │  model    Sonnet 5.5
-     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │  sandbox  software · approvals only
-                                                                                                                       │  cost     $1.75 · 91% cached
-  ▌› Also count environment start timeouts as machine faults.                                                          │  branch   dev
-                                                                                                                       │
-     ✗ interrupted · you pressed esc                                                                      copy · 102s  │
-                                                                                                                       │
-  ▌! git status                                                                                                        │
-                                                                                                                       │
-     On branch dev                                                                                                     │
-     Your branch is up to date with 'origin/dev'.                                                                      │
-                                                                                                                       │
-     Changes not staged for commit:                                                                                    │
-             modified:   packages/eval/harbor/report.py                                                                │
-                                                                                                                       │
-     done · sent to the agent as data                                                                                  │
-                                                                                                                       │
-  ┆ › also check the 529 path                                                         turn stopped · enter sends it ┆  │
-                                                                                                                       │
-  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
-  │ ! git log --oneline -3                                                                                          │  │
-  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
-   shell · runs in ~/Agency · the output goes to the agent as data         ↑ history  esc esc turns  ctrl+p commands   │
-"
-`;
-
-exports[`outputs, shell and queue, paste and scroll paste and scroll: an image chip over the box, and the marker that says how far below the end the view is 1`] = `
-"  agency  Retry infra faults                                                                                                                ctrl+p 3 more  dev
-
-                                                                                                                       │  tasks                    2 of 4 done
-                                                                                                                       │  ✓  Rebuild Linux binary
-                                                                                                                       │  ✓  Retry infra faults
-                                                                                                                       │  ▸  Count start timeouts
-                                                                                                                       │  ○  Compare per task
-                                                                                                                       │
-                                                                                                                       │  context                          56%
-                                                                                                                       │  112K of 200K · compacts at 180K
-                                                                                                                       │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                                                                                                                       │
-                                                                                                                       │  changes                ctrl+r review
-                                                                                                                       │  run.sh                         +2 −1
-  ─────────────────────────── compacted · 6 earlier turns summarized · 148K → 31K tokens ────────────────────────────  │  report.py                      +1 −1
-                                                                                                                       │
-  ▌› Make the 54 task runs faster without changing results.                                                            │  run
-                                                                                                                       │  model    Sonnet 5.5
-     read   packages/eval/harbor/run.sh                                                                                │  sandbox  software · approvals only
-     run    harbor run --help | grep -E "retr|concurren"                                                               │  cost     $1.75 · 91% cached
-     edit   packages/eval/harbor/run.sh +2 −1                                                                          │  branch   dev
-     run    dry run with no matching task                                                                              │
-                                                                                                                       │
-     Retries replace the failed trial in place, so both arms keep the same task set:                                   │
-                                                                                                                       │
-      harbor run -r 2 --retry-include RuntimeError --retry-include NetworkConnectionError                              │
-                                                                                                                       │
-     • AgentSetupTimeoutError is a machine fault too, so it retries                                                    │
-     • a task that fails twice still counts as a fail                                                                  │
-                                                                                                                       │
-     ✓ done · 4 steps                                                              copy · thought 7s · 40s · 86 tok/s  │
-                                                                                                                       │
-  ───────────────────────────────────── ↓ 1 newer block below · ctrl+end latest ─────────────────────────────────────  │
-                                                                                                                       │
-  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
-  │ ▣ image 1 · 184 KB ×                                                                          backspace removes │  │
-  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤  │
-  │ › the grid breaks at this width                                                                                 │  │
-  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
-   build · Sonnet 5.5 · high  │  ci passing · 2 open PRs                                 pgdn newer  ctrl+end latest   │
-"
-`;
-
-exports[`outputs, shell and queue, paste and scroll a failed turn says stopped once, with the error band and enter to retry 1`] = `
-"  agency  Sample: failed turn                                                                                                               ctrl+p 3 more  dev
-
-                                                                                                                       │  tasks
-                                                                                                                       │  No task list yet. The agent writes
-                                                                                                                       │  one for longer work.
-                                                                                                                       │
-                                                                                                                       │  context
-                                                                                                                       │  no data yet
-                                                                                                                       │
-                                                                                                                       │  changes                ctrl+r review
-                                                                                                                       │  No changes.
-                                                                                                                       │
-                                                                                                                       │  run
-                                                                                                                       │  model    —
-                                                                                                                       │  sandbox  software · approvals only
-                                                                                                                       │
-                                                                                                                       │
-                                                                                                                       │
-                                                                                                                       │
-                                                                                                                       │
-                                                                                                                       │
-                                                                                                                       │
-                                                                                                                       │
-                                                                                                                       │
-                                                                                                                       │
-                                                                                                                       │
-                                                                                                                       │
-                                                                                                                       │
-                                                                                                                       │
-                                                                                                                       │
-  ▌› Pathfinding stalls near chunk borders.                                                                            │
-                                                                                                                       │
-      The provider is overloaded (HTTP 529). Nothing was lost.                                           enter retry   │
-                                                                                                                       │
-     ✗ stopped                                                                                              copy · 5s  │
-                                                                                                                       │
-  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
-  │ › Message Agency. @ for files, / for commands                                                                   │  │
-  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
-   build · Sonnet 5.5 · high                                               ↑ history  esc esc turns  ctrl+p commands   │
 "
 `;
 

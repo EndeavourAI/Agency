@@ -140,8 +140,10 @@ export interface SessionState {
   /** The statusLine command output. */
   statusLine: string | null;
   todos: WireTodo[];
-  /** Blocks scrolled back from the newest (pgup). */
+  /** Rows scrolled back from the newest (wheel, pgup). */
   scroll: number;
+  /** The most rows there are to scroll back, as the view last measured them; null until it reached the oldest block. */
+  scrollMax: number | null;
   /** Index of the picked turn block, or null. */
   pickAt: number | null;
   /** Running totals of the current turn from cost_meter. */

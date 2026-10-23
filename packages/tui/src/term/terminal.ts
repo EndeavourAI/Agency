@@ -65,6 +65,9 @@ export async function openTerminal(o: TerminalOptions): Promise<Terminal> {
       },
     ],
   });
+  // Clicks and wheel in SGR form, no motion: without it the alternate screen turns the wheel into arrow keys, which
+  // walk the prompt history. Selecting text then takes shift (option in iTerm2) + drag.
+  writeSync(1, "\x1b[?1000h\x1b[?1006h");
   renderer.keyInput.on("paste", (e) => {
     o.onInput({ type: "paste", text: new TextDecoder().decode(e.bytes) });
   });

@@ -9,7 +9,7 @@ import { truncate } from "../render-model/width.ts";
 import { formatCost } from "./format.ts";
 import { pickable } from "./reduce.ts";
 import { COMMANDS, rowValue, type SettingRow } from "./settings.ts";
-import type { AppState, Block, ImageChip, ModelRow, SessionState, Step, Turn } from "./types.ts";
+import type { AppState, ImageChip, ModelRow, SessionState, Step, Turn } from "./types.ts";
 
 export type Tone = "text" | "soft" | "muted" | "dim" | "brand" | "add" | "del";
 
@@ -373,13 +373,8 @@ export function completion(state: AppState) {
   return completionItems(state.ac, { files: state.files, slash: state.slash });
 }
 
-/** Blocks up to the scrolled-back position. */
-export function scrolledBlocks(s: SessionState): Block[] {
-  return s.scroll ? s.blocks.slice(0, Math.max(0, s.blocks.length - s.scroll)) : s.blocks;
-}
-
 export const newerLabel = (s: SessionState): string =>
-  `${s.scroll} newer block${s.scroll === 1 ? "" : "s"} below`;
+  `${s.scroll} newer row${s.scroll === 1 ? "" : "s"} below`;
 
 /** The other sessions that run: the orbit beside "N more". */
 export function othersRunning(state: AppState): boolean {

@@ -44,6 +44,15 @@ export async function mountApp(renderer: CliRenderer, runtime: Runtime, o: Mount
     });
     const pal = createMemo(() => palette(state().theme, o.truecolor ?? isTruecolor()));
     createEffect(() => renderer.setBackgroundColor(pal().bg));
-    return <App state={state} palette={pal} tick={tick} now={now} version={o.version} />;
+    return (
+      <App
+        state={state}
+        palette={pal}
+        tick={tick}
+        now={now}
+        version={o.version}
+        onScrollMax={(sessionId, n) => runtime.dispatch([{ type: "scroll_max", sessionId, n }])}
+      />
+    );
   }, renderer);
 }

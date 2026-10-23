@@ -697,7 +697,7 @@ describe("outputs, shell and queue, paste and scroll", () => {
   });
 
   test("paste and scroll: an image chip over the box, and the marker that says how far below the end the view is", async () => {
-    const d = session({}, false);
+    const d = session({ rows: 24 }, false);
     d.daemon({
       type: "turn_finished",
       sessionId: SID,
@@ -713,7 +713,7 @@ describe("outputs, shell and queue, paste and scroll", () => {
     d.send("\x1b[5~");
     const m = await board(d);
     expect(snap(m)).toMatchSnapshot();
-    expect(m.grid.some((r) => r.includes("↓ 1 newer block below · ctrl+end latest"))).toBe(true);
+    expect(m.grid.some((r) => /↓ \d+ newer rows below · ctrl\+end latest/.test(r))).toBe(true);
     expect(m.grid.some((r) => r.includes("▣ image 1 · 184 KB ×") && r.includes("backspace removes"))).toBe(
       true,
     );
@@ -723,7 +723,7 @@ describe("outputs, shell and queue, paste and scroll", () => {
     expect(hint).toContain("ctrl+end latest");
     d.send("\x1b[1;5F");
     const back = await board(d);
-    expect(back.grid.some((r) => r.includes("newer block"))).toBe(false);
+    expect(back.grid.some((r) => r.includes("newer row"))).toBe(false);
     expect(back.grid.some((r) => r.includes("Also count environment start timeouts"))).toBe(true);
   });
 

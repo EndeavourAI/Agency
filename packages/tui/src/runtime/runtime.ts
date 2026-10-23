@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import type { DaemonClient } from "@agency/rpc";
 import { createTuiClient, type TuiClient, type TuiClientDeps } from "../client/index.ts";
-import { dispatchKey, dispatchPaste, type Out } from "../controller/index.ts";
+import { dispatchKey, dispatchPaste, dispatchWheel, type Out } from "../controller/index.ts";
 import type { InputEvent } from "../input/keys.ts";
 import { type AppState, type Event, initialState, noProviders, reduce } from "../state/index.ts";
 
@@ -90,6 +90,7 @@ export function createRuntime(o: RuntimeOptions): Runtime {
     input(ev) {
       if (ev.type === "key") apply(dispatchKey(state, ev, { now: now(), newId }));
       else if (ev.type === "paste") apply(dispatchPaste(state, ev.text));
+      else if (ev.type === "wheel") apply(dispatchWheel(state, ev.d));
     },
     resize: (cols, rows) => dispatch([{ type: "viewport", cols, rows }]),
     onConnection: (online) => client.onConnection(online),

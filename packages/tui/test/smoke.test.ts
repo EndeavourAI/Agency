@@ -783,7 +783,7 @@ describe("prompt: queue, history, shell, images", () => {
 });
 
 describe("scroll, stop and narrow layout", () => {
-  test("pgup scrolls back by block and says how far; ctrl+end returns", () => {
+  test("pgup scrolls back a page of rows and says how far; ctrl+end returns", () => {
     const d = session();
     finished(d, "t1", "one");
     finished(d, "t2", "two");
@@ -791,18 +791,26 @@ describe("scroll, stop and narrow layout", () => {
     d.send(KEY.pgup);
     d.send(KEY.pgup);
     const s = current(d.state);
-    expect(s?.scroll).toBe(2);
-    expect(s && newerLabel(s)).toBe("2 newer blocks below");
+    expect(s?.scroll).toBe(2 * (d.state.rows - 10));
+    expect(s && newerLabel(s)).toBe(`${2 * (d.state.rows - 10)} newer rows below`);
     expect(hints(d.state)[0]?.key).toBe("pgdn");
     d.send(KEY.ctrlEnd);
     expect(current(d.state)?.scroll).toBe(0);
   });
 
-  test("scroll stops at the first block", () => {
+  test("the wheel scrolls the transcript three rows a notch and stops at the top the view measured", () => {
     const d = session();
     finished(d, "t1", "one");
-    for (let i = 0; i < 5; i++) d.send(KEY.pgup);
-    expect(current(d.state)?.scroll).toBe(0);
+    d.daemon({ type: "scroll_max", sessionId: SID, n: 4 });
+    d.send(KEY.wheelUp);
+    expect(current(d.state)?.scroll).toBe(3);
+    for (let i = 0; i < 5; i++) d.send(KEY.wheelUp);
+    expect(current(d.state)?.scroll).toBe(4);
+    d.send(KEY.wheelDown);
+    expect(current(d.state)?.scroll).toBe(1);
+    // The wheel is not the history: an empty composer stays empty.
+    expect(d.state.composer.text).toBe("");
+    expect(d.state.histAt).toBe(-1);
   });
 
   test("esc stops a running turn", () => {

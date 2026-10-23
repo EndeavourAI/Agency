@@ -11,6 +11,7 @@ import {
   resolveFileRoster,
   spawnParallel,
 } from "@agency/core";
+import type { ApprovalReply } from "@agency/guard";
 import { resolveApiKey } from "@agency/providers";
 import type { MethodHandler } from "@agency/rpc";
 import { AgencyError, ErrorCode, type Message } from "@agency/schema";
@@ -169,10 +170,12 @@ export function registerTeamHandlers(handlers: Record<string, MethodHandler>, ct
     warnPersistence,
   } = ctx;
   handlers.approval_respond = async (rawParams) => {
-    const { requestId, decision, sessionId } = rawParams as {
+    const { requestId, decision, sessionId, message, mode } = rawParams as {
       requestId: string;
       decision: "once" | "always" | "reject";
       sessionId?: string;
+      message?: unknown;
+      mode?: unknown;
     };
     if (typeof requestId !== "string" || requestId.length === 0) {
       throw new AgencyError(ErrorCode.INVALID_REQUEST, "approval_respond requires requestId", {
@@ -184,10 +187,17 @@ export function registerTeamHandlers(handlers: Record<string, MethodHandler>, ct
         source: "approval",
       });
     }
+    if (mode !== undefined && mode !== "ask" && mode !== "allow-edits" && mode !== "auto") {
+      throw new AgencyError(ErrorCode.INVALID_REQUEST, `invalid approval mode: ${String(mode)}`, {
+        source: "approval",
+      });
+    }
+    const note = typeof message === "string" ? message.trim() : "";
+    const reply: ApprovalReply = { ...(note ? { message: note } : {}), ...(mode ? { mode } : {}) };
     const managers = sessionId ? [approvalManagers.get(sessionId)] : [...approvalManagers.values()];
     let settled: { resolved: boolean; retroactive: number; closeReason?: string } | undefined;
     for (const manager of managers) {
-      const outcome = manager?.respond(requestId, decision);
+      const outcome = manager?.respond(requestId, decision, Object.keys(reply).length ? reply : undefined);
       if (outcome?.resolved) return outcome;
       if (outcome?.closeReason !== undefined) settled = outcome;
     }

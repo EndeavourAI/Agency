@@ -57,7 +57,9 @@ const GLM_BUDGET: Record<Exclude<ThinkingLevel, "off">, number> = {
  * - `capabilities.thinking === false` → `["off"]` (single option, no variable reasoning).
  * - Thinking-capable model with `effortMapping` → the mapping's keys that are valid EffortLevel values,
  *   plus `"auto"` (variable reasoning is present).
- * - Thinking-capable model without `effortMapping` → all `EFFORT_LEVELS` (full variable support as fallback).
+ * - Thinking-capable model with a catalog `efforts` list → those levels; an empty list means reasoning only
+ *   switches on or off, so `["off", "high"]`.
+ * - Thinking-capable model without either → all `EFFORT_LEVELS` (full variable support as fallback).
  */
 export function supportedEffortsForModel(model?: ModelInfo): EffortLevel[] {
   if (!model) {
@@ -84,6 +86,8 @@ export function supportedEffortsForModel(model?: ModelInfo): EffortLevel[] {
     ordered.push("auto");
     return ordered;
   }
+  const listed: readonly string[] | undefined = model.efforts;
+  if (listed) return listed.length ? EFFORT_LEVELS.filter((l) => listed.includes(l)) : ["off", "high"];
   // thinking-capable but no explicit mapping → full range
   return [...EFFORT_LEVELS];
 }

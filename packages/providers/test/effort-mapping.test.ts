@@ -63,6 +63,20 @@ describe("supportedEffortsForModel", () => {
     expect(result).not.toContain("xhigh");
   });
 
+  test("returns the catalog efforts in scale order when the model lists them", () => {
+    const model: ModelInfo = { ...thinkingNoMappingModel, efforts: ["max", "low", "xhigh"] };
+    expect(supportedEffortsForModel(model)).toEqual(["low", "xhigh", "max"]);
+  });
+
+  test("an empty catalog list means reasoning only switches on or off", () => {
+    const model: ModelInfo = { ...thinkingNoMappingModel, efforts: [] };
+    expect(supportedEffortsForModel(model)).toEqual(["off", "high"]);
+  });
+
+  test("a model without thinking ignores a catalog list", () => {
+    expect(supportedEffortsForModel({ ...noThinkingModel, efforts: ["low"] })).toEqual(["off"]);
+  });
+
   test("returns only mapping keys that are valid EffortLevel values", () => {
     const model: ModelInfo = {
       ...thinkingWithMappingModel,

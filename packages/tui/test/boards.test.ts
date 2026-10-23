@@ -709,6 +709,19 @@ describe("outputs, shell and queue, paste and scroll", () => {
     expect(m.cell(label.x, label.y).fg).toBe(A.you);
   });
 
+  test("a compaction that runs shows a row with the summary's tokens against its aim and the seconds", async () => {
+    const d = session({}, false);
+    d.daemon({ type: "compaction_seen", sessionId: SID, phase: "start", at: NOW - 14_000 });
+    d.daemon({ type: "compaction_seen", sessionId: SID, phase: "progress", tokens: 3000, at: NOW });
+    const m = await board(d);
+    const row = m.grid.find((r) => r.includes("Compacting conversation")) as string;
+    expect(row).toContain("3K of ~6K tokens");
+    expect(row).toContain(`${"━".repeat(10)}${"─".repeat(10)}`);
+    expect(row).toContain("14s");
+    d.daemon({ type: "compaction_seen", sessionId: SID, phase: "end", at: NOW });
+    expect((await board(d)).grid.some((r) => r.includes("Compacting conversation"))).toBe(false);
+  });
+
   test("paste and scroll: an image chip over the box, and the marker that says how far below the end the view is", async () => {
     const d = session({ rows: 24 }, false);
     d.daemon({

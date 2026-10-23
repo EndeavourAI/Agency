@@ -69,6 +69,14 @@ export type DaemonEvent =
       at: number;
     }
   | { type: "turn_event"; sessionId: string; turnId: string; event: WireEvent; at: number }
+  /** A /compact, which has no turn: its progress comes on the sessions stream. */
+  | {
+      type: "compaction_seen";
+      sessionId: string;
+      phase: "start" | "progress" | "end";
+      tokens?: number;
+      at: number;
+    }
   | {
       type: "turn_finished";
       sessionId: string;

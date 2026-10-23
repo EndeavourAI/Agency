@@ -5,6 +5,7 @@
 import { visibleBlocks } from "../render-model/markdown.ts";
 import { padEnd, stringWidth, wrap } from "../render-model/width.ts";
 import { runningThought, stepView, type Tone, turnFoot, turnStamp, youText } from "../state/derive.ts";
+import { formatTokens } from "../state/format.ts";
 import type { EventBlock, ShellBlock, Turn } from "../state/types.ts";
 import type { Palette } from "../term/themes.ts";
 import { blockRows } from "./markdown.ts";
@@ -65,6 +66,32 @@ export function scrollRow(newer: string, x: LedgerCtx): Row {
 }
 
 /** A prompt that waits its turn: a dashed row with the reason on the right. */
+/** What the compaction prompt asks a whole summary to stay under: the bar fills toward it. */
+const SUMMARY_TOKENS = 6000;
+
+/** A summary being written: the spinner, a bar of its tokens so far against the size it aims at, and the time. */
+export function compactionRow(c: { at: number; tokens: number }, x: LedgerCtx): Row {
+  const barW = 20;
+  const filled = Math.round(Math.min(0.99, c.tokens / SUMMARY_TOKENS) * barW);
+  const what = c.tokens === 0 ? "reading the conversation" : `${formatTokens(c.tokens)} of ~6K tokens`;
+  const secs = Math.max(0, Math.floor((x.now - c.at) / 1000));
+  return spread(
+    x.w,
+    [
+      { t: `${SPIN[x.tick % SPIN.length]} `, fg: x.c.brand },
+      { t: "Compacting conversation", fg: x.c.text, b: true },
+      { t: `  ${what}`, fg: x.c.muted },
+    ],
+    [
+      { t: "━".repeat(filled), fg: x.c.brand },
+      { t: "─".repeat(barW - filled), fg: x.c.dim },
+      { t: `  ${secs}s`, fg: x.c.muted },
+    ],
+    undefined,
+    2,
+  );
+}
+
 export function queuedRow(text: string, note: string, x: LedgerCtx): Row {
   const edge: Seg = { t: "┆", fg: x.c.dim };
   const inner = spread(x.w - 4, [{ t: text, fg: x.c.muted }], [{ t: note, fg: x.c.muted }], undefined, 2);

@@ -223,7 +223,18 @@ describe("events outside the happy path", () => {
 
   test("compaction shows while it runs and leaves a marker above the turn", () => {
     let s = run(begin(), [ev({ type: "compaction", phase: "start", sessionId: SID })]);
-    expect(current(s)?.compacting).toBe(true);
+    expect(current(s)?.compaction).toEqual({ at: 10, tokens: 0 });
+    s = run(s, [
+      {
+        type: "turn_event",
+        sessionId: SID,
+        turnId: "t1",
+        event: { type: "compaction", phase: "progress", sessionId: SID, tokens: 1200 },
+        at: 14,
+      },
+    ]);
+    // The start time stays: the row counts the seconds from it.
+    expect(current(s)?.compaction).toEqual({ at: 10, tokens: 1200 });
     s = run(s, [
       ev({
         type: "compaction",
@@ -234,7 +245,7 @@ describe("events outside the happy path", () => {
         tokensAfter: 31_000,
       }),
     ]);
-    expect(current(s)?.compacting).toBe(false);
+    expect(current(s)?.compaction).toBeNull();
     expect(current(s)?.blocks.map((b) => b.kind)).toEqual(["event", "turn"]);
     expect(current(s)?.blocks[0]).toMatchObject({
       text: "compacted · 6 earlier turns summarized · 148K → 31K tokens",

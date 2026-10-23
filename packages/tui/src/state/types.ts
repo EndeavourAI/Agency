@@ -135,7 +135,8 @@ export interface SessionState {
   loading: boolean;
   /** The daemon turn that runs now in this session, if any. */
   runningTurnId: string | null;
-  compacting: boolean;
+  /** A summary that is being written now: since when, and its tokens so far. */
+  compaction: { at: number; tokens: number } | null;
   queue: QueueItem[];
   status: WireStatus | null;
   /** The statusLine command output. */

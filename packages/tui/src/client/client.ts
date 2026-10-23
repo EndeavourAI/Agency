@@ -576,9 +576,24 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
       daemon.on(
         "sessions",
         guarded((payload) => {
-          const p = payload as { type: string; sessionId: string };
+          const p = payload as {
+            type: string;
+            sessionId: string;
+            phase?: "start" | "progress" | "end";
+            tokens?: number;
+          };
           if (p.type === "turn_start" || p.type === "turn_end")
             dispatch([{ type: "session_live", sessionId: p.sessionId, live: p.type === "turn_start" }]);
+          if (p.type === "compaction" && p.phase)
+            dispatch([
+              {
+                type: "compaction_seen",
+                sessionId: p.sessionId,
+                phase: p.phase,
+                ...(p.tokens === undefined ? {} : { tokens: p.tokens }),
+                at: now(),
+              },
+            ]);
         }),
       );
       daemon.subscribe("sessions");

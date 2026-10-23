@@ -78,7 +78,7 @@ export function newSession(id: string): SessionState {
     blocks: [],
     loading: false,
     runningTurnId: null,
-    compacting: false,
+    compaction: null,
     queue: [],
     status: null,
     statusLine: null,
@@ -108,6 +108,17 @@ const modeOfPermission = (p: string): UiMode =>
 
 function session(state: AppState, id: string): SessionState {
   return state.bySession[id] ?? newSession(id);
+}
+
+/** The summary being written, after one compaction event: a start resets it, an end clears it. */
+function tracked(
+  was: SessionState["compaction"],
+  e: { phase: "start" | "progress" | "end"; tokens?: number },
+  at: number,
+): SessionState["compaction"] {
+  if (e.phase === "end") return null;
+  if (e.phase === "start") return { at, tokens: 0 };
+  return { at: was?.at ?? at, tokens: e.tokens ?? was?.tokens ?? 0 };
 }
 
 function withSession(state: AppState, id: string, fn: (s: SessionState) => SessionState): AppState {
@@ -263,7 +274,7 @@ function reduceWire(t: Turn, s: SessionState, e: WireEvent): { t: Turn; s: Sessi
       };
     }
     case "compaction":
-      return { t, s: { ...s, compacting: e.phase === "start" } };
+      return { t, s };
     case "mode_changed":
       return { t, s, mode: modeOfPermission(e.mode) };
     case "prompt_suggestion":
@@ -361,6 +372,8 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
       }));
       return { ...next, history: [e.prompt, ...next.history.filter((h) => h !== e.prompt)] };
     }
+    case "compaction_seen":
+      return withSession(state, e.sessionId, (s) => ({ ...s, compaction: tracked(s.compaction, e, e.at) }));
     case "turn_event": {
       let mode: UiMode | undefined;
       const next = withSession(state, e.sessionId, (s) => {
@@ -368,8 +381,10 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
         if (!target) return s;
         const r = reduceWire(target, s, e.event);
         mode = r.mode;
-        const updated = withTurn(r.s, e.turnId, () => r.t);
-        if (e.event.type !== "compaction" || e.event.phase !== "end") return updated;
+        const turned = withTurn(r.s, e.turnId, () => r.t);
+        if (e.event.type !== "compaction") return turned;
+        const updated = { ...turned, compaction: tracked(turned.compaction, e.event, e.at) };
+        if (e.event.phase !== "end") return updated;
         // The summary happens before the model request of this turn, so its marker sits above the turn.
         const at = updated.blocks.findIndex((b) => b.kind === "turn" && b.id === e.turnId);
         const w = e.event;
@@ -417,7 +432,7 @@ function reduceDaemon(state: AppState, e: DaemonEvent): AppState {
         return {
           ...done,
           runningTurnId: done.runningTurnId === e.turnId ? null : done.runningTurnId,
-          compacting: false,
+          compaction: null,
         };
       });
     case "turn_stopped":
@@ -822,6 +837,7 @@ const DAEMON_TYPES = new Set<string>([
   "week_cost_loaded",
   "live_turns",
   "session_live",
+  "compaction_seen",
   "session_loading",
   "session_loaded",
   "status_loaded",

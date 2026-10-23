@@ -20,6 +20,7 @@ import { HOME_W, logoRows, recentRows, wordmarkRow } from "./home.ts";
 import {
   approvalRows,
   boxRows,
+  compactionRow,
   eventRows,
   type LedgerCtx,
   queuedRow,
@@ -265,7 +266,11 @@ function Session(props: AppProps) {
     now: props.now(),
     offline: s().conn === "offline",
   });
-  const tail = createMemo((): Row[] => queuedRows(s()).map((q) => queuedRow(q.text, q.note, ctx())));
+  const tail = createMemo((): Row[] => {
+    const rows = queuedRows(s()).map((q) => queuedRow(q.text, q.note, ctx()));
+    const compaction = sess()?.compaction;
+    return compaction ? [compactionRow(compaction, ctx()), ...rows] : rows;
+  });
   const ask = createMemo((): Row[] => {
     const t = runningTurn(sess());
     return showAsk(s()) && t?.approval ? approvalRows(t.approval, ctx()) : [];

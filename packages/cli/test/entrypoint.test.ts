@@ -1545,7 +1545,7 @@ describe("-p headless mode", () => {
     const { deps, err } = capture();
     const argv = ["-p", "hi", "--model", "openai/fake-1", "-w", "fix-1"];
     expect(await runEntrypoint(argv, { ...baseDeps({ cwd: repo }), ...deps, ...headless })).toBe(0);
-    const dir = join(realpathSync(repo), ".agency", "worktrees", "fix-1");
+    const dir = join(realpathSync.native(repo), ".agency", "worktrees", "fix-1");
     expect(headless.calls[0]?.workspaceRoot).toBe(dir);
     expect(git("-C", dir, "branch", "--show-current")).toBe("agency/fix-1");
     expect(err.join("\n")).toContain("agency/fix-1");

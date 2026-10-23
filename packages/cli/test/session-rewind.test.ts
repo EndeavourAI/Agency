@@ -1,5 +1,5 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HttpClient } from "@agency/net";
@@ -122,7 +122,7 @@ test("an edit after the agent's write stops the rewind until it is forced", asyn
 
   expect(await call("session_rewind", { sessionId: "s", entryId: first?.id })).toEqual({
     rewound: false,
-    conflicts: [join(ws, "a.ts")],
+    conflicts: [join(realpathSync(ws), "a.ts")],
   });
   expect(readFileSync(join(ws, "a.ts"), "utf8")).toBe("mine");
   expect((await prompts()).length).toBe(1);

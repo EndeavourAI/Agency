@@ -10,13 +10,13 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ### Release
 
-- **Releasing**: bump `version` in the root `package.json` and merge to `master`. The release workflow builds, publishes the
+- **Releasing**: bump `version` in the root `package.json` and merge to master. The release workflow builds, publishes the
   eight `@endeavourai` npm packages (a version with `-` goes to the `next` tag) and creates the GitHub release `v<version>`.
   A merge without a bump does nothing. Publishing uses npm Trusted Publishing (OIDC): for each of the 8 packages
   (`@endeavourai/agency` and `@endeavourai/agency-<os>-<cpu>[-musl]`) set a trusted publisher with provider GitHub Actions,
   repository `EndeavourAI/Agency`, workflow `release.yml`, environment `npm`, and "Allow npm publish" checked. A trusted
   publisher needs an existing package, so the first publish of a new package needs a token: an npm granular access token
-  with read and write on `@endeavourai`, stored as the secret `NPM_TOKEN` of the GitHub environment `npm`. The workflow
+  with read and write on `@endeavourai`, stored as the secret NPM_TOKEN of the GitHub environment `npm`. The workflow
   uses it when set; delete it once every package has a trusted publisher. Add required reviewers to the environment to
   gate each publish.
 
@@ -71,7 +71,7 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   git; `config_write` with `scope: "local"` writes it) apply in a trusted workspace. `trust.required` comes from
   the user layer only.
 - **The desktop app is gone**: it lives on as the git tag `archive/desktop`. Its CI step, release job and the
-  `AGENCY_CONFIG_OVERLAY` config layer are removed. Its RPC methods (`config_write`, `config_user`,
+  AGENCY_CONFIG_OVERLAY config layer are removed. Its RPC methods (`config_write`, `config_user`,
   `daemon_restart`, provider keys, skills) stay as settings methods.
 - **Fixed: a Claude 5 session with no thinking level failed every request after old tool results were pruned**:
   these models think by default, and the earlier fix bound their thinking blocks only when a level was set. The
@@ -121,7 +121,7 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   newText the top-level one. All 9 recorded calls replay into a valid edit; a broken string with no `newText`
   still gets the error.
 - **Claude Code runs in Harbor with a fast install**: `packages/eval/harbor/claude_code_fast.py` is Harbor's Claude
-  Code agent with one change: on a glibc x64 container it uploads the native `claude` binary (`CLAUDE_BINARY`)
+  Code agent with one change: on a glibc x64 container it uploads the native `claude` binary (CLAUDE_BINARY)
   instead of installing Node.js and Claude Code in every container. Setup took 4 s instead of about 5 minutes, so a
   head-to-head no longer spends most of its time on installs. Other containers take Harbor's own install.
 - **A turn that ends while a file the task named is missing is sent back once**: when the model stops and a file
@@ -177,7 +177,7 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   Harbor's own agent base class in an Alpine root: it installed, fixed a bug and reported $0.0005.
 - **Builds for Alpine and other musl systems**: releases add `agency-linux-x64-musl` and
   `agency-linux-arm64-musl`, and `install.sh` picks one on a musl system. The glibc build does not start on Alpine
-  (many container images, some Terminal-Bench tasks). The musl build needs `libstdc++` and `libgcc`
+  (many container images, some Terminal-Bench tasks). The musl build needs `libstdc++` and libgcc
   (`apk add libstdc++ libgcc`). Live on Alpine 3.22: the build ran `-p` and fixed a bug.
 - **A binary built on another OS starts**: `scripts/build.ts` compiled bytecode into every target, but bytecode
   made on another OS aborts at start (a JavaScriptCore assertion): each Linux binary built on Windows crashed on
@@ -238,16 +238,16 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   after it, and could be a daemon of an older build: in a live benchmark, every run of a new checkout talked to
   the daemon of an old one. The interactive app and `agency daemon` keep the shared daemon. A background process
   of a `-p` run now stops when the run ends.
-- **A passing command that names a test file counts as a check** for the verify reminder (`test_stats`,
-  `parser_test.py`): live, a model ran its tests with `python3 -c "import test_stats; ..."` where pytest was not
+- **A passing command that names a test file counts as a check** for the verify reminder (test_stats,
+  parser_test.py): live, a model ran its tests with `python3 -c "import test_stats; ..."` where pytest was not
   installed, and the reminder still cost three calls.
 - **No verify reminder in a workspace with nothing to check**: no test file or folder and no project file
-  (`package.json`, `pyproject.toml`, `Makefile`, `Cargo.toml`, `go.mod` and the like) at its root. In 6 of 12 live
+  (`package.json`, `pyproject.toml`, Makefile, `Cargo.toml`, `go.mod` and the like) at its root. In 6 of 12 live
   headless runs on Linux the reminder fired in such a folder, and the model spent one to three calls (up to a
   quarter of a short task's cost) to find that no check existed. Terminal-Bench adds its tests after the run.
 - **The `bash` tool says that a background process stops when the session ends**, and that one which must
   outlive it starts with `nohup ... &`. A live headless run (Sonnet 5.5) started a server that the task needed
-  after the run with `background: true`; it lived on only because the command also used `setsid`.
+  after the run with `background: true`; it lived on only because the command also used setsid.
 - **An overload of the provider (Anthropic's 529) is retried for up to 5 minutes**, as a rate limit is, and not
   four times in about 3.5 s: an overload outlasts that, and the turn ended with an error, so a long benchmark task
   was lost on one busy minute (Claude Code retries it ten times). With a fallback model, the turn still moves to
@@ -361,7 +361,7 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
   search with `context`, `filesOnly`, more files, a capped search and a minified file show none.
 - **`agency testmap` maps each test to the source lines it runs, and the "untested edits" note then names only the
   tests that ran a changed line** (bun projects): it runs each tracked test file alone under `bun test --coverage`
-  and keeps the map in the cache. On 43 stored runs of the benchmark edit task (`plural()` in `render.ts`, used in
+  and keeps the map in the cache. On 43 stored runs of the benchmark edit task (plural() in `render.ts`, used in
   `grep.ts` and `glob.ts`), the import graph named 33 tests and the map 7 in 38 runs, with `builtins-render.test.ts`,
   the test that such an edit broke in a live run, among them in 40. Lines that every test of a file runs, as an
   import does at load, do not count. With no map, a changed file the map lacks, or only such lines, the note names

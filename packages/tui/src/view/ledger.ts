@@ -7,7 +7,8 @@ import { padEnd, stringWidth, wrap } from "../render-model/width.ts";
 import { runningThought, stepView, type Tone, turnFoot, turnStamp, youText } from "../state/derive.ts";
 import type { EventBlock, ShellBlock, Turn } from "../state/types.ts";
 import type { Palette } from "../term/themes.ts";
-import { type Color, clip, fill, type Row, type Seg, spread, words, wrapWords } from "./rows.ts";
+import { blockRows } from "./markdown.ts";
+import { type Color, clip, fill, type Row, type Seg, spread } from "./rows.ts";
 
 export interface LedgerCtx {
   c: Palette;
@@ -116,21 +117,7 @@ function answerRows(t: Turn, x: LedgerCtx, hasAbove: boolean): Row[] {
   const c = x.c;
   const rows: Row[] = [];
   const list = visibleBlocks(t.answer);
-  list.forEach((b, i) => {
-    if (b.kind === "text") {
-      if (b.gap && i > 0) rows.push(blank);
-      const parts: Seg[] = b.parts.map((p) =>
-        p.code ? { t: ` ${p.t} `, fg: c.text, bg: c.element } : { t: p.t, fg: c.text },
-      );
-      const lines = wrapWords(words(parts), b.li ? bw - 2 : bw);
-      for (const [j, l] of lines.entries())
-        rows.push(b.li ? [{ t: j === 0 ? b.bullet : "  ", fg: c.text }, ...l] : l);
-    } else {
-      rows.push(blank);
-      const lines = b.lines.length ? b.lines : [""];
-      for (const l of lines) rows.push(fill([{ t: ` ${l}`, fg: c.soft }], bw, c.panel));
-    }
-  });
+  for (const [i, b] of list.entries()) rows.push(...blockRows(b, i === 0, bw, x.w - 3, c));
   if (t.status === "running" && !x.offline && rows.length) {
     const last = rows[rows.length - 1] as Row;
     const lastBlock = list[list.length - 1];

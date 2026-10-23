@@ -3,6 +3,7 @@ import {
   emptyMd,
   finishMd,
   hunkLines,
+  inline,
   type MdBlock,
   parseUnifiedDiff,
   pushMd,
@@ -101,6 +102,137 @@ describe("markdown", () => {
     expect(pushMd(emptyMd, text).settled).toHaveLength(50_000);
     expect(pushMd(emptyMd, `\`\`\`\n${text}`).fence?.lines).toHaveLength(50_000);
     expect(performance.now() - t0).toBeLessThan(1000);
+  });
+});
+
+describe("markdown constructs", () => {
+  type Text = Extract<MdBlock, { kind: "text" }>;
+  const one = (src: string) => renderMd(src)[0] as Text;
+  const table = (b: MdBlock | undefined) => b as Extract<MdBlock, { kind: "table" }>;
+  const cell = (c: { t: string }[] | undefined) => c?.map((p) => p.t).join("");
+
+  test("headings carry their level and lose the hashes", () => {
+    expect(one("## Plan *now*")).toMatchObject({ heading: 2 });
+    expect(text(one("## Plan"))).toBe("Plan");
+    expect(one("###### six").heading).toBe(6);
+    expect(one("#nospace").heading).toBe(0);
+    expect(text(one("# Title ##"))).toBe("Title");
+  });
+
+  test("bold, italic, strike, links and code nest", () => {
+    expect(inline("a **b** and __c__")).toEqual([
+      { t: "a ", code: false },
+      { t: "b", code: false, b: true },
+      { t: " and ", code: false },
+      { t: "c", code: false, b: true },
+    ]);
+    expect(inline("*i* and _j_ and ~~s~~")).toEqual([
+      { t: "i", code: false, i: true },
+      { t: " and ", code: false },
+      { t: "j", code: false, i: true },
+      { t: " and ", code: false },
+      { t: "s", code: false, s: true },
+    ]);
+    expect(inline("***both***")).toEqual([{ t: "both", code: false, b: true, i: true }]);
+    expect(inline("[the docs](https://x.dev)")).toEqual([
+      { t: "the docs", code: false },
+      { t: " (https://x.dev)", code: false, muted: true },
+    ]);
+    expect(inline("**`code` inside**")).toEqual([
+      { t: "code", code: true, b: true },
+      { t: " inside", code: false, b: true },
+    ]);
+  });
+
+  test("snake_case, spaced stars and unclosed markers stay literal", () => {
+    for (const raw of ["snake_case_name", "2 * 3 * 4", "**open", "a_b and c_d"])
+      expect(inline(raw)).toEqual([{ t: raw, code: false }]);
+  });
+
+  test("lists: ordered keep their number, nesting indents, * and + bullets, tasks", () => {
+    const li = renderMd("1. one\n2. two\n  - nested\n* star\n+ plus\n- [ ] todo\n- [x] done") as Text[];
+    expect(li.map((b) => b.bullet)).toEqual(["1. ", "2. ", "• ", "• ", "• ", "[ ] ", "[x] "]);
+    expect(li.map((b) => b.indent)).toEqual([0, 0, 2, 0, 0, 0, 0]);
+    expect(li.map((b) => b.gap)).toEqual([false, false, false, false, false, false, false]);
+    expect(li.map(text)).toEqual(["one", "two", "nested", "star", "plus", "todo", "done"]);
+  });
+
+  test("blockquotes count their depth and run together", () => {
+    const q = renderMd("> a\n> > b\n> # c") as Text[];
+    expect(q.map((b) => b.quote)).toEqual([1, 2, 1]);
+    expect(q.map((b) => b.gap)).toEqual([false, false, true]);
+    expect(q[2]?.heading).toBe(1);
+  });
+
+  test("rules: dashes, stars and underscores, but not a bullet or bold", () => {
+    expect(renderMd("a\n---\n***\n- - -\n___").map((b) => b.kind)).toEqual([
+      "text",
+      "rule",
+      "rule",
+      "rule",
+      "rule",
+    ]);
+    expect(renderMd("**bold**\n- x").map((b) => b.kind)).toEqual(["text", "text"]);
+  });
+
+  test("a table: header, alignment, body rows, inline styles in cells", () => {
+    const b = table(renderMd("| Name | Qty | Note |\n|:--|:-:|--:|\n| `a` | 1 | **x** |\n| b | 2 | y |")[0]);
+    expect(b.kind).toBe("table");
+    expect(b.align).toEqual(["left", "center", "right"]);
+    expect(b.head.map(cell)).toEqual(["Name", "Qty", "Note"]);
+    expect(b.rows.map((r) => r.map(cell))).toEqual([
+      ["a", "1", "x"],
+      ["b", "2", "y"],
+    ]);
+    expect(b.rows[0]?.[0]?.[0]?.code).toBe(true);
+    expect(b.rows[0]?.[2]?.[0]?.b).toBe(true);
+  });
+
+  test("a table streams line by line: one open block that grows, settled blocks stay", () => {
+    let s = pushMd(emptyMd, "intro\n| a | b |\n");
+    expect(visibleBlocks(s).map((b) => b.kind)).toEqual(["text", "text"]);
+    s = pushMd(s, "|--");
+    expect(visibleBlocks(s).map((b) => b.kind)).toEqual(["text", "text"]);
+    s = pushMd(s, "-|---|\n");
+    expect(s.settled).toHaveLength(1);
+    expect(table(visibleBlocks(s).at(-1)).rows).toHaveLength(0);
+    s = pushMd(s, "| 1 | 2 |\n| 3 |");
+    expect(table(visibleBlocks(s).at(-1)).rows.map((r) => r.map(cell))).toEqual([
+      ["1", "2"],
+      ["3", ""],
+    ]);
+    expect(s.settled).toHaveLength(1);
+    s = pushMd(s, " 4 |\nafter\n");
+    expect(s.settled.map((b) => b.kind)).toEqual(["text", "table", "text"]);
+    expect(table(s.settled[1]).rows).toHaveLength(2);
+    expect(s.settled[1]?.gap).toBe(true);
+  });
+
+  test("a pipe line without a separator is a plain line", () => {
+    expect(renderMd("a | b\nnext").map((b) => b.kind)).toEqual(["text", "text"]);
+    expect(text(renderMd("a | b")[0])).toBe("a | b");
+  });
+
+  test("a blank line ends a table; escaped pipes stay in the cell", () => {
+    const blocks = renderMd("| a |\n|---|\n| x \\| y |\n\nafter");
+    expect(blocks.map((b) => b.kind)).toEqual(["table", "text"]);
+    expect(table(blocks[0]).rows.map((r) => r.map(cell))).toEqual([["x | y"]]);
+  });
+
+  test("any chunking of a rich answer renders the same blocks", () => {
+    const rich =
+      "# T\n\n> q\n\n1. a\n  - b\n- [x] c\n\n| h1 | h2 |\n|---|--:|\n| 1 | **2** |\n\n---\ntail *i* [l](u)\n```\ncode\n```\n";
+    const whole = renderMd(rich);
+    for (const size of [1, 2, 5, 13]) {
+      let s = emptyMd;
+      for (let i = 0; i < rich.length; i += size) s = pushMd(s, rich.slice(i, i + size));
+      expect(finishMd(s).settled).toEqual(whole);
+    }
+  });
+
+  test("a table that is still open at the end of the answer is kept", () => {
+    expect(renderMd("| a |\n|---|\n| 1 |").map((b) => b.kind)).toEqual(["table"]);
+    expect(renderMd("| a |\n|---|").map((b) => b.kind)).toEqual(["table"]);
   });
 });
 

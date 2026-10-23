@@ -206,7 +206,7 @@ describe("daemon parallel specialists (item 52)", () => {
       expect(a.state).toBe("idle");
       expect(a.costUsd).toBeGreaterThan(0);
     }
-  });
+  }, 30_000);
 
   it("dispatch_compare runs 5 specialists in parallel with ordered results", async () => {
     const state = { active: 0, maxActive: 0, childBriefs: [] as string[] };

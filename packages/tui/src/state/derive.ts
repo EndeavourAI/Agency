@@ -4,12 +4,25 @@
  */
 import { completionItems } from "../input/completion.ts";
 import { diffStats, parseUnifiedDiff, stepDiff } from "../render-model/diff.ts";
+import { type MdBlock, renderMd } from "../render-model/markdown.ts";
 import { stepOutput } from "../render-model/output.ts";
 import { truncate } from "../render-model/width.ts";
 import { formatCost } from "./format.ts";
-import { pickable } from "./reduce.ts";
+import { initialPlanUi, pickable } from "./reduce.ts";
 import { COMMANDS, rowValue, type SettingRow } from "./settings.ts";
-import type { AppState, Block, ImageChip, ModelRow, SessionState, Step, Turn } from "./types.ts";
+import {
+  type Approval,
+  type AppState,
+  EFFORTS,
+  type Effort,
+  type ImageChip,
+  type ModelRow,
+  PLAN_TOOL,
+  type PlanUi,
+  type SessionState,
+  type Step,
+  type Turn,
+} from "./types.ts";
 
 export type Tone = "text" | "soft" | "muted" | "dim" | "brand" | "add" | "del";
 
@@ -48,6 +61,34 @@ export const showAsk = (state: AppState): boolean => {
   const s = current(state);
   return state.view === "session" && !state.review.open && !!runningTurn(s)?.approval;
 };
+
+/** The plan_exit ask on screen: it takes over the transcript and the prompt instead of the generic ask. */
+export function planAsk(state: AppState): Approval | null {
+  const a = showAsk(state) ? runningTurn(current(state))?.approval : undefined;
+  return a?.tool === PLAN_TOOL ? a : null;
+}
+
+/** The transcript column without the details pane, which the plan panel hides. */
+export const planWidth = (cols: number): number => Math.min(cols - 4, 120);
+/** The answers box under the plan: its two borders, the question and three choices. */
+export const PLAN_FOOT_ROWS = 6;
+/** Rows of the plan box that its top border, the title and the blank line under it use. */
+export const PLAN_HEAD_ROWS = 3;
+
+/** Plan rows that fit: the screen less the top bar and its gap, the answers box, the hint row and the box head. */
+export const planVisible = (rows: number): number =>
+  Math.max(1, rows - 2 - PLAN_FOOT_ROWS - 1 - PLAN_HEAD_ROWS);
+
+/** The plan as markdown blocks; the daemon trims the plan, and a fence on its last line closes only at a newline. */
+export const planBlocks = (plan: string): MdBlock[] => renderMd(`${plan}\n`);
+
+/** How far the plan of this ask can scroll: what the view measured, unbounded before it drew. */
+export const planMax = (state: AppState, requestId: string): number =>
+  planPanel(state, requestId).max ?? Number.POSITIVE_INFINITY;
+
+/** The panel state of an ask: a fresh one until the first key. */
+export const planPanel = (state: AppState, requestId: string): PlanUi =>
+  state.planUi.requestId === requestId ? state.planUi : initialPlanUi(requestId);
 
 export const canRetry = (state: AppState): boolean => {
   const s = current(state);
@@ -242,7 +283,33 @@ export function ctxNote(state: AppState): string {
   );
 }
 
-export const effortNote = (state: AppState): string => (isWide(state) ? ` · ${state.effort}` : "");
+const rowOf = (state: AppState, ref: string | null): ModelRow | undefined =>
+  ref === null ? undefined : state.models.find((m) => m.ref === ref || m.id === ref);
+
+/** The preferred level if the model takes it, else the closest one below, else the lowest above. */
+export function snapEffort(pref: Effort, levels: readonly Effort[]): Effort {
+  if (levels.includes(pref)) return pref;
+  const at = EFFORTS.indexOf(pref);
+  const below = levels.filter((l) => EFFORTS.indexOf(l) < at).at(-1);
+  return below ?? levels[0] ?? pref;
+}
+
+/** The level a turn on this model runs at; `state.effort` stays the preference, so a model that takes it again gets it back. */
+export const effortOf = (state: AppState, ref: string | null): Effort => {
+  const levels = rowOf(state, ref)?.efforts;
+  return levels ? snapEffort(state.effort, levels) : state.effort;
+};
+
+/** The picker row the effort row follows: the one under the cursor, else the model in use. */
+export const pickerRow = (state: AppState): ModelRow | undefined =>
+  flatModels(state)[state.model.at] ?? rowOf(state, current(state)?.model ?? state.defaultModel);
+
+/** A model without reasoning control has no level to show. */
+export function effortNote(state: AppState): string {
+  const ref = current(state)?.model ?? state.defaultModel;
+  const levels = rowOf(state, ref)?.efforts;
+  return isWide(state) && !(levels?.length === 1 && levels[0] === "off") ? ` · ${effortOf(state, ref)}` : "";
+}
 
 /** The statusLine command output; wide screens only. */
 export function statusText(state: AppState): string {
@@ -259,6 +326,12 @@ export interface Hint {
 export function hints(state: AppState): Hint[] {
   const s = current(state);
   const picks = s ? pickable(s.blocks) : [];
+  if (planAsk(state))
+    return [
+      { key: "↑↓", label: "choose" },
+      { key: "enter", label: "select" },
+      { key: "pgup/pgdn", label: "scroll" },
+    ];
   if (s && s.pickAt !== null && picks.includes(s.pickAt))
     return [
       { key: "↑↓", label: "turn" },
@@ -373,13 +446,8 @@ export function completion(state: AppState) {
   return completionItems(state.ac, { files: state.files, slash: state.slash });
 }
 
-/** Blocks up to the scrolled-back position. */
-export function scrolledBlocks(s: SessionState): Block[] {
-  return s.scroll ? s.blocks.slice(0, Math.max(0, s.blocks.length - s.scroll)) : s.blocks;
-}
-
 export const newerLabel = (s: SessionState): string =>
-  `${s.scroll} newer block${s.scroll === 1 ? "" : "s"} below`;
+  `${s.scroll} newer row${s.scroll === 1 ? "" : "s"} below`;
 
 /** The other sessions that run: the orbit beside "N more". */
 export function othersRunning(state: AppState): boolean {

@@ -5,7 +5,15 @@
 import type { DaemonClient } from "@agency/rpc";
 import { drainQueue, type Effect, type Out } from "../controller/index.ts";
 import { CLIENT_SLASH, type SlashEntry } from "../input/completion.ts";
-import { type AppState, type Event, type ImageChip, type ModelRow, PERMISSION_OF } from "../state/index.ts";
+import {
+  type AppState,
+  EFFORTS,
+  type Event,
+  effortOf,
+  type ImageChip,
+  type ModelRow,
+  PERMISSION_OF,
+} from "../state/index.ts";
 import type {
   WireEvent,
   WireGitDiff,
@@ -51,6 +59,7 @@ interface ProvidersResult {
       contextWindow: number;
       pricing: { inputPerMTok: number; outputPerMTok: number };
       status?: string;
+      effortLevels?: string[];
     }>;
   }>;
   default: Record<string, string>;
@@ -83,6 +92,7 @@ export function modelRows(p: ProvidersResult): ModelRow[] {
           inPerMTok: m.pricing.inputPerMTok,
           outPerMTok: m.pricing.outputPerMTok,
           tags: m.pricing.inputPerMTok === 0 && m.pricing.outputPerMTok === 0 ? "free" : "",
+          efforts: m.effortLevels ? EFFORTS.filter((l) => m.effortLevels?.includes(l)) : EFFORTS,
         })),
     );
 }
@@ -359,7 +369,7 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
         text: e.text,
         images: [],
         mode: state.mode,
-        effort: state.effort,
+        effort: effortOf(state, state.bySession[e.sessionId]?.model ?? state.defaultModel),
         model: state.bySession[e.sessionId]?.model ?? state.defaultModel,
         create: false,
       });
@@ -394,6 +404,8 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
                 requestId: e.requestId,
                 decision: e.decision,
                 sessionId: e.sessionId,
+                ...(e.message === undefined ? {} : { message: e.message }),
+                ...(e.mode === undefined ? {} : { mode: e.mode }),
               });
               return;
             case "shell_run": {
@@ -566,9 +578,24 @@ export function createTuiClient(deps: TuiClientDeps): TuiClient {
       daemon.on(
         "sessions",
         guarded((payload) => {
-          const p = payload as { type: string; sessionId: string };
+          const p = payload as {
+            type: string;
+            sessionId: string;
+            phase?: "start" | "progress" | "end";
+            tokens?: number;
+          };
           if (p.type === "turn_start" || p.type === "turn_end")
             dispatch([{ type: "session_live", sessionId: p.sessionId, live: p.type === "turn_start" }]);
+          if (p.type === "compaction" && p.phase)
+            dispatch([
+              {
+                type: "compaction_seen",
+                sessionId: p.sessionId,
+                phase: p.phase,
+                ...(p.tokens === undefined ? {} : { tokens: p.tokens }),
+                at: now(),
+              },
+            ]);
         }),
       );
       daemon.subscribe("sessions");

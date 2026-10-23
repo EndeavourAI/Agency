@@ -19,6 +19,7 @@ import {
   withTrace,
 } from "@agency/core";
 import {
+  type ApprovalRequest,
   buildScriptSandboxArgv,
   type PermissionMode,
   type PermissionsGate,
@@ -573,23 +574,26 @@ export async function executeTurn(
                     const plan = typeof input.plan === "string" ? input.plan.trim() : "";
                     if (plan === "")
                       return { content: "plan_exit needs the plan as markdown.", isError: true };
-                    const answer = await requestApproval({
+                    const ask: ApprovalRequest = {
                       tool: PLAN_EXIT_TOOL,
                       title: plan,
                       riskTier: "moderate",
                       oneTime: true,
-                    });
+                    };
+                    const answer = await requestApproval(ask);
                     // Two plans in one batch: the first approval already ended plan mode.
                     if (turnMode !== "plan") {
                       return { content: "The plan is already approved: carry it out.", isError: true };
                     }
                     if (answer === "reject") {
+                      const wanted = ask.reply?.message;
                       return {
-                        content:
-                          "The plan was not approved: the user rejected it or did not answer in time. Plan mode stays on. Ask what to change or revise the plan, then call plan_exit again.",
+                        content: wanted
+                          ? `The user wants changes to the plan: ${wanted}\nPlan mode stays on. Revise the plan, then call plan_exit again.`
+                          : "The plan was not approved: the user rejected it or did not answer in time. Plan mode stays on. Ask what to change or revise the plan, then call plan_exit again.",
                       };
                     }
-                    turnMode = "allow-edits";
+                    turnMode = ask.reply?.mode ?? "allow-edits";
                     gate.setMode(turnMode);
                     ctx.sessionSettings.set(sessionId, {
                       ...ctx.sessionSettings.get(sessionId),

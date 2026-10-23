@@ -198,12 +198,14 @@ describe("main: the ledger of a session", () => {
     const m = await board(d);
     const t = find(m, "┌");
     expect(m.cell(t.x, t.y).fg).toBe(A.auto);
-    const hint = find(m, "auto · Sonnet 5.5");
+    const hint = find(m, "⏵⏵ accept edits on (shift+tab to cycle) · Sonnet 5.5");
     expect(m.cell(hint.x, hint.y).fg).toBe(A.auto);
     d.send("\x1b[Z");
     const plan = await board(d);
     const tp = find(plan, "┌");
     expect(plan.cell(tp.x, tp.y).fg).toBe(A.plan);
+    const badge = find(plan, "⏸ plan mode on (shift+tab to cycle) · Sonnet 5.5");
+    expect(plan.cell(badge.x, badge.y)).toMatchObject({ fg: A.plan, bold: true });
   });
 
   test("focus: details hidden, the column centred at 120 columns, context rides in the hint row", async () => {
@@ -392,6 +394,19 @@ describe("pickers", () => {
     // The picked row is on the quiet fill.
     const row = find(m, "Sonnet 5.5");
     expect(m.cell(row.x + 20, row.y).bg).toBe(A.element);
+  });
+
+  test("model picker: the effort row lists the levels of the model under the cursor", async () => {
+    const d = session();
+    d.daemon({ type: "model_open" });
+    const effort = async (): Promise<string> =>
+      (await board(d)).grid.find((r) => r.includes("effort")) as string;
+    d.type("gpt");
+    expect(await effort()).toMatch(/effort\s+low\s+medium\s+high(?!\s+xhigh)/);
+    d.apply([{ type: "model_query", q: "laguna" }]);
+    const none = await effort();
+    expect(none).toContain("no reasoning control");
+    expect(none).not.toContain("medium");
   });
 
   test("model picker: arrows and the effort row work from the keyboard", async () => {
@@ -696,8 +711,21 @@ describe("outputs, shell and queue, paste and scroll", () => {
     expect(m.cell(label.x, label.y).fg).toBe(A.you);
   });
 
-  test("paste and scroll: an image chip over the box, and the marker that says how far below the end the view is", async () => {
+  test("a compaction that runs shows a row with the summary's tokens against its aim and the seconds", async () => {
     const d = session({}, false);
+    d.daemon({ type: "compaction_seen", sessionId: SID, phase: "start", at: NOW - 14_000 });
+    d.daemon({ type: "compaction_seen", sessionId: SID, phase: "progress", tokens: 3000, at: NOW });
+    const m = await board(d);
+    const row = m.grid.find((r) => r.includes("Compacting conversation")) as string;
+    expect(row).toContain("3K of ~6K tokens");
+    expect(row).toContain(`${"━".repeat(10)}${"─".repeat(10)}`);
+    expect(row).toContain("14s");
+    d.daemon({ type: "compaction_seen", sessionId: SID, phase: "end", at: NOW });
+    expect((await board(d)).grid.some((r) => r.includes("Compacting conversation"))).toBe(false);
+  });
+
+  test("paste and scroll: an image chip over the box, and the marker that says how far below the end the view is", async () => {
+    const d = session({ rows: 24 }, false);
     d.daemon({
       type: "turn_finished",
       sessionId: SID,
@@ -713,7 +741,7 @@ describe("outputs, shell and queue, paste and scroll", () => {
     d.send("\x1b[5~");
     const m = await board(d);
     expect(snap(m)).toMatchSnapshot();
-    expect(m.grid.some((r) => r.includes("↓ 1 newer block below · ctrl+end latest"))).toBe(true);
+    expect(m.grid.some((r) => /↓ \d+ newer rows below · ctrl\+end latest/.test(r))).toBe(true);
     expect(m.grid.some((r) => r.includes("▣ image 1 · 184 KB ×") && r.includes("backspace removes"))).toBe(
       true,
     );
@@ -723,7 +751,7 @@ describe("outputs, shell and queue, paste and scroll", () => {
     expect(hint).toContain("ctrl+end latest");
     d.send("\x1b[1;5F");
     const back = await board(d);
-    expect(back.grid.some((r) => r.includes("newer block"))).toBe(false);
+    expect(back.grid.some((r) => r.includes("newer row"))).toBe(false);
     expect(back.grid.some((r) => r.includes("Also count environment start timeouts"))).toBe(true);
   });
 

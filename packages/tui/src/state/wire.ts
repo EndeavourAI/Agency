@@ -81,8 +81,10 @@ export type WireEvent =
     }
   | {
       type: "compaction";
-      phase: "start" | "end";
+      phase: "start" | "progress" | "end";
       sessionId: string;
+      /** On progress: the tokens of the summary written so far. */
+      tokens?: number;
       /** Only on a compaction that happened: the turns folded into the summary and the size before and after. */
       replaced?: number;
       tokensBefore?: number;

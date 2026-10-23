@@ -16,7 +16,15 @@ export type Effect =
     }
   | { type: "slash_command"; sessionId: string; text: string }
   | { type: "cancel_turn"; turnId: string }
-  | { type: "respond"; sessionId: string; requestId: string; decision: "once" | "always" | "reject" }
+  | {
+      type: "respond";
+      sessionId: string;
+      requestId: string;
+      decision: "once" | "always" | "reject";
+      /** A plan answer only: the feedback for the model, or the mode the approved turn goes on in. */
+      message?: string;
+      mode?: "ask" | "auto";
+    }
   | { type: "shell_run"; sessionId: string; id: string; command: string }
   | { type: "config_write"; key: string; value: unknown }
   | { type: "open_session"; sessionId: string }

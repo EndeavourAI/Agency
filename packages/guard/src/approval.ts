@@ -11,6 +11,12 @@ import { normalizeCommand, splitCommand } from "./policy.ts";
  */
 export type ApprovalResponse = "once" | "always" | "reject";
 
+/** What the person adds to an answer: a note for the model, and the mode a plan approval moves the turn to. */
+export interface ApprovalReply {
+  message?: string;
+  mode?: "ask" | "allow-edits" | "auto";
+}
+
 /** What a tool (or the permission gate) presents to the user for approval. */
 export interface ApprovalRequest {
   /** Tool asking: "bash", "write", "dispatch", ... */
@@ -35,6 +41,8 @@ export interface ApprovalRequest {
   reason?: string;
   /** An ask that "always" must not answer again, such as a plan: the answer counts once and grants nothing. */
   oneTime?: boolean;
+  /** Set by `respond` before the answer settles; the asker reads it after the await. */
+  reply?: ApprovalReply;
 }
 
 /** One-line summary of the parsed args; callers redact values first. */
@@ -205,7 +213,7 @@ export class ApprovalManager {
    * retroactively resolves every other pending ask matching the same subject:
    * two terminals asking for the same command queue one prompt, not two.
    */
-  respond(id: string, decision: ApprovalResponse): RespondOutcome {
+  respond(id: string, decision: ApprovalResponse, reply?: ApprovalReply): RespondOutcome {
     const entry = this.pending.get(id);
     if (!entry) {
       const closeReason = this.closeReasons.get(id);
@@ -214,6 +222,7 @@ export class ApprovalManager {
     this.pending.delete(id);
     if (entry.timer) clearTimeout(entry.timer);
     this.closeReasons.set(id, "answered");
+    if (reply) entry.request.reply = reply;
     entry.resolve(decision);
 
     if (decision !== "always" || entry.request.oneTime === true) return { resolved: true, retroactive: 0 };

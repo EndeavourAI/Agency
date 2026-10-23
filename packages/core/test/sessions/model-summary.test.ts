@@ -72,6 +72,18 @@ describe("modelSummarizer", () => {
     expect(seen[0]?.tools).toBeUndefined();
   });
 
+  test("each streamed piece of the summary reaches onText", async () => {
+    const pieces: string[] = [];
+    await modelSummarizer({
+      adapter: fixedAdapter("the summary"),
+      http: noopHttp,
+      model: "m",
+      apiKey: "k",
+      onText: (t) => pieces.push(t),
+    })(transcript, "INSTRUCTIONS");
+    expect(pieces).toEqual(["the summary"]);
+  });
+
   test("a provider failure gives the extractive summary, not an error", async () => {
     const summary = await make(fixedAdapter(new Error("503")))(transcript, "INSTRUCTIONS");
     expect(summary).toContain("first line");

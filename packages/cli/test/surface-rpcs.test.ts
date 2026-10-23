@@ -278,10 +278,11 @@ describe("reasoning levels of the catalog", () => {
     try {
       const { client } = await startDaemon({ catalog: [thinker], adapterFor: () => adapter });
       const list = (await client.call("providers_list", { models: "all" })) as {
-        all: Array<{ id: string; models: Array<{ id: string; efforts?: string[] }> }>;
+        all: Array<{ id: string; models: Array<{ id: string; efforts?: string[]; effortLevels: string[] }> }>;
       };
       const listed = list.all.find((p) => p.id === "anthropic")?.models.find((m) => m.id === "test-model");
       expect(listed?.efforts).toEqual(["low", "xhigh", "max"]);
+      expect(listed?.effortLevels).toEqual(["low", "xhigh", "max"]);
 
       await client.call("session_send", { ...sendParams("eff-s1", "eff-t1"), thinkingLevel: "xhigh" });
       expect(requests.at(-1)).toMatchObject({
@@ -292,6 +293,17 @@ describe("reasoning levels of the catalog", () => {
     } finally {
       rmSync(cache, { recursive: true, force: true });
     }
+  }, 15_000);
+});
+
+describe("effort levels of a model without reasoning", () => {
+  test("providers_list offers only off", async () => {
+    const { client } = await startDaemon({ catalog: [model("test-model", "anthropic")] });
+    const list = (await client.call("providers_list", { models: "all" })) as {
+      all: Array<{ id: string; models: Array<{ id: string; effortLevels: string[] }> }>;
+    };
+    const listed = list.all.find((p) => p.id === "anthropic")?.models.find((m) => m.id === "test-model");
+    expect(listed?.effortLevels).toEqual(["off"]);
   }, 15_000);
 });
 

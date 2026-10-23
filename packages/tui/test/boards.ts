@@ -7,6 +7,7 @@ import {
   type AppState,
   type Event,
   initialState,
+  type ModelRow,
   reduce,
   type ThemeName,
   type WireEvent,
@@ -66,7 +67,7 @@ export const ROWS: WireSessionRow[] = [
   },
 ];
 
-const MODELS = [
+const MODELS: ModelRow[] = [
   {
     ref: "anthropic/haiku",
     provider: "anthropic",
@@ -77,6 +78,7 @@ const MODELS = [
     inPerMTok: 0.1,
     outPerMTok: 0.5,
     tags: "",
+    efforts: ["low", "medium", "high", "xhigh"],
   },
   {
     ref: "anthropic/sonnet",
@@ -88,6 +90,7 @@ const MODELS = [
     inPerMTok: 2,
     outPerMTok: 10,
     tags: "",
+    efforts: ["low", "medium", "high", "xhigh"],
   },
   {
     ref: "anthropic/opus",
@@ -99,6 +102,7 @@ const MODELS = [
     inPerMTok: 4,
     outPerMTok: 20,
     tags: "",
+    efforts: ["low", "medium", "high", "xhigh"],
   },
   {
     ref: "openai/gpt",
@@ -110,6 +114,7 @@ const MODELS = [
     inPerMTok: 5,
     outPerMTok: 20,
     tags: "",
+    efforts: ["low", "medium", "high"],
   },
   {
     ref: "google/gemini",
@@ -121,6 +126,7 @@ const MODELS = [
     inPerMTok: 2.5,
     outPerMTok: 10,
     tags: "",
+    efforts: ["low", "medium", "high", "xhigh"],
   },
   {
     ref: "openrouter/deepseek",
@@ -132,6 +138,7 @@ const MODELS = [
     inPerMTok: 0.5,
     outPerMTok: 2,
     tags: "",
+    efforts: ["low", "medium", "high", "xhigh"],
   },
   {
     ref: "openrouter/laguna",
@@ -143,6 +150,7 @@ const MODELS = [
     inPerMTok: 0,
     outPerMTok: 0,
     tags: "free",
+    efforts: ["off"],
   },
 ];
 

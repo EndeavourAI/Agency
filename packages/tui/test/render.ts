@@ -1,6 +1,6 @@
 import "../src/term/register.ts";
 import type { CapturedLine, RGBA } from "@opentui/core";
-import type { AppState } from "../src/state/index.ts";
+import { type AppState, reduce } from "../src/state/index.ts";
 import { palette } from "../src/term/themes.ts";
 import { NOW } from "./boards.ts";
 
@@ -36,7 +36,17 @@ export async function mount(
   const t = await testRender(
     () => {
       const pal = createMemo(() => palette(st().theme, o.truecolor ?? true));
-      return App({ state: st, palette: pal, tick, now: () => o.now ?? NOW, version: "0.1.0" });
+      return App({
+        state: st,
+        palette: pal,
+        tick,
+        now: () => o.now ?? NOW,
+        version: "0.1.0",
+        // As the runtime does: the measured end of the scroll goes back into the state.
+        onScrollMax: (sessionId, n) => setSt((s) => reduce(s, { type: "scroll_max", sessionId, n })),
+        onPlanMax: (requestId, max) =>
+          setSt((s) => reduce(s, { type: "plan_ui", requestId, patch: { max } })),
+      });
     },
     { width: state.cols, height: state.rows },
   );

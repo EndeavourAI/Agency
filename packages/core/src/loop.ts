@@ -563,14 +563,12 @@ export async function runTurn(
     });
     const sent = lastSent;
     summarize.whole = () =>
-      summarizeAtEnd(
-        adapter,
-        http,
-        sent,
-        messages.slice(sent?.request.messages.length ?? 0),
-        options.compactionInstructions,
-        paySummary,
-      );
+      summarizeAtEnd(adapter, http, sent, messages.slice(sent?.request.messages.length ?? 0), {
+        ...(options.compactionInstructions === undefined
+          ? {}
+          : { instructions: options.compactionInstructions }),
+        onUsage: paySummary,
+      });
     return compactMessages(
       messages,
       tokenizerFor(options.provider ?? ""),

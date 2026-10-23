@@ -15,6 +15,8 @@ import {
   type ModelStatus,
   mergeCatalogWithConfig,
   resolveApiKey,
+  supportedEffortsForModel,
+  type ThinkingLevel,
 } from "@agency/providers";
 
 /** One model as the picker sees it: display data only, no adapter internals. */
@@ -29,6 +31,8 @@ export interface ProviderListModel {
   /** Provider API base URL from the catalog, for gateway-style providers. */
   apiBaseURL?: string;
   efforts?: ModelInfo["efforts"];
+  /** The levels a picker offers, in scale order; `["off"]` means the model has no reasoning control. */
+  effortLevels: ThinkingLevel[];
 }
 
 export interface ProviderListEntry {
@@ -57,6 +61,7 @@ function toListModel(model: ModelInfo): ProviderListModel {
     releaseDate: model.releaseDate,
     apiBaseURL: model.apiBaseURL,
     ...(model.efforts ? { efforts: model.efforts } : {}),
+    effortLevels: supportedEffortsForModel(model).filter((l): l is ThinkingLevel => l !== "auto"),
   };
 }
 

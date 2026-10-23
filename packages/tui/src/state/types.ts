@@ -18,8 +18,9 @@ export const MODES: readonly UiMode[] = ["build", "plan", "auto"];
 export const PERMISSION_OF: Readonly<Record<UiMode, string>> = { build: "ask", plan: "plan", auto: "auto" };
 
 export type ThemeName = "agency" | "night" | "light";
-export type Effort = "low" | "medium" | "high" | "xhigh";
-export const EFFORTS: readonly Effort[] = ["low", "medium", "high", "xhigh"];
+export type Effort = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+/** The scale in order; a model's own levels are a subset. */
+export const EFFORTS: readonly Effort[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 export type Connection = "connecting" | "online" | "offline";
 export type View = "home" | "session" | "settings";
@@ -51,6 +52,24 @@ export interface Approval {
   path?: string;
   riskTier: string;
   argsSummary: string;
+}
+
+/** The plan_exit ask: the tool name the daemon uses, and the three answers of its panel in list order. */
+export const PLAN_TOOL = "plan_exit";
+export const PLAN_CHOICES = ["auto", "manual", "keep"] as const;
+export type PlanChoice = (typeof PLAN_CHOICES)[number];
+
+/** The panel of one plan ask; `requestId` ties it to the ask, so a new ask starts fresh. */
+export interface PlanUi {
+  requestId: string;
+  /** Index in PLAN_CHOICES. */
+  at: number;
+  /** Plan rows scrolled up out of view. */
+  scroll: number;
+  /** Feedback typed on "keep planning". */
+  note: string;
+  /** How far the plan can scroll, as the view measured it; null until it was drawn. */
+  max: number | null;
 }
 
 export interface ImageChip {
@@ -134,14 +153,17 @@ export interface SessionState {
   loading: boolean;
   /** The daemon turn that runs now in this session, if any. */
   runningTurnId: string | null;
-  compacting: boolean;
+  /** A summary that is being written now: since when, and its tokens so far. */
+  compaction: { at: number; tokens: number } | null;
   queue: QueueItem[];
   status: WireStatus | null;
   /** The statusLine command output. */
   statusLine: string | null;
   todos: WireTodo[];
-  /** Blocks scrolled back from the newest (pgup). */
+  /** Rows scrolled back from the newest (wheel, pgup). */
   scroll: number;
+  /** The most rows there are to scroll back, as the view last measured them; null until it reached the oldest block. */
+  scrollMax: number | null;
   /** Index of the picked turn block, or null. */
   pickAt: number | null;
   /** Running totals of the current turn from cost_meter. */
@@ -166,6 +188,8 @@ export interface ModelRow {
   inPerMTok: number | null;
   outPerMTok: number | null;
   tags: string;
+  /** Levels the model takes, in scale order; just `off` when it has no reasoning control. */
+  efforts: readonly Effort[];
 }
 
 export interface ModelPicker {
@@ -210,7 +234,7 @@ export interface AppState {
   view: View;
   back: "home" | "session";
   theme: ThemeName;
-  /** Mode and effort of the next turn; the daemon keeps them per turn, the TUI per window. */
+  /** Mode and preferred effort of the next turn; the daemon keeps them per turn, the TUI per window. */
   mode: UiMode;
   effort: Effort;
   cols: number;
@@ -241,6 +265,7 @@ export interface AppState {
   /** Chosen for the next turn: `provider/model`. */
   defaultModel: string | null;
   review: ReviewState;
+  planUi: PlanUi;
   settings: SettingsState;
   /** Copy feedback: the key of the turn just copied. */
   copied: string | null;

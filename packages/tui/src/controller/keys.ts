@@ -10,14 +10,21 @@ import {
   canRetry,
   completion,
   current,
+  effortOf,
   flatModels,
   isHalted,
   isWorking,
   paletteItems,
+  pickerRow,
+  planAsk,
+  planMax,
+  planPanel,
+  planVisible,
   reviewFiles,
   reviewVisible,
   runningTurn,
   settingValue,
+  snapEffort,
 } from "../state/derive.ts";
 import type { Event } from "../state/events.ts";
 import { nextValue, parseText, rowsOf } from "../state/settings.ts";
@@ -26,6 +33,9 @@ import {
   type Block,
   EFFORTS,
   type Effort,
+  PLAN_CHOICES,
+  type PlanChoice,
+  type PlanUi,
   type QueueItem,
   type Turn,
 } from "../state/types.ts";
@@ -46,6 +56,9 @@ const none: Out = { events: [], effects: [] };
 const out = (events: Event[], effects: Effect[] = []): Out => ({ events, effects });
 
 const ESC_TWICE_MS = 600;
+const WHEEL_ROWS = 3;
+/** A page of the transcript: the screen less the top bar, the composer and its hint, about. */
+const page = (state: AppState): number => Math.max(1, state.rows - 10);
 const QUIT_TWICE_MS = 1500;
 
 /** The focused context first, `global` last; an open dialog hides the global keys it does not own. */
@@ -57,7 +70,8 @@ export function activeContexts(state: AppState): Context[] {
   if (state.conn === "offline") return ["offline", "global"];
   const s = current(state);
   if (state.view === "session") {
-    if (runningTurn(s)?.approval && !state.review.open) return ["approval", "global"];
+    if (runningTurn(s)?.approval && !state.review.open)
+      return [planAsk(state) ? "plan" : "approval", "global"];
     if (state.review.open) return ["review", "global"];
     if (s && s.pickAt !== null) return ["pick", "global"];
   }
@@ -89,7 +103,7 @@ function startPrompt(state: AppState, ctx: KeyContext, text: string, kind: "prom
       text,
       images: state.images,
       mode: state.mode,
-      effort: state.effort,
+      effort: effortOf(state, state.bySession[sessionId]?.model ?? state.defaultModel),
       model: state.bySession[sessionId]?.model ?? state.defaultModel,
       create,
     },
@@ -119,7 +133,7 @@ export function sendQueued(state: AppState, ctx: KeyContext, item: QueueItem): O
         text: item.text,
         images: item.images,
         mode: state.mode,
-        effort: state.effort,
+        effort: effortOf(state, state.bySession[sessionId]?.model ?? state.defaultModel),
         model: state.bySession[sessionId]?.model ?? state.defaultModel,
         create: false,
       },
@@ -218,6 +232,72 @@ function approve(state: AppState, decision: "once" | "always" | "reject"): Out {
     : out([event], [respond]);
 }
 
+/** Answers the plan ask. Keeping the plan rejects without cancelling: the model gets the words and plans on. */
+function planAnswer(state: AppState, choice: PlanChoice): Out {
+  const s = current(state);
+  const t = runningTurn(s);
+  const ask = planAsk(state);
+  if (!s || !t || !ask || s.runningTurnId === null) return none;
+  const base = { sessionId: s.id, turnId: t.id, requestId: ask.requestId };
+  const respond = { type: "respond", sessionId: s.id, requestId: ask.requestId } as const;
+  if (choice === "keep") {
+    const message = planPanel(state, ask.requestId).note.trim();
+    return out(
+      [{ type: "approval_answered", ...base, decision: "reject", keep: true }],
+      [{ ...respond, decision: "reject", ...(message ? { message } : {}) }],
+    );
+  }
+  const mode = choice === "auto" ? "auto" : "build";
+  return out(
+    [
+      { type: "approval_answered", ...base, decision: "once" },
+      { type: "mode_set", mode },
+    ],
+    [{ ...respond, decision: "once", mode: choice === "auto" ? "auto" : "ask" }],
+  );
+}
+
+/** The plan panel's own state: a patch for the ask on screen. */
+function planUi(state: AppState, patch: Partial<Omit<PlanUi, "requestId">>): Out {
+  const ask = planAsk(state);
+  return ask ? out([{ type: "plan_ui", requestId: ask.requestId, patch }]) : none;
+}
+
+/** Typing or deleting on "keep planning": the note changes and the cursor moves to that answer. */
+function planNote(state: AppState, edit: (note: string) => string): Out {
+  const ask = planAsk(state);
+  if (!ask) return none;
+  const note = planPanel(state, ask.requestId).note;
+  const next = edit(note);
+  return next === note ? none : planUi(state, { at: PLAN_CHOICES.indexOf("keep"), note: next });
+}
+
+function planKey(state: AppState, command: Command): Out {
+  const ask = planAsk(state);
+  if (!ask) return none;
+  const ui = planPanel(state, ask.requestId);
+  const n = PLAN_CHOICES.length;
+  switch (command) {
+    case "plan.prev":
+      return planUi(state, { at: (ui.at + n - 1) % n });
+    case "plan.next":
+      return planUi(state, { at: (ui.at + 1) % n });
+    case "plan.run":
+      return planAnswer(state, PLAN_CHOICES[ui.at] as PlanChoice);
+    case "plan.auto":
+      return planAnswer(state, "auto");
+    case "plan.manual":
+      return planAnswer(state, "manual");
+    case "plan.keep":
+      return planAnswer(state, "keep");
+    default: {
+      const step = Math.max(1, planVisible(state.rows) - 1);
+      const to = ui.scroll + (command === "plan.pageDown" ? step : -step);
+      return planUi(state, { scroll: Math.max(0, Math.min(planMax(state, ask.requestId), to)) });
+    }
+  }
+}
+
 function overlayRun(state: AppState): Out {
   if (state.model.open) {
     const m = flatModels(state)[state.model.at];
@@ -313,6 +393,7 @@ function run(state: AppState, command: Command, ctx: KeyContext): Out {
     case "cursor.wordRight":
       return out([{ type: "edit", edit: { op: "wordRight" } }]);
     case "delete.back":
+      if (planAsk(state)) return planNote(state, (note) => [...note].slice(0, -1).join(""));
       if (state.palette.open)
         return out([{ type: "palette_query", q: [...state.palette.query].slice(0, -1).join("") }]);
       if (state.model.open)
@@ -329,9 +410,9 @@ function run(state: AppState, command: Command, ctx: KeyContext): Out {
     case "delete.toEnd":
       return out([{ type: "edit", edit: { op: "toEnd" } }]);
     case "scroll.pageUp":
-      return out([{ type: "scroll", d: 1 }]);
+      return out([{ type: "scroll", d: page(state) }]);
     case "scroll.pageDown":
-      return out([{ type: "scroll", d: -1 }]);
+      return out([{ type: "scroll", d: -page(state) }]);
     case "scroll.latest":
       return out([{ type: "scroll_latest" }]);
     case "completion.next":
@@ -378,6 +459,15 @@ function run(state: AppState, command: Command, ctx: KeyContext): Out {
       return approve(state, "always");
     case "approve.deny":
       return approve(state, "reject");
+    case "plan.prev":
+    case "plan.next":
+    case "plan.run":
+    case "plan.auto":
+    case "plan.manual":
+    case "plan.keep":
+    case "plan.pageUp":
+    case "plan.pageDown":
+      return planKey(state, command);
     case "review.close":
       return out([{ type: "review_close" }]);
     case "review.commit":
@@ -450,9 +540,11 @@ function run(state: AppState, command: Command, ctx: KeyContext): Out {
     case "overlay.left":
     case "overlay.right": {
       if (!state.model.open) return none;
-      const i = EFFORTS.indexOf(state.effort);
-      const d = command === "overlay.right" ? 1 : EFFORTS.length - 1;
-      return out([{ type: "effort_set", effort: EFFORTS[(i + d) % EFFORTS.length] as Effort }]);
+      const levels = pickerRow(state)?.efforts ?? EFFORTS;
+      if (levels.length < 2) return none;
+      const i = levels.indexOf(snapEffort(state.effort, levels));
+      const d = command === "overlay.right" ? 1 : levels.length - 1;
+      return out([{ type: "effort_set", effort: levels[(i + d) % levels.length] as Effort }]);
     }
     case "connection.retry":
       return out([], [{ type: "reconnect" }]);
@@ -475,6 +567,12 @@ export function dispatchKey(state: AppState, key: KeyEvent, ctx: KeyContext): Ou
     !key.alt
   )
     return out([{ type: "ac_close" }]);
+  // Once feedback is started every character is text, digits too; before that 1, 2 and 3 answer.
+  const ask = contexts[0] === "plan" ? planAsk(state) : null;
+  if (ask && key.text !== undefined && planPanel(state, ask.requestId).note !== "") {
+    const text = key.text;
+    return planNote(state, (note) => note + text);
+  }
   const local = resolveKey(
     contexts.filter((c) => c !== "global"),
     key,
@@ -485,6 +583,13 @@ export function dispatchKey(state: AppState, key: KeyEvent, ctx: KeyContext): Ou
     return state.palette.open && !PALETTE_GLOBALS.has(global) ? none : run(state, global, ctx);
   if (key.text === undefined) return none;
   // Typed text goes to whatever takes input now.
+  // A stray y or n must not become feedback: only the "keep planning" row takes text.
+  if (ask) {
+    const text = key.text;
+    return planPanel(state, ask.requestId).at === PLAN_CHOICES.indexOf("keep")
+      ? planNote(state, (note) => note + text)
+      : none;
+  }
   if (contexts[0] === "settingsEdit" && state.settings.edit !== null)
     return out([{ type: "settings_edit", text: state.settings.edit + key.text }]);
   if (state.model.open) return out([{ type: "model_query", q: state.model.q + key.text }]);
@@ -492,6 +597,18 @@ export function dispatchKey(state: AppState, key: KeyEvent, ctx: KeyContext): Ou
   if (contexts[0] === "composer" || contexts[0] === "completion")
     return out([{ type: "edit", edit: { op: "insert", text: key.text } }]);
   return none;
+}
+
+/** One wheel notch: the diff under review, or the transcript; dialogs and other views ignore it. */
+export function dispatchWheel(state: AppState, d: 1 | -1): Out {
+  if (state.model.open || state.palette.open || state.view !== "session") return none;
+  if (!state.review.open) return out([{ type: "scroll", d: d * WHEEL_ROWS }]);
+  const files = reviewFiles(state);
+  const f = files[Math.min(state.review.file, Math.max(0, files.length - 1))];
+  const max = Math.max(0, (f?.lines.length ?? 0) - reviewVisible(state));
+  return out([
+    { type: "review_scroll", to: Math.max(0, Math.min(max, state.review.scroll - d * WHEEL_ROWS)) },
+  ]);
 }
 
 const MAX_PASTE = 1_000_000;
@@ -503,6 +620,7 @@ export function dispatchPaste(state: AppState, text: string): Out {
   if (state.palette.open)
     return out([{ type: "palette_query", q: state.palette.query + clean.replace(/\n/g, " ") }]);
   const contexts = activeContexts(state);
+  if (contexts[0] === "plan") return planNote(state, (note) => note + clean.replace(/\s*\n\s*/g, " "));
   if (contexts[0] !== "composer" && contexts[0] !== "completion") return none;
   // A terminal with an image on the clipboard pastes nothing: that is the person asking for the image.
   if (text === "") return out([], [{ type: "paste_image" }]);

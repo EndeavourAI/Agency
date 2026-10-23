@@ -29,7 +29,10 @@ export function styled(row: Row): StyledText {
     text: s.t,
     ...(s.fg === undefined ? {} : { fg: toRgba(s.fg) }),
     ...(s.bg === undefined ? {} : { bg: toRgba(s.bg) }),
-    attributes: (s.b ? TextAttributes.BOLD : 0) | (s.i ? TextAttributes.ITALIC : 0),
+    attributes:
+      (s.b ? TextAttributes.BOLD : 0) |
+      (s.i ? TextAttributes.ITALIC : 0) |
+      (s.s ? TextAttributes.STRIKETHROUGH : 0),
   }));
   return new StyledText(chunks);
 }

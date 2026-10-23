@@ -1,6 +1,6 @@
 /** The two dialogs that float over the screen: the palette (ctrl+p) and the model picker. */
 import { padEnd, stringWidth, truncate, wrap } from "../render-model/width.ts";
-import { flatModels, modelGroups, paletteItems } from "../state/derive.ts";
+import { flatModels, modelGroups, paletteItems, pickerRow, snapEffort } from "../state/derive.ts";
 import { formatCost, formatTokens } from "../state/format.ts";
 import type { AppState } from "../state/types.ts";
 import { EFFORTS } from "../state/types.ts";
@@ -189,13 +189,15 @@ export function modelRows(state: AppState, c: Palette, cols: number, room: numbe
   }
   body.push({ row: [] });
   const effort: Row = [{ t: "effort", fg: c.muted }, { t: " " }];
-  const levels: Seg[] = [];
-  EFFORTS.forEach((e, i) => {
-    if (i) levels.push({ t: " " });
-    levels.push(
-      e === state.effort ? { t: ` ${e} `, fg: c.text, bg: c.element, b: true } : { t: ` ${e} `, fg: c.muted },
-    );
-  });
+  const offered = pickerRow(state)?.efforts ?? EFFORTS;
+  const shown = snapEffort(state.effort, offered);
+  const levels: Seg[] =
+    offered.length < 2
+      ? [{ t: "no reasoning control", fg: c.muted }]
+      : offered.flatMap((e, i) => [
+          ...(i ? [{ t: " " }] : []),
+          e === shown ? { t: ` ${e} `, fg: c.text, bg: c.element, b: true } : { t: ` ${e} `, fg: c.muted },
+        ]);
   const lines = windowed(pinned, body, room - 2);
   lines.push({ row: spread(w - 4, effort, levels, undefined, 1) });
   lines.push({ row: [] });

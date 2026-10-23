@@ -80,6 +80,28 @@ const sentRequests = new Map<string, { sent: SentRequest; tip: string | null }>(
 const SENT_SESSIONS = 16;
 
 /** The summarizer of a session's compaction: its own model writes the summary. With no key, the offline one. */
+/** Counts the streamed text of a summary as tokens (4 characters each) and reports it at most every 250 ms. */
+export function compactionProgress(report: (tokens: number) => void): {
+  onText: (text: string) => void;
+  reset: () => void;
+} {
+  let chars = 0;
+  let last = 0;
+  return {
+    onText: (text) => {
+      chars += text.length;
+      const now = Date.now();
+      if (now - last < 250) return;
+      last = now;
+      report(Math.ceil(chars / 4));
+    },
+    reset: () => {
+      chars = 0;
+      last = 0;
+    },
+  };
+}
+
 export function sessionSummarizer(
   ctx: DaemonContext,
   provider: string,
@@ -87,6 +109,7 @@ export function sessionSummarizer(
   /** Instructions for this one summary (`/compact <session> <text>`): they go after those of the config. */
   extraInstructions?: string,
   onUsage?: (usage: Usage) => void,
+  onText?: (text: string) => void,
 ): Summarizer {
   let inner: Summarizer | undefined;
   const wanted = [ctx.config.compactionInstructions, extraInstructions].filter(Boolean).join("\n");
@@ -109,6 +132,7 @@ export function sessionSummarizer(
             ...(maxTokens ? { maxTokens } : {}),
             ...(wanted ? { instructions: wanted } : {}),
             ...(onUsage ? { onUsage } : {}),
+            ...(onText ? { onText } : {}),
           })
         : async (text) => summarizeTranscript(text);
     }
@@ -374,13 +398,24 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
     const payCompaction = (usage: Usage): void => {
       compactionUsage = addUsage(compactionUsage, usage);
     };
-    const summarizeAll = sessionSummarizer(ctx, p.provider, p.model, undefined, payCompaction);
-    // The summary takes a model call: the client shows that the session compacts meanwhile. The end event
-    // follows compact(), which knows what was replaced.
+    // The summary takes a model call: the client shows that the session compacts meanwhile, and how much of the
+    // summary is written. The end event follows compact(), which knows what was replaced.
     let compacting = false;
+    const progress = compactionProgress((tokens) =>
+      broadcast(`turn.${turnId}`, { type: "compaction", phase: "progress", sessionId: p.sessionId, tokens }),
+    );
+    const summarizeAll = sessionSummarizer(
+      ctx,
+      p.provider,
+      p.model,
+      undefined,
+      payCompaction,
+      progress.onText,
+    );
     const compactionStart = (): void => {
       if (compacting) return;
       compacting = true;
+      progress.reset();
       broadcast(`turn.${turnId}`, { type: "compaction", phase: "start", sessionId: p.sessionId });
     };
     const compactionEnd = (outcome?: CompactionResult): void => {
@@ -418,8 +453,11 @@ export function registerSessionHandlers(handlers: Record<string, MethodHandler>,
         ctx.http,
         known.sent,
         store.messagesFor(entries, from).slice(prefix),
-        ctx.config.compactionInstructions,
-        payCompaction,
+        {
+          ...(ctx.config.compactionInstructions ? { instructions: ctx.config.compactionInstructions } : {}),
+          onUsage: payCompaction,
+          onText: progress.onText,
+        },
       );
     };
     if (p.goal !== undefined) await setSessionGoal(ctx, p.sessionId, p.goal);

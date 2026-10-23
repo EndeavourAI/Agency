@@ -1,4 +1,11 @@
-import { dispatchKey, dispatchPaste, drainQueue, type Effect, type Out } from "../src/controller/index.ts";
+import {
+  dispatchKey,
+  dispatchPaste,
+  dispatchWheel,
+  drainQueue,
+  type Effect,
+  type Out,
+} from "../src/controller/index.ts";
 import { InputDecoder } from "../src/input/keys.ts";
 import { type AppState, type Event, initialState, reduce } from "../src/state/index.ts";
 
@@ -31,6 +38,7 @@ export class Driver {
     for (const ev of events) {
       if (ev.type === "key") this.run(dispatchKey(this.state, ev, { now: this.now, newId: this.newId }));
       else if (ev.type === "paste") this.run(dispatchPaste(this.state, ev.text));
+      else if (ev.type === "wheel") this.run(dispatchWheel(this.state, ev.d));
     }
   }
 
@@ -63,6 +71,8 @@ export const KEY = {
   left: "\x1b[D",
   pgup: "\x1b[5~",
   pgdn: "\x1b[6~",
+  wheelUp: "\x1b[<64;10;5M",
+  wheelDown: "\x1b[<65;10;5M",
   ctrlEnd: "\x1b[1;5F",
   ctrlComma: "\x1b[44;5u",
   ctrlEnterKitty: "\x1b[13;5u",

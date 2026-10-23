@@ -19,7 +19,13 @@ const TICK_MS = 140;
 /** Something is animating now: the logo on the start screen, a turn that runs here, or another session that runs. */
 function animating(s: AppState): boolean {
   if (s.view === "home") return showLogo(s) || s.liveSessions.length > 0;
-  return runningTurn(current(s)) !== undefined || othersRunning(s) || (current(s)?.loading ?? false);
+  const x = current(s);
+  return (
+    runningTurn(x) !== undefined ||
+    othersRunning(s) ||
+    (x?.loading ?? false) ||
+    (x?.compaction ?? null) !== null
+  );
 }
 
 export async function mountApp(renderer: CliRenderer, runtime: Runtime, o: MountOptions): Promise<void> {
@@ -30,7 +36,9 @@ export async function mountApp(renderer: CliRenderer, runtime: Runtime, o: Mount
     const unsubscribe = runtime.subscribe((s) => setState(() => s));
     onCleanup(unsubscribe);
     const live = createMemo(() => !o.reducedMotion && animating(state()));
-    const turnRuns = createMemo(() => runningTurn(current(state())) !== undefined);
+    const turnRuns = createMemo(
+      () => runningTurn(current(state())) !== undefined || (current(state())?.compaction ?? null) !== null,
+    );
     createEffect(() => {
       if (!live()) return;
       const t = setInterval(() => setTick((n) => n + 1), TICK_MS);
@@ -44,6 +52,16 @@ export async function mountApp(renderer: CliRenderer, runtime: Runtime, o: Mount
     });
     const pal = createMemo(() => palette(state().theme, o.truecolor ?? isTruecolor()));
     createEffect(() => renderer.setBackgroundColor(pal().bg));
-    return <App state={state} palette={pal} tick={tick} now={now} version={o.version} />;
+    return (
+      <App
+        state={state}
+        palette={pal}
+        tick={tick}
+        now={now}
+        version={o.version}
+        onScrollMax={(sessionId, n) => runtime.dispatch([{ type: "scroll_max", sessionId, n }])}
+        onPlanMax={(requestId, max) => runtime.dispatch([{ type: "plan_ui", requestId, patch: { max } }])}
+      />
+    );
   }, renderer);
 }

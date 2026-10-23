@@ -122,8 +122,8 @@ async function start(steps: (Step | undefined)[]) {
     }
     throw new Error("no approval_requested");
   };
-  const respond = (requestId: string | undefined, decision: string) =>
-    client.call("approval_respond", { requestId, decision });
+  const respond = (requestId: string | undefined, decision: string, extra: Record<string, unknown> = {}) =>
+    client.call("approval_respond", { requestId, decision, ...extra });
   return { requests, ran, workspaceRoot, send, events, approval, respond };
 }
 
@@ -214,5 +214,52 @@ describe("plan permission mode", () => {
     const messages = JSON.stringify(result.messages);
     expect(messages).toContain("The plan was not approved");
     expect(messages).toContain("This session is in plan mode");
+  }, 20_000);
+
+  test("plan_exit rejected with a message: the model gets the person's words and plan mode stays", async () => {
+    const t = await start([{ name: "plan_exit", input: { plan: PLAN } }]);
+    const seen = t.events("p6");
+    const run = t.send("p6", "plan");
+    const ask = await t.approval(seen);
+    await t.respond(ask.requestId, "reject", { message: "  write b.txt instead  " });
+    const result = await run;
+    const messages = JSON.stringify(result.messages);
+    expect(messages).toContain("The user wants changes to the plan: write b.txt instead\\n");
+    expect(messages).not.toContain("The plan was not approved");
+    expect(seen.some((e) => e.type === "mode_changed")).toBe(false);
+    expect(result.permissionMode).toBe("plan");
+  }, 20_000);
+
+  test('plan_exit approved with mode "ask": the next write asks the person again', async () => {
+    const t = await start([
+      { name: "plan_exit", input: { plan: PLAN } },
+      { name: "write", input: { path: "a.txt" } },
+    ]);
+    const seen = t.events("p7");
+    const run = t.send("p7", "plan");
+    await t.respond((await t.approval(seen)).requestId, "once", { mode: "ask" });
+    const deadline = Date.now() + 10_000;
+    while (seen.filter((e) => e.type === "approval_requested").length < 2 && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 25));
+    const asks = seen.filter((e) => e.type === "approval_requested");
+    expect(asks.map((e) => e.request?.tool)).toEqual(["plan_exit", "write"]);
+    expect(existsSync(join(t.workspaceRoot, "a.txt"))).toBe(false);
+    await t.respond(asks[1]?.requestId, "once");
+    const result = await run;
+    expect(seen.filter((e) => e.type === "mode_changed")).toEqual([{ type: "mode_changed", mode: "ask" }]);
+    expect(result.permissionMode).toBe("ask");
+    expect(existsSync(join(t.workspaceRoot, "a.txt"))).toBe(true);
+  }, 20_000);
+
+  test("an unknown mode in the answer is refused and leaves the ask open", async () => {
+    const t = await start([{ name: "plan_exit", input: { plan: PLAN } }]);
+    const seen = t.events("p8");
+    const run = t.send("p8", "plan");
+    const ask = await t.approval(seen);
+    await expect(t.respond(ask.requestId, "once", { mode: "allow-all" })).rejects.toThrow(
+      /invalid approval mode/,
+    );
+    await t.respond(ask.requestId, "reject");
+    expect((await run).permissionMode).toBe("plan");
   }, 20_000);
 });

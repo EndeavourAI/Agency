@@ -2,12 +2,14 @@
  * The transcript as rows: a calm ledger. A turn is the prompt on a steel band, its steps as one-liners, the answer, and one
  * closing row. Everything here is a pure function of a block, a palette and a width.
  */
-import { visibleBlocks } from "../render-model/markdown.ts";
+import { type MdBlock, visibleBlocks } from "../render-model/markdown.ts";
 import { padEnd, stringWidth, wrap } from "../render-model/width.ts";
 import { runningThought, stepView, type Tone, turnFoot, turnStamp, youText } from "../state/derive.ts";
+import { formatTokens } from "../state/format.ts";
 import type { EventBlock, ShellBlock, Turn } from "../state/types.ts";
 import type { Palette } from "../term/themes.ts";
-import { type Color, clip, fill, type Row, type Seg, spread, words, wrapWords } from "./rows.ts";
+import { blockRows } from "./markdown.ts";
+import { type Color, clip, fill, type Row, type Seg, spread } from "./rows.ts";
 
 export interface LedgerCtx {
   c: Palette;
@@ -64,6 +66,32 @@ export function scrollRow(newer: string, x: LedgerCtx): Row {
 }
 
 /** A prompt that waits its turn: a dashed row with the reason on the right. */
+/** What the compaction prompt asks a whole summary to stay under: the bar fills toward it. */
+const SUMMARY_TOKENS = 6000;
+
+/** A summary being written: the spinner, a bar of its tokens so far against the size it aims at, and the time. */
+export function compactionRow(c: { at: number; tokens: number }, x: LedgerCtx): Row {
+  const barW = 20;
+  const filled = Math.round(Math.min(0.99, c.tokens / SUMMARY_TOKENS) * barW);
+  const what = c.tokens === 0 ? "reading the conversation" : `${formatTokens(c.tokens)} of ~6K tokens`;
+  const secs = Math.max(0, Math.floor((x.now - c.at) / 1000));
+  return spread(
+    x.w,
+    [
+      { t: `${SPIN[x.tick % SPIN.length]} `, fg: x.c.brand },
+      { t: "Compacting conversation", fg: x.c.text, b: true },
+      { t: `  ${what}`, fg: x.c.muted },
+    ],
+    [
+      { t: "━".repeat(filled), fg: x.c.brand },
+      { t: "─".repeat(barW - filled), fg: x.c.dim },
+      { t: `  ${secs}s`, fg: x.c.muted },
+    ],
+    undefined,
+    2,
+  );
+}
+
 export function queuedRow(text: string, note: string, x: LedgerCtx): Row {
   const edge: Seg = { t: "┆", fg: x.c.dim };
   const inner = spread(x.w - 4, [{ t: text, fg: x.c.muted }], [{ t: note, fg: x.c.muted }], undefined, 2);
@@ -111,26 +139,17 @@ export function shellRows(b: ShellBlock, x: LedgerCtx): Row[] {
   return rows;
 }
 
-function answerRows(t: Turn, x: LedgerCtx, hasAbove: boolean): Row[] {
-  const bw = Math.min(MAX_PROSE, x.w - 3);
-  const c = x.c;
+/** Markdown blocks as rows: prose `bw` cells wide, tables up to `full`. */
+export function mdRows(list: readonly MdBlock[], bw: number, full: number, c: Palette): Row[] {
   const rows: Row[] = [];
+  for (const [i, b] of list.entries()) rows.push(...blockRows(b, i === 0, bw, full, c));
+  return rows;
+}
+
+function answerRows(t: Turn, x: LedgerCtx, hasAbove: boolean): Row[] {
+  const c = x.c;
   const list = visibleBlocks(t.answer);
-  list.forEach((b, i) => {
-    if (b.kind === "text") {
-      if (b.gap && i > 0) rows.push(blank);
-      const parts: Seg[] = b.parts.map((p) =>
-        p.code ? { t: ` ${p.t} `, fg: c.text, bg: c.element } : { t: p.t, fg: c.text },
-      );
-      const lines = wrapWords(words(parts), b.li ? bw - 2 : bw);
-      for (const [j, l] of lines.entries())
-        rows.push(b.li ? [{ t: j === 0 ? b.bullet : "  ", fg: c.text }, ...l] : l);
-    } else {
-      rows.push(blank);
-      const lines = b.lines.length ? b.lines : [""];
-      for (const l of lines) rows.push(fill([{ t: ` ${l}`, fg: c.soft }], bw, c.panel));
-    }
-  });
+  const rows = mdRows(list, Math.min(MAX_PROSE, x.w - 3), x.w - 3, c);
   if (t.status === "running" && !x.offline && rows.length) {
     const last = rows[rows.length - 1] as Row;
     const lastBlock = list[list.length - 1];

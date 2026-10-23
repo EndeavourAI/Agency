@@ -1,5 +1,15 @@
 import type { SlashEntry } from "../input/completion.ts";
-import type { Connection, Effort, ImageChip, ModelRow, QueueItem, ThemeName, UiMode, View } from "./types.ts";
+import type {
+  Connection,
+  Effort,
+  ImageChip,
+  ModelRow,
+  PlanUi,
+  QueueItem,
+  ThemeName,
+  UiMode,
+  View,
+} from "./types.ts";
 import type {
   WireEntry,
   WireEvent,
@@ -69,6 +79,14 @@ export type DaemonEvent =
       at: number;
     }
   | { type: "turn_event"; sessionId: string; turnId: string; event: WireEvent; at: number }
+  /** A /compact, which has no turn: its progress comes on the sessions stream. */
+  | {
+      type: "compaction_seen";
+      sessionId: string;
+      phase: "start" | "progress" | "end";
+      tokens?: number;
+      at: number;
+    }
   | {
       type: "turn_finished";
       sessionId: string;
@@ -88,6 +106,8 @@ export type DaemonEvent =
       turnId: string;
       requestId: string;
       decision: "once" | "always" | "reject";
+      /** A plan not approved: the turn goes on planning, so it is not denied. */
+      keep?: boolean;
     }
   | { type: "prompt_queued"; sessionId: string; item: QueueItem }
   | { type: "queue_shifted"; sessionId: string; id: string }
@@ -113,6 +133,7 @@ export type UiEvent =
   | { type: "new_session" }
   | { type: "mode_cycle"; back?: boolean }
   | { type: "mode_set"; mode: UiMode }
+  | { type: "plan_ui"; requestId: string; patch: Partial<Omit<PlanUi, "requestId">> }
   | { type: "palette_toggle" }
   | { type: "palette_close" }
   | { type: "palette_query"; q: string }
@@ -134,6 +155,7 @@ export type UiEvent =
   | { type: "thinking_toggle" }
   | { type: "copied"; key: string | null }
   | { type: "scroll"; d: number }
+  | { type: "scroll_max"; sessionId: string; n: number | null }
   | { type: "scroll_latest" }
   | { type: "edit"; edit: ComposerOp }
   | { type: "ac_move"; d: number; n: number }

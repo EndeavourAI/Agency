@@ -6,6 +6,30 @@ yet guarantee a stable versioning cadence, but versions are SemVer.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-23
+
+### Added
+
+- **Auto-update**: a global npm install updates itself in the background, as Claude Code does: once a day it looks for
+  a newer release and, once the platform package of this machine is on the registry, runs npm install for it. The next
+  start runs the new version. `AGENCY_NO_UPDATE_CHECK` turns the check off.
+- **Plan mode**: a finished plan opens a panel with the plan as markdown and three answers: go on and accept edits, go on
+  and ask for each edit, or keep planning with what to change. Keeping planning does not stop the turn. The composer
+  shows when plan mode is on.
+- **Compaction progress**: while a summary is written, the transcript shows a row with its tokens so far against the
+  size it aims at, a bar and the seconds, for a compaction in a turn and for /compact.
+- **Markdown**: answers draw tables (aligned, wrapped to the width), headings, bold, italic, strikethrough, links,
+  numbered and nested lists, task lists, quotes and rules.
+
+### Changed
+
+- **Scrolling**: the mouse wheel scrolls the transcript by rows; the arrow keys stay on the prompt history. Page up and
+  page down move a page of rows, so the top of a long answer can be read. Selecting text takes shift and drag.
+- **Effort**: the model picker offers only the effort levels of the model under the cursor; a model without one of them
+  uses the nearest, and the chosen level comes back with a model that has it.
+- **Startup**: a new daemon starts in about 60 ms instead of about 2 s in a large folder: it no longer reads every test
+  file at start.
+
 ## [0.2.0] - 2026-10-22
 
 ### Release

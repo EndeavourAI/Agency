@@ -266,8 +266,8 @@ export function attachTestGuard(bus: EventBus, root = process.cwd()): () => void
   const before = new Map<string, Map<string, Scanned>>();
   const reminded = new Set<string>();
   // Later scans only stat the files: the first full read took 318 ms on a repository with 365 test files.
+  // No warm scan at start: it blocked the new daemon for 1.9 s in a home folder, before the first client connected.
   const cache = new Map<string, Scanned & { stamp: string }>();
-  const warm = setTimeout(() => scanTests(root, cache), 0);
   const offBefore = bus.on("tool.execute.before", (payload) => {
     const p = payload as AgencyEvents["tool.execute.before"];
     if (p.turnId !== undefined && !before.has(p.turnId)) before.set(p.turnId, scanTests(root, cache));
@@ -290,7 +290,6 @@ export function attachTestGuard(bus: EventBus, root = process.cwd()): () => void
     throw new HookBlock(testGuardReminder(changes));
   });
   return () => {
-    clearTimeout(warm);
     offBefore();
     offStop();
   };

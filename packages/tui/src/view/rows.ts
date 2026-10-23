@@ -12,6 +12,7 @@ export interface Seg {
   bg?: Color;
   b?: boolean;
   i?: boolean;
+  s?: boolean;
 }
 
 export type Row = Seg[];

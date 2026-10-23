@@ -15,6 +15,8 @@ export interface ModelAsk {
   instructions?: string;
   /** Gets the usage of each request: a summary costs as much as a turn's request, and the turn pays for it. */
   onUsage?: (usage: Usage) => void;
+  /** Gets each piece of the reply as it streams: a client shows how far a summary has got. */
+  onText?: (text: string) => void;
 }
 
 /** One request with no tools, for the harness's own questions. Undefined for a failed request or a reply with no text. */
@@ -30,7 +32,7 @@ export function askModel(opts: ModelAsk, system: string, text: string): Promise<
       maxTokens: opts.maxTokens ?? 8192,
       ...(opts.signal === undefined ? {} : { signal: opts.signal }),
     },
-    opts.onUsage,
+    opts,
   );
 }
 
@@ -38,12 +40,15 @@ async function replyText(
   adapter: ProviderAdapter,
   http: HttpClient,
   request: ProviderRequest,
-  onUsage?: (usage: Usage) => void,
+  { onUsage, onText }: Pick<ModelAsk, "onUsage" | "onText"> = {},
 ): Promise<string | undefined> {
   try {
     let reply = "";
     for await (const event of adapter.stream(request, http)) {
-      if (event.type === "text_delta") reply += event.text;
+      if (event.type === "text_delta") {
+        reply += event.text;
+        onText?.(event.text);
+      }
       if (event.type === "message_stop" && event.usage) onUsage?.(event.usage);
     }
     return reply.trim() || undefined;
@@ -71,12 +76,11 @@ export function summarizeAtEnd(
   http: HttpClient,
   sent: SentRequest | undefined,
   extra: Message[],
-  instructions?: string,
-  onUsage?: (usage: Usage) => void,
-  now = Date.now(),
+  o: Pick<ModelAsk, "instructions" | "onUsage" | "onText"> & { now?: number } = {},
 ): Promise<string | undefined> {
+  const now = o.now ?? Date.now();
   if (!sent?.cached || now - sent.at > WARM_MS) return Promise.resolve(undefined);
-  const wanted = instructions?.trim();
+  const wanted = o.instructions?.trim();
   const prompt: ContentBlock = {
     type: "text",
     text: wanted
@@ -90,7 +94,7 @@ export function summarizeAtEnd(
     last?.role === "user"
       ? [...messages.slice(0, -1), { ...last, content: [...last.content, prompt] }]
       : [...messages, { role: "user", content: [prompt] }];
-  return replyText(adapter, http, { ...sent.request, messages: asked }, onUsage);
+  return replyText(adapter, http, { ...sent.request, messages: asked }, o);
 }
 
 /**

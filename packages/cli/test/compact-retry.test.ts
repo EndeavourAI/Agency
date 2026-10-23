@@ -218,12 +218,18 @@ describe("compact-and-retry branch", () => {
     expect(turnInputs[0]).not.toContain("history 0");
   }, 15000);
 
-  test("the compact command compacts a session that is far below its window", async () => {
+  test("the compact command compacts a session that is far below its window, and says so on the sessions stream", async () => {
     const { client, sessionsDir, summaryInputs } = await summarySetup();
+    const seen: { type: string; phase?: string; tokens?: number; replaced?: number }[] = [];
+    client.on("sessions", (p) => seen.push(p as (typeof seen)[number]));
+    client.subscribe("sessions");
     const out = (await client.call("command_run", { name: "compact", args: "s1 anthropic/test-model" })) as {
       data: { compacted: boolean; tipId: string };
     };
     expect(out.data.compacted).toBe(true);
+    const phases = seen.filter((p) => p.type === "compaction");
+    expect(phases.map((p) => p.phase)).toEqual(["start", "progress", "end"]);
+    expect(phases[1]?.tokens).toBeGreaterThan(0);
     expect(summaryInputs).toHaveLength(1);
     const store = new SessionStore(sessionsDir);
     expect(JSON.stringify(store.messagesFor(store.load("s1"), out.data.tipId))).toContain("MODEL-SUMMARY");

@@ -22,7 +22,7 @@ import { resolveConfiguredShell } from "@agency/tools";
 import { sandboxWindowsShell } from "../session-scopes.ts";
 import { type DaemonContext, hookModel } from "../types.ts";
 import { setSessionGoal } from "./goal.ts";
-import { sessionSummarizer } from "./session.ts";
+import { compactionProgress, sessionSummarizer } from "./session.ts";
 
 export interface CommandRunResult {
   name: string;
@@ -144,22 +144,48 @@ const BUILTINS: Record<string, BuiltinFn> = {
       (slash > 0 ? model.slice(0, slash) : undefined) ??
       ctx.providers[model]?.family ??
       "anthropic";
-    const outcome = await compact(
-      ctx.todoStore,
-      sessionId,
-      tip,
-      tokenizerFor(family),
-      {
-        contextWindow: (ref && ctx.catalogModel(ref.provider, ref.model)?.contextWindow) || 200_000,
-        ...(ctx.config.compactionLimit ? { limitTokens: ctx.config.compactionLimit } : {}),
-      },
-      ref
-        ? sessionSummarizer(ctx, ref.provider, ref.model, instructions || undefined)
-        : async (text) => summarizeTranscript(text),
-      4,
-      // The user asked for it: the size of the session does not decide.
-      { force: true, trigger: "manual" },
-    );
+    // A /compact has no turn stream: its progress goes where every client listens, the sessions stream.
+    const send = (event: Record<string, unknown>): void =>
+      ctx.broadcast("sessions", { type: "compaction", sessionId, ...event });
+    const progress = compactionProgress((tokens) => send({ phase: "progress", tokens }));
+    send({ phase: "start" });
+    let outcome: Awaited<ReturnType<typeof compact>> | undefined;
+    try {
+      outcome = await compact(
+        ctx.todoStore,
+        sessionId,
+        tip,
+        tokenizerFor(family),
+        {
+          contextWindow: (ref && ctx.catalogModel(ref.provider, ref.model)?.contextWindow) || 200_000,
+          ...(ctx.config.compactionLimit ? { limitTokens: ctx.config.compactionLimit } : {}),
+        },
+        ref
+          ? sessionSummarizer(
+              ctx,
+              ref.provider,
+              ref.model,
+              instructions || undefined,
+              undefined,
+              progress.onText,
+            )
+          : async (text) => summarizeTranscript(text),
+        4,
+        // The user asked for it: the size of the session does not decide.
+        { force: true, trigger: "manual" },
+      );
+    } finally {
+      send({
+        phase: "end",
+        ...(outcome?.compacted
+          ? {
+              replaced: outcome.replaced,
+              tokensBefore: outcome.tokensBefore,
+              tokensAfter: outcome.tokensAfter,
+            }
+          : {}),
+      });
+    }
     return {
       text: outcome.compacted
         ? `compacted ${sessionId} to ${outcome.tipId}`

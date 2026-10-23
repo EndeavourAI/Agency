@@ -67,13 +67,17 @@ describe("Scheduler retry behavior", () => {
     };
 
     expect(await attemptsFor(ErrorCode.TRANSIENT)).toBe(4);
-    const started = Date.now();
-    expect(await attemptsFor(ErrorCode.RATE_LIMIT)).toBeGreaterThan(7);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(190);
+    // Retried until the 200 ms window ends, not four times: how many attempts fit depends on the timers of the machine.
+    const windowed = async (code: ErrorCode): Promise<void> => {
+      const started = Date.now();
+      expect(await attemptsFor(code)).toBeGreaterThan(4);
+      expect(Date.now() - started).toBeGreaterThanOrEqual(190);
+    };
+    await windowed(ErrorCode.RATE_LIMIT);
     // Live: a DNS failure that lasted about a minute outlasted four attempts (7 s) and lost 2 of 31 sessions.
-    expect(await attemptsFor(ErrorCode.NETWORK)).toBeGreaterThan(7);
+    await windowed(ErrorCode.NETWORK);
     // An overload (Anthropic's 529) lasts longer than four attempts (3.5 s): a benchmark task would end on it.
-    expect(await attemptsFor(ErrorCode.OVERLOAD)).toBeGreaterThan(7);
+    await windowed(ErrorCode.OVERLOAD);
     // With a fallback model ready, the turn moves to it after four attempts.
     let quick = 0;
     await new Scheduler({ baseDelayMs: 1, maxDelayMs: 2, rateLimitWindowMs: 200 })

@@ -13,7 +13,7 @@
     "@agency/rpc": "workspace:*",
     "@agency/sdk": "workspace:*",
     "@opentui/core": "0.6.6",
-    "@opentui/solid": "0.6.6",
+    "@opentui/solid": "0.6.8",
     "solid-js": "1.9.12"
   },
   "devDependencies": {
